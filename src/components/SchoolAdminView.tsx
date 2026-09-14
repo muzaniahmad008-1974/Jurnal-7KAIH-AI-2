@@ -84,10 +84,12 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     const syncMaster = () => {
       setStudents(getStoredStudents());
       setRombels(getStoredRombels());
+      setSchools(getStoredSchools());
     };
 
     window.addEventListener('storage', syncUsers);
     window.addEventListener('si7kaih_users_updated', syncUsers);
+    window.addEventListener('si7kaih_schools_updated', syncMaster);
     window.addEventListener('si7kaih_students_updated', syncMaster);
     window.addEventListener('si7kaih_rombels_updated', syncMaster);
     window.addEventListener('focus', syncUsers);
@@ -95,6 +97,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     return () => {
       window.removeEventListener('storage', syncUsers);
       window.removeEventListener('si7kaih_users_updated', syncUsers);
+      window.removeEventListener('si7kaih_schools_updated', syncMaster);
       window.removeEventListener('si7kaih_students_updated', syncMaster);
       window.removeEventListener('si7kaih_rombels_updated', syncMaster);
       window.removeEventListener('focus', syncUsers);
@@ -144,14 +147,14 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const [rombels, setRombels] = useState<Rombel[]>(() => getStoredRombels());
 
   // School Authority context: Identify the specific school for the current School Admin
-  const storedSchools = getStoredSchools();
+  const [schools, setSchools] = useState<SchoolMaster[]>(() => getStoredSchools());
   const currentSchoolId = currentPersona?.schoolId || 'sch-default';
   const currentSchoolName = currentPersona?.schoolName || 'Satuan Pendidikan';
-  const currentSchoolMaster = storedSchools.find(
+  const currentSchoolMaster = schools.find(
     (s) =>
       s.id === currentSchoolId ||
       s.name.trim().toLowerCase() === currentSchoolName.trim().toLowerCase()
-  ) || storedSchools[0];
+  ) || schools[0] || getStoredSchools()[0];
   const currentSchoolNpsn = currentSchoolMaster?.npsn || '-';
 
   // Strict Scoping Filter: School Admin may only access users of their own school

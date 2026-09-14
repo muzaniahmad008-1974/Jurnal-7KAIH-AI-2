@@ -747,7 +747,8 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             }
           : s
       );
-      updateSchools(updated);
+      setSchools(updated);
+      saveStoredSchools(updated);
 
       // Sinkronisasi dengan userAccounts (Administrator dan Pengguna Sekolah Terdaftar)
       let updatedUsers = userAccounts.map((u) => {
@@ -802,7 +803,8 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         };
         updatedUsers.push(newAdminPersona);
       }
-      updateUsers(updatedUsers);
+      setUserAccounts(updatedUsers);
+      saveStoredUsers(updatedUsers);
 
       // Sinkronisasi rombels dan students
       const updatedRombels = rombels.map((r) =>
@@ -810,16 +812,28 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           ? { ...r, schoolName: updatedSchoolName, schoolId: editingSchool.id }
           : r
       );
-      updateRombels(updatedRombels);
+      setRombels(updatedRombels);
+      saveStoredRombels(updatedRombels);
 
       const updatedStudents = students.map((std) =>
         std.schoolId === editingSchool.id || std.schoolName?.toLowerCase() === editingSchool.name.toLowerCase()
           ? { ...std, schoolName: updatedSchoolName, schoolId: editingSchool.id }
           : std
       );
-      updateStudents(updatedStudents);
+      setStudents(updatedStudents);
+      saveStoredStudents(updatedStudents);
 
-      showToast(`Data Satuan Pendidikan "${updatedSchoolName}" & seluruh akun terkait berhasil diperbarui dan disinkronkan!`);
+      // Sinkronisasi komprehensif ke Supabase dan siarkan ke seluruh perangkat
+      saveSuperAdminMasterDataToSupabase({
+        schools: updated,
+        users: updatedUsers,
+        rombels: updatedRombels,
+        students: updatedStudents,
+        lastUpdatedBy: currentPersona?.name || 'Super Administrator',
+        actionType: 'UPDATE_SCHOOL_AND_USERS',
+      }).catch((e) => console.warn('Supabase master sync notice:', e));
+
+      showToast(`Data Satuan Pendidikan "${updatedSchoolName}" & seluruh akun terkait berhasil diperbarui dan disinkronkan ke semua perangkat!`);
     } else {
       const newId = `s-${Date.now()}`;
       const newSchool: SchoolMaster = {
@@ -845,9 +859,12 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         activeStatus: 'AKTIF',
         createdAt: new Date().toISOString().split('T')[0],
       };
-      updateSchools([...schools, newSchool]);
+      const updatedSchoolsList = [...schools, newSchool];
+      setSchools(updatedSchoolsList);
+      saveStoredSchools(updatedSchoolsList);
 
       // Automatically provision a School Admin persona if desired
+      let updatedUsersList = [...userAccounts];
       if (schoolFormAdminUser.trim()) {
         const newAdminPersona: UserPersona = {
           id: `usr-admin-${Date.now()}`,
@@ -868,9 +885,20 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           managedBy: 'Super Administrator SI-7KAIH Pusat',
           createdDate: new Date().toISOString().split('T')[0],
         };
-        updateUsers([...userAccounts, newAdminPersona]);
+        updatedUsersList = [...userAccounts, newAdminPersona];
+        setUserAccounts(updatedUsersList);
+        saveStoredUsers(updatedUsersList);
       }
-      showToast(`Satuan Pendidikan ${schoolFormJenjang} "${newSchool.name}" (${schoolFormStatus}) berhasil didaftarkan!`);
+
+      // Sinkronisasi penambahan satuan pendidikan ke Supabase
+      saveSuperAdminMasterDataToSupabase({
+        schools: updatedSchoolsList,
+        users: updatedUsersList,
+        lastUpdatedBy: currentPersona?.name || 'Super Administrator',
+        actionType: 'CREATE_SCHOOL',
+      }).catch((e) => console.warn('Supabase save school notice:', e));
+
+      showToast(`Satuan Pendidikan ${schoolFormJenjang} "${newSchool.name}" (${schoolFormStatus}) berhasil didaftarkan dan disinkronkan ke semua perangkat!`);
     }
     setIsSchoolModalOpen(false);
   };

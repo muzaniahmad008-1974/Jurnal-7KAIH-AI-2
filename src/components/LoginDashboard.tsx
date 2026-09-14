@@ -45,7 +45,12 @@ import { UserPersona, getStoredUsers, USER_PERSONAS } from '../lib/constants';
 import { Student, Rombel, getStoredStudents, getStoredRombels } from '../lib/studentData';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { DailyJournal } from '../../packages/types/src/index';
-import { fetchUsersFromSupabase, fetchJournalsFromSupabase } from '../lib/supabaseService';
+import {
+  fetchUsersFromSupabase,
+  fetchJournalsFromSupabase,
+  fetchSchoolsFromSupabase,
+  applySuperAdminMasterDataToStorage,
+} from '../lib/supabaseService';
 
 // Sampel data murid referensi SMP jika belum ada murid yang diimpor oleh Admin
 const FALLBACK_SAMPLE_STUDENTS: Student[] = [
@@ -247,7 +252,16 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       const savedJournals = localStorage.getItem('si7kaih_journals_prod');
       setJournals(savedJournals ? JSON.parse(savedJournals) : []);
 
-      // Pull latest authoritative users & journals from Supabase backend on access
+      // Pull latest authoritative users, schools & journals from Supabase backend on access
+      fetchSchoolsFromSupabase()
+        .then((remoteSchools) => {
+          if (remoteSchools && remoteSchools.length > 0) {
+            setSchools(remoteSchools);
+            applySuperAdminMasterDataToStorage({ schools: remoteSchools });
+          }
+        })
+        .catch(() => {});
+
       fetchUsersFromSupabase()
         .then((remoteUsers) => {
           if (remoteUsers && remoteUsers.length > 0) {

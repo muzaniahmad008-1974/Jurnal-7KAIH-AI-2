@@ -201,6 +201,10 @@ BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.si7kaih_audit_logs;
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.si7kaih_programs;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 END $$;`;
 
   const handleCopySql = () => {

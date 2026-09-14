@@ -70,6 +70,8 @@ import {
   refreshSupabaseStatus,
   startAutomaticSynchronization,
   syncOnSuperAdminLogin,
+  fetchSuperAdminMasterDataFromSupabase,
+  applySuperAdminMasterDataToStorage,
 } from './lib/supabaseService';
 import { Database, Zap, CheckCircle2 } from 'lucide-react';
 
@@ -361,6 +363,21 @@ export default function App() {
         console.warn('Initial Supabase fetch check:', err);
       }
 
+      // Always pull latest Super Admin master data (Schools, Rombels, Students, Habits) from Supabase on any device
+      try {
+        const masterData = await fetchSuperAdminMasterDataFromSupabase();
+        if (masterData && isMounted) {
+          applySuperAdminMasterDataToStorage(masterData);
+          if (masterData.schools && Array.isArray(masterData.schools)) {
+            try {
+              window.dispatchEvent(new CustomEvent('si7kaih_schools_updated', { detail: masterData.schools }));
+            } catch (_e) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Initial Super Admin master data fetch check:', err);
+      }
+
       // If current active session is Super Admin, trigger auto-sync silently in background on boot
       if (currentPersona.role === 'SUPER_ADMIN') {
         syncOnSuperAdminLogin(currentPersona).catch((err) =>
@@ -451,8 +468,13 @@ export default function App() {
           detail,
         });
       },
-      onSuperAdminMasterSync: (_masterData, _source) => {
-        // Master data updated silently in storage and active components
+      onSuperAdminMasterSync: (masterData, _source) => {
+        if (!isMounted) return;
+        if (masterData?.schools && Array.isArray(masterData.schools)) {
+          try {
+            window.dispatchEvent(new CustomEvent('si7kaih_schools_updated', { detail: masterData.schools }));
+          } catch (_e) {}
+        }
       },
     });
 

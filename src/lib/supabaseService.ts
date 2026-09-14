@@ -551,12 +551,11 @@ export async function saveSuperAdminMasterDataToSupabase(
 
     // 1. Simpan Master Sekolah jika ada
     if (payload.schools && Array.isArray(payload.schools)) {
-      await supabase.from('si7kaih_programs').upsert(
+      const { error: schoolErr } = await supabase.from('si7kaih_programs').upsert(
         {
           id: 'sys_master_schools',
           school_id: 'SYSTEM',
           title: 'SYS_MASTER_SCHOOLS',
-          description: 'Daftar master sekolah yang dikelola oleh Super Admin',
           data: {
             list: payload.schools,
             updatedAt: isoTime,
@@ -566,16 +565,18 @@ export async function saveSuperAdminMasterDataToSupabase(
         },
         { onConflict: 'id' }
       );
+      if (schoolErr) {
+        console.warn('Gagal menyimpan sys_master_schools ke Supabase:', schoolErr);
+      }
     }
 
     // 2. Simpan Master Rombel jika ada
     if (payload.rombels && Array.isArray(payload.rombels)) {
-      await supabase.from('si7kaih_programs').upsert(
+      const { error: rombelErr } = await supabase.from('si7kaih_programs').upsert(
         {
           id: 'sys_master_rombels',
           school_id: 'SYSTEM',
           title: 'SYS_MASTER_ROMBELS',
-          description: 'Daftar master rombongan belajar yang dikelola oleh Super Admin',
           data: {
             list: payload.rombels,
             updatedAt: isoTime,
@@ -585,16 +586,18 @@ export async function saveSuperAdminMasterDataToSupabase(
         },
         { onConflict: 'id' }
       );
+      if (rombelErr) {
+        console.warn('Gagal menyimpan sys_master_rombels ke Supabase:', rombelErr);
+      }
     }
 
     // 3. Simpan Master Siswa jika ada
     if (payload.students && Array.isArray(payload.students)) {
-      await supabase.from('si7kaih_programs').upsert(
+      const { error: studentErr } = await supabase.from('si7kaih_programs').upsert(
         {
           id: 'sys_master_students',
           school_id: 'SYSTEM',
           title: 'SYS_MASTER_STUDENTS',
-          description: 'Daftar master peserta didik yang dikelola oleh Super Admin',
           data: {
             list: payload.students,
             updatedAt: isoTime,
@@ -604,16 +607,18 @@ export async function saveSuperAdminMasterDataToSupabase(
         },
         { onConflict: 'id' }
       );
+      if (studentErr) {
+        console.warn('Gagal menyimpan sys_master_students ke Supabase:', studentErr);
+      }
     }
 
     // 4. Simpan Master 7 Kebiasaan Anak Indonesia Hebat jika ada
     if (payload.habitMasters && typeof payload.habitMasters === 'object') {
-      await supabase.from('si7kaih_programs').upsert(
+      const { error: habitErr } = await supabase.from('si7kaih_programs').upsert(
         {
           id: 'sys_master_habits',
           school_id: 'SYSTEM',
           title: 'SYS_MASTER_HABITS',
-          description: 'Konfigurasi master 7 Kebiasaan Anak Indonesia Hebat dari Super Admin',
           data: {
             dict: payload.habitMasters,
             updatedAt: isoTime,
@@ -623,6 +628,9 @@ export async function saveSuperAdminMasterDataToSupabase(
         },
         { onConflict: 'id' }
       );
+      if (habitErr) {
+        console.warn('Gagal menyimpan sys_master_habits ke Supabase:', habitErr);
+      }
     }
 
     // 5. Simpan Akun Pengguna jika ada
@@ -632,7 +640,7 @@ export async function saveSuperAdminMasterDataToSupabase(
 
     // 6. Update metadata sinkronisasi global di tabel si7kaih_users
     // (Tabel ini tergabung dalam supabase_realtime sehingga memicu event seketika ke seluruh perangkat!)
-    const syncMetadata = {
+    const syncMetadata: any = {
       type: 'SUPER_ADMIN_MASTER_SYNC',
       actionType: payload.actionType || 'DATA_UPDATE',
       timestamp,
@@ -646,7 +654,12 @@ export async function saveSuperAdminMasterDataToSupabase(
       },
     };
 
-    await supabase.from('si7kaih_users').upsert(
+    // Sematkan array schools langsung dalam event realtime agar perangkat lain langsung menerima data
+    if (payload.schools && Array.isArray(payload.schools)) {
+      syncMetadata.schools = payload.schools;
+    }
+
+    const { error: syncMetaErr } = await supabase.from('si7kaih_users').upsert(
       {
         id: 'sys_master_data_sync',
         username: 'system_master_sync',
@@ -658,6 +671,9 @@ export async function saveSuperAdminMasterDataToSupabase(
       },
       { onConflict: 'id' }
     );
+    if (syncMetaErr) {
+      console.warn('Gagal menyimpan sys_master_data_sync ke Supabase:', syncMetaErr);
+    }
 
     // 7. Siarkan pesan broadcast channel antar tab / jendela aktif
     if (broadcastChannel) {
@@ -717,11 +733,74 @@ export async function fetchSuperAdminMasterDataFromSupabase(): Promise<SuperAdmi
       result.users = users;
     }
 
+    // Fallback redundancy: jika schools belum didapat dari si7kaih_programs, cek sys_master_data_sync
+    if (!result.schools || result.schools.length === 0) {
+      try {
+        const { data: syncRow } = await supabase
+          .from('si7kaih_users')
+          .select('data')
+          .eq('id', 'sys_master_data_sync')
+          .maybeSingle();
+
+        if (syncRow?.data?.schools && Array.isArray(syncRow.data.schools) && syncRow.data.schools.length > 0) {
+          result.schools = syncRow.data.schools;
+        }
+      } catch (_e) {}
+    }
+
     return result;
   } catch (err) {
     console.warn('Error fetching Super Admin master data from Supabase:', err);
     return null;
   }
+}
+
+/**
+ * Mengambil data master satuan pendidikan terbaru secara langsung dari Supabase
+ */
+export async function fetchSchoolsFromSupabase(): Promise<SchoolMaster[] | null> {
+  try {
+    // 1. Coba ambil dari si7kaih_programs (sys_master_schools)
+    const { data: row, error } = await supabase
+      .from('si7kaih_programs')
+      .select('data')
+      .eq('id', 'sys_master_schools')
+      .maybeSingle();
+
+    if (!error && row?.data?.list && Array.isArray(row.data.list)) {
+      return row.data.list as SchoolMaster[];
+    }
+
+    // 2. Coba fallback dari si7kaih_users (sys_master_data_sync)
+    const { data: syncRow, error: syncError } = await supabase
+      .from('si7kaih_users')
+      .select('data')
+      .eq('id', 'sys_master_data_sync')
+      .maybeSingle();
+
+    if (!syncError && syncRow?.data?.schools && Array.isArray(syncRow.data.schools)) {
+      return syncRow.data.schools as SchoolMaster[];
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('Error fetching schools from Supabase:', err);
+    return null;
+  }
+}
+
+/**
+ * Menyimpan data master satuan pendidikan langsung ke Supabase dan memicu sinkronisasi otomatis ke seluruh perangkat
+ */
+export async function saveSchoolsToSupabase(
+  schools: SchoolMaster[],
+  updatedBy: string = 'Super Administrator'
+): Promise<boolean> {
+  return saveSuperAdminMasterDataToSupabase({
+    schools,
+    lastUpdatedBy: updatedBy,
+    actionType: 'UPDATE_SCHOOLS',
+  });
 }
 
 /**
@@ -1036,6 +1115,20 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
           if (payload.new && payload.new.data) {
             // Handle Master Sync triggered by Super Admin
             if (payload.new.id === 'sys_master_data_sync') {
+              const syncData = payload.new.data;
+              if (syncData?.schools && Array.isArray(syncData.schools)) {
+                applySuperAdminMasterDataToStorage({ schools: syncData.schools });
+                callbacks.onSuperAdminMasterSync?.({ schools: syncData.schools }, 'realtime');
+                currentStatus.syncCount++;
+                currentStatus.lastSyncedAt = new Date().toISOString();
+                currentStatus.lastSyncEvent = 'Sinkronisasi realtime data master satuan pendidikan dari Super Admin';
+                notifyListeners();
+                callbacks.onNotification?.(
+                  'Data Satuan Pendidikan Diperbarui',
+                  'Data master satuan pendidikan diperbarui oleh Super Admin dan disinkronkan otomatis.'
+                );
+              }
+
               fetchSuperAdminMasterDataFromSupabase().then((masterPayload) => {
                 if (masterPayload && !isCleanedUp) {
                   applySuperAdminMasterDataToStorage(masterPayload);
@@ -1091,17 +1184,31 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
         { event: '*', schema: 'public', table: 'si7kaih_programs' },
         (payload: any) => {
           if (isCleanedUp) return;
-          if (payload.new && payload.new.id && String(payload.new.id).startsWith('sys_master_')) {
-            fetchSuperAdminMasterDataFromSupabase().then((masterPayload) => {
-              if (masterPayload && !isCleanedUp) {
-                applySuperAdminMasterDataToStorage(masterPayload);
-                callbacks.onSuperAdminMasterSync?.(masterPayload, 'realtime');
-                currentStatus.syncCount++;
-                currentStatus.lastSyncedAt = new Date().toISOString();
-                currentStatus.lastSyncEvent = 'Pembaruan data master (sekolah/rombel/siswa) dari Super Admin';
-                notifyListeners();
-              }
-            });
+          if (payload.new && payload.new.id) {
+            if (payload.new.id === 'sys_master_schools' && payload.new.data?.list) {
+              const schoolsList = payload.new.data.list;
+              applySuperAdminMasterDataToStorage({ schools: schoolsList });
+              callbacks.onSuperAdminMasterSync?.({ schools: schoolsList }, 'realtime');
+              currentStatus.syncCount++;
+              currentStatus.lastSyncedAt = new Date().toISOString();
+              currentStatus.lastSyncEvent = 'Pembaruan data master satuan pendidikan dari Super Admin';
+              notifyListeners();
+              callbacks.onNotification?.(
+                'Data Satuan Pendidikan Diperbarui',
+                'Data master satuan pendidikan diperbarui oleh Super Admin dan disinkronkan otomatis.'
+              );
+            } else if (String(payload.new.id).startsWith('sys_master_')) {
+              fetchSuperAdminMasterDataFromSupabase().then((masterPayload) => {
+                if (masterPayload && !isCleanedUp) {
+                  applySuperAdminMasterDataToStorage(masterPayload);
+                  callbacks.onSuperAdminMasterSync?.(masterPayload, 'realtime');
+                  currentStatus.syncCount++;
+                  currentStatus.lastSyncedAt = new Date().toISOString();
+                  currentStatus.lastSyncEvent = 'Pembaruan data master dari Super Admin';
+                  notifyListeners();
+                }
+              });
+            }
           }
         }
       )
