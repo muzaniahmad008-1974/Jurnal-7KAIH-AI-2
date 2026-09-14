@@ -1,0 +1,6 @@
+{
+  "name": "SI-7KAIH AI",
+  "description": "Sistem Jurnal dan Monitoring Tujuh Kebiasaan Anak Indonesia Hebat Berbasis AI",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

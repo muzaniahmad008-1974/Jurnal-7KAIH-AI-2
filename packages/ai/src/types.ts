@@ -1,0 +1,33 @@
+// ============================================================================
+// SI-7KAIH AI - AI Types & Interfaces
+// ============================================================================
+
+import { AIAnalysisResult } from '../../types/src/index';
+
+export type AIProviderName = 'gemini' | 'openai' | 'custom';
+
+export interface AIServiceConfig {
+  provider: AIProviderName;
+  apiKey?: string;
+  model?: string;
+}
+
+export interface AIAnalysisRequest {
+  taskType:
+    | 'StudentReflectionCoach'
+    | 'TeacherClassInsight'
+    | 'SchoolAnalysis'
+    | 'SupervisorPortfolioAnalysis'
+    | 'FollowUpGenerator'
+    | 'AI_CHAT_ASSISTANT'
+    | 'TEACHER_CLASS_INSIGHT'
+    | 'PRINCIPAL_SCHOOL_STRATEGY'
+    | 'SUPERVISOR_REGIONAL_ANALYSIS';
+  actorRole: string;
+  context: Record<string, unknown>;
+}
+
+export interface AIProvider {
+  name: AIProviderName;
+  generateStructured(request: AIAnalysisRequest): Promise<AIAnalysisResult>;
+}
