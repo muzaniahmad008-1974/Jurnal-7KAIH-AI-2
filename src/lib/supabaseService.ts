@@ -14,7 +14,7 @@ import {
   HabitCode,
   HabitMaster,
 } from '../../packages/types/src/index';
-import { UserPersona, getStoredHabitMasters, getStoredUsers, isDeprecatedOrDummyUser } from './constants';
+import { UserPersona, USER_PERSONAS, getStoredHabitMasters, getStoredUsers, isDeprecatedOrDummyUser } from './constants';
 import { SchoolMaster, getStoredSchools } from './schoolMasterData';
 import { Student, Rombel, getStoredStudents, getStoredRombels } from './studentData';
 
@@ -411,6 +411,64 @@ export async function saveSingleUserToSupabase(user: UserPersona): Promise<boole
     return !error;
   } catch (err) {
     console.warn('Error saving single user to Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Menghapus akun pengguna dari tabel Supabase si7kaih_users secara permanen
+ */
+export async function deleteUserFromSupabase(userId: string): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const { error } = await supabase.from('si7kaih_users').delete().eq('id', userId);
+    if (!error) {
+      currentStatus.lastSyncedAt = new Date().toISOString();
+      currentStatus.syncCount++;
+      currentStatus.lastSyncEvent = `Penghapusan akun pengguna ID ${userId} dari Supabase`;
+      notifyListeners();
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.postMessage({
+            type: 'USER_DELETED',
+            userId,
+            timestamp: Date.now(),
+          });
+        } catch (_e) {}
+      }
+    }
+    return !error;
+  } catch (err) {
+    console.warn('Error deleting user from Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Menghapus banyak akun pengguna dari tabel Supabase si7kaih_users secara massal
+ */
+export async function deleteUsersFromSupabase(userIds: string[]): Promise<boolean> {
+  if (!userIds || userIds.length === 0) return true;
+  try {
+    const { error } = await supabase.from('si7kaih_users').delete().in('id', userIds);
+    if (!error) {
+      currentStatus.lastSyncedAt = new Date().toISOString();
+      currentStatus.syncCount++;
+      currentStatus.lastSyncEvent = `Penghapusan ${userIds.length} akun pengguna dari Supabase`;
+      notifyListeners();
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.postMessage({
+            type: 'USERS_DELETED',
+            userIds,
+            timestamp: Date.now(),
+          });
+        } catch (_e) {}
+      }
+    }
+    return !error;
+  } catch (err) {
+    console.warn('Error deleting users from Supabase:', err);
     return false;
   }
 }
@@ -833,17 +891,7 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.rombels && Array.isArray(data.rombels)) {
-      const localRombels = getStoredRombels();
-      // Smart union: gabungkan rombel remote dan rombel lokal yang belum tersinkron
-      const rombelMap = new Map<string, Rombel>();
-      data.rombels.forEach((r) => rombelMap.set(r.id || r.code || r.name, r));
-      localRombels.forEach((r) => {
-        const key = r.id || r.code || r.name;
-        if (!rombelMap.has(key)) {
-          rombelMap.set(key, r);
-        }
-      });
-      const finalRombels = Array.from(rombelMap.values());
+      const finalRombels = data.rombels.filter((r) => r && (r.schoolId || r.schoolName));
       const current = localStorage.getItem('si7kaih_rombels_mandiri');
       const serialized = JSON.stringify(finalRombels);
       if (!current || current !== serialized) {
@@ -860,17 +908,7 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.students && Array.isArray(data.students)) {
-      const localStudents = getStoredStudents();
-      // Smart union: gabungkan siswa remote dan siswa lokal yang belum tersinkron
-      const studentMap = new Map<string, Student>();
-      data.students.forEach((s) => studentMap.set(s.nisn || s.id, s));
-      localStudents.forEach((s) => {
-        const key = s.nisn || s.id;
-        if (!studentMap.has(key)) {
-          studentMap.set(key, s);
-        }
-      });
-      const finalStudents = Array.from(studentMap.values());
+      const finalStudents = data.students.filter((s) => s && (s.schoolId || s.schoolName || s.name));
       const current = localStorage.getItem('si7kaih_students_mandiri');
       const serialized = JSON.stringify(finalStudents);
       if (!current || current !== serialized) {
@@ -904,14 +942,16 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
 
     if (data.users && Array.isArray(data.users)) {
       const sanitizedUsers = data.users.filter((u) => !isDeprecatedOrDummyUser(u));
+      const hasSuperAdmin = sanitizedUsers.some((u) => u.role === 'SUPER_ADMIN');
+      const finalUsers = hasSuperAdmin ? sanitizedUsers : [USER_PERSONAS[0], ...sanitizedUsers];
       const current = localStorage.getItem('si7kaih_users_pool_prod');
-      const serialized = JSON.stringify(sanitizedUsers);
+      const serialized = JSON.stringify(finalUsers);
       if (!current || current !== serialized) {
         localStorage.setItem('si7kaih_users_pool_prod', serialized);
         if (typeof window !== 'undefined') {
           setTimeout(() => {
             try {
-              window.dispatchEvent(new CustomEvent('si7kaih_users_updated', { detail: sanitizedUsers }));
+              window.dispatchEvent(new CustomEvent('si7kaih_users_updated', { detail: finalUsers }));
             } catch (_e) {}
           }, 0);
         }
@@ -1356,31 +1396,23 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
 
       // 2. Fetch latest users
       const remoteUsers = await fetchUsersFromSupabase();
-      if (remoteUsers && remoteUsers.length > 0 && !isCleanedUp) {
+      if (remoteUsers && !isCleanedUp) {
         try {
+          const sanitized = remoteUsers.filter((u) => !isDeprecatedOrDummyUser(u));
+          const hasSuperAdmin = sanitized.some((u) => u.role === 'SUPER_ADMIN');
+          const finalUsers = hasSuperAdmin ? sanitized : [USER_PERSONAS[0], ...sanitized];
           const raw = localStorage.getItem('si7kaih_users_pool_prod');
-          const localPool: UserPersona[] = raw ? JSON.parse(raw) : [];
-          const userMap = new Map<string, UserPersona>();
-          localPool.forEach((u) => userMap.set(u.id, u));
-          let hasDiff = false;
-          remoteUsers.forEach((ru) => {
-            const ex = userMap.get(ru.id);
-            if (!ex || JSON.stringify(ex) !== JSON.stringify(ru)) {
-              userMap.set(ru.id, ru);
-              hasDiff = true;
-            }
-          });
-          if (hasDiff) {
-            const merged = Array.from(userMap.values());
-            localStorage.setItem('si7kaih_users_pool_prod', JSON.stringify(merged));
+          const serialized = JSON.stringify(finalUsers);
+          if (!raw || raw !== serialized) {
+            localStorage.setItem('si7kaih_users_pool_prod', serialized);
             if (typeof window !== 'undefined') {
               setTimeout(() => {
                 try {
-                  window.dispatchEvent(new CustomEvent('si7kaih_users_updated', { detail: merged }));
+                  window.dispatchEvent(new CustomEvent('si7kaih_users_updated', { detail: finalUsers }));
                 } catch (_e) {}
               }, 0);
             }
-            callbacks.onAllUsersSync?.(merged, 'poll');
+            callbacks.onAllUsersSync?.(finalUsers, 'poll');
           }
         } catch (_e) {
           callbacks.onAllUsersSync?.(remoteUsers, 'poll');

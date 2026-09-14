@@ -52,7 +52,11 @@ import {
 import { DataImportModal } from './DataImportModal';
 import { ConfirmDeleteModal, DeleteModalState } from './ConfirmDeleteModal';
 import { UserAvatar, ROLE_DEFAULT_AVATARS } from './UserAvatar';
-import { saveSuperAdminMasterDataToSupabase } from '../lib/supabaseService';
+import {
+  saveSuperAdminMasterDataToSupabase,
+  deleteUserFromSupabase,
+  deleteUsersFromSupabase,
+} from '../lib/supabaseService';
 
 interface SchoolAdminViewProps {
   isSuperAdmin?: boolean;
@@ -71,10 +75,60 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'DATA' | 'PROGRAMS' | 'USERS' | 'AUDIT' | 'SETTINGS'>('DATA');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // School Authority context: Identify the specific school for the current School Admin
+  const [schools, setSchools] = useState<SchoolMaster[]>(() => getStoredSchools());
+  const currentSchoolId = currentPersona?.schoolId || '';
+  const currentSchoolName = currentPersona?.schoolName || '';
+  const currentSchoolMaster = schools.find(
+    (s) =>
+      (currentSchoolId && s.id === currentSchoolId) ||
+      (currentSchoolName && s.name.trim().toLowerCase() === currentSchoolName.trim().toLowerCase())
+  ) || schools[0] || getStoredSchools()[0];
+  const currentSchoolNpsn = currentSchoolMaster?.npsn || '-';
+
+  // Strict Scoping Filter: School Admin may only access students of their own school
+  const isStudentOfSchool = (s: Student, schId?: string, schName?: string): boolean => {
+    if (!s) return false;
+    const targetId = (schId ?? currentSchoolId).trim();
+    const targetName = (schName ?? currentSchoolName).trim().toLowerCase();
+    if (targetId && s.schoolId) {
+      if (s.schoolId.toLowerCase() === targetId.toLowerCase()) return true;
+    }
+    if (targetName && s.schoolName) {
+      if (s.schoolName.trim().toLowerCase() === targetName) return true;
+    }
+    return false;
+  };
+
+  // Strict Scoping Filter: School Admin may only access rombels of their own school
+  const isRombelOfSchool = (r: Rombel, schId?: string, schName?: string): boolean => {
+    if (!r) return false;
+    const targetId = (schId ?? currentSchoolId).trim();
+    const targetName = (schName ?? currentSchoolName).trim().toLowerCase();
+    if (targetId && r.schoolId) {
+      if (r.schoolId.toLowerCase() === targetId.toLowerCase()) return true;
+    }
+    if (targetName && r.schoolName) {
+      if (r.schoolName.trim().toLowerCase() === targetName) return true;
+    }
+    return false;
+  };
+
+  // Master Students & Rombel State for THIS school (100% Mandiri Operator, tanpa Dapodik)
+  // Default kosong jika belum diinput oleh admin sekolah terkait
+  const [students, setStudents] = useState<Student[]>(() => {
+    const all = getStoredStudents();
+    return all.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName));
+  });
+  const [rombels, setRombels] = useState<Rombel[]>(() => {
+    const all = getStoredRombels();
+    return all.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName));
+  });
+
   // Standalone user accounts management
   const [userAccounts, setUserAccounts] = useState<UserPersona[]>(() => getStoredUsers());
 
-  // Real-time synchronization of users from LocalStorage / other view mutations
+  // Real-time synchronization of users & master data
   useEffect(() => {
     const syncUsers = () => {
       const freshUsers = getStoredUsers();
@@ -83,9 +137,11 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     syncUsers();
 
     const syncMaster = () => {
-      setStudents(getStoredStudents());
-      setRombels(getStoredRombels());
       setSchools(getStoredSchools());
+      const allS = getStoredStudents();
+      setStudents(allS.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName)));
+      const allR = getStoredRombels();
+      setRombels(allR.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName)));
     };
 
     window.addEventListener('storage', syncUsers);
@@ -103,7 +159,17 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       window.removeEventListener('si7kaih_rombels_updated', syncMaster);
       window.removeEventListener('focus', syncUsers);
     };
-  }, [activeNavTab, activeSubTab]);
+  }, [activeNavTab, activeSubTab, currentSchoolId, currentSchoolName]);
+
+  // Re-read storage if current persona's school changes
+  useEffect(() => {
+    const allS = getStoredStudents();
+    setStudents(allS.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName)));
+    const allR = getStoredRombels();
+    setRombels(allR.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName)));
+    setUserAccounts(getStoredUsers());
+  }, [currentSchoolId, currentSchoolName]);
+
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
@@ -143,21 +209,6 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   // Batch create parent accounts modal
   const [isBatchParentModalOpen, setIsBatchParentModalOpen] = useState(false);
 
-  // Master Students & Rombel State (100% Mandiri Operator, tanpa Dapodik)
-  const [students, setStudents] = useState<Student[]>(() => getStoredStudents());
-  const [rombels, setRombels] = useState<Rombel[]>(() => getStoredRombels());
-
-  // School Authority context: Identify the specific school for the current School Admin
-  const [schools, setSchools] = useState<SchoolMaster[]>(() => getStoredSchools());
-  const currentSchoolId = currentPersona?.schoolId || 'sch-default';
-  const currentSchoolName = currentPersona?.schoolName || 'Satuan Pendidikan';
-  const currentSchoolMaster = schools.find(
-    (s) =>
-      s.id === currentSchoolId ||
-      s.name.trim().toLowerCase() === currentSchoolName.trim().toLowerCase()
-  ) || schools[0] || getStoredSchools()[0];
-  const currentSchoolNpsn = currentSchoolMaster?.npsn || '-';
-
   // Strict Scoping Filter: School Admin may only access users of their own school
   const isUserOfSchool = (user: UserPersona): boolean => {
     // Super admin and supervisor are national/regional roles, not managed by school admin
@@ -168,23 +219,6 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     // 1. Direct or normalized school ID match
     if (user.schoolId && currentSchoolId) {
       if (user.schoolId.toLowerCase() === currentSchoolId.toLowerCase()) return true;
-      if (
-        (user.schoolId === 's1' || user.schoolId.startsWith('s1000')) &&
-        (currentSchoolId === 's1' || currentSchoolId.startsWith('s1000'))
-      ) {
-        return true;
-      }
-      if (
-        (user.schoolId === 's2' || user.schoolId.startsWith('s2000')) &&
-        (currentSchoolId === 's2' || currentSchoolId.startsWith('s2000'))
-      ) {
-        return true;
-      }
-      if (
-        user.schoolId.includes('smp-01') && currentSchoolId.includes('smp-01')
-      ) {
-        return true;
-      }
     }
 
     // 2. Direct school name match (case-insensitive)
@@ -219,18 +253,23 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
 
   // Sync user accounts with LocalStorage while preserving other schools' accounts
   const updateSchoolUsers = (updatedSchoolUsers: UserPersona[]) => {
+    const stamped = updatedSchoolUsers.map((u) => ({
+      ...u,
+      schoolId: u.schoolId || currentSchoolId,
+      schoolName: u.schoolName || currentSchoolName,
+    }));
     const allUsers = getStoredUsers();
     // Keep users from other schools untouched
     const otherSchoolUsers = allUsers.filter((u) => !isUserOfSchool(u));
-    const mergedPool = [...otherSchoolUsers, ...updatedSchoolUsers];
+    const mergedPool = [...otherSchoolUsers, ...stamped];
     setUserAccounts(mergedPool);
     saveStoredUsers(mergedPool);
+    saveSuperAdminMasterDataToSupabase({
+      users: mergedPool,
+      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
+      actionType: 'UPDATE_USERS_BY_SCHOOL_ADMIN',
+    }).catch((err) => console.warn('Supabase master users sync notice:', err));
   };
-
-  // Re-read storage if current persona's school changes
-  useEffect(() => {
-    setUserAccounts(getStoredUsers());
-  }, [currentPersona?.schoolId, currentPersona?.schoolName]);
 
   // New user form state
   const [newUserName, setNewUserName] = useState('');
@@ -356,20 +395,42 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
 
   // Sync to LocalStorage & Supabase Realtime Master
   const updateStudents = (newStudents: Student[]) => {
-    setStudents(newStudents);
-    saveStoredStudents(newStudents);
+    const stamped = newStudents.map((s) => ({
+      ...s,
+      schoolId: s.schoolId || currentSchoolId,
+      schoolName: s.schoolName || currentSchoolName,
+    }));
+    setStudents(stamped);
+
+    const allStudents = getStoredStudents();
+    const otherSchoolStudents = allStudents.filter(
+      (s) => !isStudentOfSchool(s, currentSchoolId, currentSchoolName)
+    );
+    const merged = [...otherSchoolStudents, ...stamped];
+    saveStoredStudents(merged);
     saveSuperAdminMasterDataToSupabase({
-      students: newStudents,
+      students: merged,
       lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
       actionType: 'UPDATE_STUDENTS_BY_SCHOOL_ADMIN',
     }).catch((err) => console.warn('Supabase sync students notice:', err));
   };
 
   const updateRombels = (newRombels: Rombel[]) => {
-    setRombels(newRombels);
-    saveStoredRombels(newRombels);
+    const stamped = newRombels.map((r) => ({
+      ...r,
+      schoolId: r.schoolId || currentSchoolId,
+      schoolName: r.schoolName || currentSchoolName,
+    }));
+    setRombels(stamped);
+
+    const allRombels = getStoredRombels();
+    const otherSchoolRombels = allRombels.filter(
+      (r) => !isRombelOfSchool(r, currentSchoolId, currentSchoolName)
+    );
+    const merged = [...otherSchoolRombels, ...stamped];
+    saveStoredRombels(merged);
     saveSuperAdminMasterDataToSupabase({
-      rombels: newRombels,
+      rombels: merged,
       lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
       actionType: 'UPDATE_ROMBELS_BY_SCHOOL_ADMIN',
     }).catch((err) => console.warn('Supabase sync rombels notice:', err));
@@ -857,7 +918,8 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       const user = data as UserPersona;
       const filtered = schoolScopedUsers.filter((u) => u.id !== user.id);
       updateSchoolUsers(filtered);
-      showToast(`Akun mandiri "${user.name}" berhasil dihapus dari ${currentSchoolName}.`);
+      deleteUserFromSupabase(user.id).catch((err) => console.warn('Supabase delete user notice:', err));
+      showToast(`Akun mandiri "${user.name}" (@${user.username}) berhasil dihapus dari ${currentSchoolName}.`);
       setSelectedUserIds((prev) => {
         const next = new Set(prev);
         next.delete(user.id);
@@ -874,13 +936,15 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       showToast(`${selectedStudentIds.size} peserta didik terpilih berhasil dihapus.`);
       setSelectedStudentIds(new Set());
     } else if (type === 'BULK_USER') {
+      const usersToDelete = (Array.from(selectedUserIds) as string[]).filter((id) => id !== currentPersona?.id);
       const filtered = schoolScopedUsers.filter((u) => {
         if (!selectedUserIds.has(u.id)) return true;
         if (currentPersona && u.id === currentPersona.id) return true;
         return false;
       });
       updateSchoolUsers(filtered);
-      showToast(`Akun terpilih berhasil dihapus.`);
+      deleteUsersFromSupabase(usersToDelete).catch((err) => console.warn('Supabase bulk delete notice:', err));
+      showToast(`${usersToDelete.length} akun terpilih berhasil dihapus.`);
       setSelectedUserIds(new Set());
     } else if (type === 'AUDIT_LOGS') {
       setLogs([]);
@@ -1555,11 +1619,19 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                                 );
                                 if (parentAcc) {
                                   return (
-                                    <div className="mt-1 flex items-center gap-1">
+                                    <div className="mt-1 flex items-center gap-1.5">
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                                         <CheckCircle2 className="w-2.5 h-2.5" />
                                         <span>Akun: {parentAcc.username}</span>
                                       </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenDeleteUser(parentAcc)}
+                                        title={`Hapus Akun Orang Tua @${parentAcc.username}`}
+                                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer transition-colors"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
                                     </div>
                                   );
                                 } else {

@@ -72,10 +72,15 @@ export const USER_PERSONAS: UserPersona[] = [
 export const isDeprecatedOrDummyUser = (u: UserPersona): boolean => {
   if (u.role === 'SUPER_ADMIN') return false;
 
+  // Akun selain Pengawas Pembina dan Super Admin yang tidak memiliki satuan pendidikan dianggap tidak valid
+  if (u.role !== 'SUPERVISOR' && !u.schoolId?.trim() && !u.schoolName?.trim()) {
+    return true;
+  }
+
   const username = (u.username || '').toLowerCase().trim();
   const id = (u.id || '').toLowerCase().trim();
 
-  // Hilangkan hanya data akun dummy bawaan sistem awal jika masih tersimpan
+  // Hilangkan data akun dummy bawaan sistem awal jika masih tersimpan
   const legacyDummyIds = new Set([
     'usr-student-01',
     'usr-student-02',
@@ -90,6 +95,12 @@ export const isDeprecatedOrDummyUser = (u: UserPersona): boolean => {
     'usr-principal-02',
     'usr-supervisor-01',
     'usr-admin-ria-dummy',
+    'usr-custom-1789334675832',
+    'usr-parent-1789303147354-0-0134567',
+    'usr-admin-1789344430493',
+    'usr-principal-1789287601949',
+    'usr-teacher-1789302594922',
+    'usr-supervisor-1789340225494',
   ]);
   const legacyDummyUsernames = new Set([
     '0123456781',
@@ -104,6 +115,11 @@ export const isDeprecatedOrDummyUser = (u: UserPersona): boolean => {
     '196811051992031004',
     '198203152006041008',
     '198506202010011009',
+    '0134567',
+    'wali.0134567',
+    'admin.jorong1',
+    'kepsek.adi',
+    'fauzi',
   ]);
 
   return legacyDummyIds.has(id) || legacyDummyUsernames.has(username);
