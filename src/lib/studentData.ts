@@ -50,12 +50,9 @@ export const getStoredStudents = (): Student[] => {
     if (saved !== null) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        // Hilangkan hanya data bawaan lama sistem awal (dummy sistem awal)
+        // Hilangkan hanya data bawaan lama sistem awal jika berlabel SISTEM_AWAL
         const cleaned = parsed.filter(
-          (s: Student) =>
-            s.source !== 'SISTEM_AWAL' &&
-            !s.id?.startsWith('std-0') &&
-            !(s.nisn && s.nisn >= '0123456781' && s.nisn <= '0123456792')
+          (s: Student) => s.source !== 'SISTEM_AWAL'
         );
         if (cleaned.length !== parsed.length) {
           saveStoredStudents(cleaned);
@@ -100,13 +97,9 @@ export const getStoredRombels = (): Rombel[] => {
     if (saved !== null) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        // Hilangkan data rombel bawaan lama sistem awal
+        // Hilangkan hanya rombel berlabel SISTEM_AWAL, pertahankan semua rombel mandiri yang diinput operator
         const cleaned = parsed.filter(
-          (r: Rombel) =>
-            r.source !== 'SISTEM_AWAL' &&
-            !r.code?.startsWith('ROMBEL-7') &&
-            !r.code?.startsWith('ROMBEL-8') &&
-            !r.code?.startsWith('ROMBEL-9')
+          (r: Rombel) => r.source !== 'SISTEM_AWAL'
         );
         if (cleaned.length !== parsed.length) {
           try {

@@ -52,6 +52,7 @@ import {
 import { DataImportModal } from './DataImportModal';
 import { ConfirmDeleteModal, DeleteModalState } from './ConfirmDeleteModal';
 import { UserAvatar, ROLE_DEFAULT_AVATARS } from './UserAvatar';
+import { saveSuperAdminMasterDataToSupabase } from '../lib/supabaseService';
 
 interface SchoolAdminViewProps {
   isSuperAdmin?: boolean;
@@ -329,6 +330,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
 
   // Add / Edit Student Modal State
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+  const [isCustomClassInput, setIsCustomClassInput] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [studentFormNisn, setStudentFormNisn] = useState('');
   const [studentFormName, setStudentFormName] = useState('');
@@ -349,29 +351,44 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const [rombelFormTeacher, setRombelFormTeacher] = useState('');
   const [rombelFormTeacherNip, setRombelFormTeacherNip] = useState('');
   const [rombelFormCapacity, setRombelFormCapacity] = useState(32);
-  const [rombelFormYear, setRombelFormYear] = useState('2025/2026 Ganjil');
+  const [rombelFormYear, setRombelFormYear] = useState('2026/2027 Ganjil');
   const [rombelFormStatus, setRombelFormStatus] = useState<'AKTIF' | 'NONAKTIF'>('AKTIF');
 
-  // Sync to LocalStorage
+  // Sync to LocalStorage & Supabase Realtime Master
   const updateStudents = (newStudents: Student[]) => {
     setStudents(newStudents);
     saveStoredStudents(newStudents);
+    saveSuperAdminMasterDataToSupabase({
+      students: newStudents,
+      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
+      actionType: 'UPDATE_STUDENTS_BY_SCHOOL_ADMIN',
+    }).catch((err) => console.warn('Supabase sync students notice:', err));
   };
 
   const updateRombels = (newRombels: Rombel[]) => {
     setRombels(newRombels);
     saveStoredRombels(newRombels);
+    saveSuperAdminMasterDataToSupabase({
+      rombels: newRombels,
+      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
+      actionType: 'UPDATE_ROMBELS_BY_SCHOOL_ADMIN',
+    }).catch((err) => console.warn('Supabase sync rombels notice:', err));
   };
 
   // Import Handlers
   const handleImportStudents = (imported: Student[], mode: 'APPEND' | 'REPLACE') => {
+    const stamped = imported.map((s) => ({
+      ...s,
+      schoolId: s.schoolId || currentSchoolId,
+      schoolName: s.schoolName || currentSchoolName,
+    }));
     let updated: Student[];
     if (mode === 'REPLACE') {
-      updated = imported;
+      updated = stamped;
     } else {
       const map = new Map<string, Student>();
       students.forEach((s) => map.set(s.nisn, s));
-      imported.forEach((s) => map.set(s.nisn, s));
+      stamped.forEach((s) => map.set(s.nisn, s));
       updated = Array.from(map.values());
     }
     updateStudents(updated);
@@ -379,13 +396,18 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   };
 
   const handleImportRombels = (imported: Rombel[], mode: 'APPEND' | 'REPLACE') => {
+    const stamped = imported.map((r) => ({
+      ...r,
+      schoolId: r.schoolId || currentSchoolId,
+      schoolName: r.schoolName || currentSchoolName,
+    }));
     let updated: Rombel[];
     if (mode === 'REPLACE') {
-      updated = imported;
+      updated = stamped;
     } else {
       const map = new Map<string, Rombel>();
       rombels.forEach((r) => map.set(r.name, r));
-      imported.forEach((r) => map.set(r.name, r));
+      stamped.forEach((r) => map.set(r.name, r));
       updated = Array.from(map.values());
     }
     updateRombels(updated);
@@ -605,7 +627,9 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     setStudentFormNisn('');
     setStudentFormName('');
     setStudentFormGender('L');
-    setStudentFormClass('');
+    const defaultCls = rombels.length > 0 ? rombels[0].name : '';
+    setStudentFormClass(defaultCls);
+    setIsCustomClassInput(rombels.length === 0);
     setStudentFormBirthDate('');
     setStudentFormParentName('');
     setStudentFormParentPhone('');
@@ -619,6 +643,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     setStudentFormName(s.name);
     setStudentFormGender(s.gender);
     setStudentFormClass(s.className);
+    setIsCustomClassInput(!rombels.some((r) => r.name === s.className));
     setStudentFormBirthDate(s.birthDate || '');
     setStudentFormParentName(s.parentName);
     setStudentFormParentPhone(s.parentPhone || '');
@@ -633,37 +658,76 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       return;
     }
 
+    const trimmedNisn = studentFormNisn.trim();
+    const trimmedName = studentFormName.trim();
+    const targetClass = studentFormClass.trim() || (rombels.length > 0 ? rombels[0].name : 'Kelas 7-A');
+
+    // Auto-create rombel if it doesn't exist yet in the school
+    if (targetClass) {
+      const existingRombel = rombels.find(
+        (r) => r.name.toLowerCase() === targetClass.toLowerCase()
+      );
+      if (!existingRombel) {
+        const autoRombel: Rombel = {
+          id: `rombel-man-${Date.now()}`,
+          code: `ROMBEL-${targetClass.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || Date.now().toString().slice(-4)}`,
+          name: targetClass,
+          phase: targetClass.includes('8') || targetClass.includes('9') ? 'Fase D' : 'Fase D',
+          grade: targetClass.includes('8') ? 8 : targetClass.includes('9') ? 9 : 7,
+          teacher: 'Wali Kelas',
+          teacherNip: '-',
+          capacity: 32,
+          academicYear: '2026/2027 Ganjil',
+          status: 'AKTIF',
+          source: 'INPUT_MANUAL',
+          schoolId: currentSchoolId,
+          schoolName: currentSchoolName,
+        };
+        updateRombels([...rombels, autoRombel]);
+      }
+    }
+
     if (editingStudent) {
       const updated = students.map((s) =>
         s.id === editingStudent.id
           ? {
               ...s,
-              nisn: studentFormNisn.trim(),
-              name: studentFormName.trim(),
+              nisn: trimmedNisn,
+              name: trimmedName,
               gender: studentFormGender,
-              className: studentFormClass,
+              className: targetClass,
               birthDate: studentFormBirthDate,
               parentName: studentFormParentName.trim() || 'Orang Tua / Wali',
               parentPhone: studentFormParentPhone.trim(),
               status: studentFormStatus,
+              schoolId: currentSchoolId,
+              schoolName: currentSchoolName,
             }
           : s
       );
       updateStudents(updated);
       showToast('Data peserta didik berhasil diperbarui!');
     } else {
+      const isDuplicate = students.some((s) => s.nisn === trimmedNisn);
+      if (isDuplicate) {
+        showToast(`Siswa dengan NISN ${trimmedNisn} sudah ada dalam database!`);
+        return;
+      }
+
       const newStudent: Student = {
         id: `std-man-${Date.now()}`,
-        nisn: studentFormNisn.trim(),
-        name: studentFormName.trim(),
+        nisn: trimmedNisn,
+        name: trimmedName,
         gender: studentFormGender,
-        className: studentFormClass,
+        className: targetClass,
         birthDate: studentFormBirthDate,
         parentName: studentFormParentName.trim() || 'Orang Tua / Wali',
         parentPhone: studentFormParentPhone.trim(),
         status: studentFormStatus,
         source: 'INPUT_MANUAL',
         createdAt: new Date().toISOString().slice(0, 10),
+        schoolId: currentSchoolId,
+        schoolName: currentSchoolName,
       };
       updateStudents([newStudent, ...students]);
       showToast(`Peserta didik ${newStudent.name} berhasil ditambahkan!`);
@@ -862,38 +926,55 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       return;
     }
 
+    const trimmedName = rombelFormName.trim();
+    const teacherName = rombelFormTeacher.trim() || 'Wali Kelas';
+    const teacherNip = rombelFormTeacherNip.trim() || '-';
+
     if (editingRombel) {
       const updated = rombels.map((r) =>
         r.id === editingRombel.id
           ? {
               ...r,
-              code: rombelFormCode.trim() || r.code,
-              name: rombelFormName.trim(),
+              code: rombelFormCode.trim() || r.code || `ROMBEL-${Date.now().toString().slice(-4)}`,
+              name: trimmedName,
               grade: rombelFormGrade,
               phase: rombelFormPhase,
-              teacher: rombelFormTeacher.trim() || 'Wali Kelas',
-              teacherNip: rombelFormTeacherNip.trim() || '-',
+              teacher: teacherName,
+              teacherNip: teacherNip,
               capacity: rombelFormCapacity,
               academicYear: rombelFormYear,
               status: rombelFormStatus,
+              schoolId: currentSchoolId,
+              schoolName: currentSchoolName,
             }
           : r
       );
       updateRombels(updated);
       showToast('Rombongan Belajar berhasil diperbarui!');
     } else {
+      // Check duplicate name in this school
+      const isDuplicate = rombels.some(
+        (r) => r.name.toLowerCase() === trimmedName.toLowerCase()
+      );
+      if (isDuplicate) {
+        showToast(`Rombongan Belajar "${trimmedName}" sudah ada dalam daftar!`);
+        return;
+      }
+
       const newRombel: Rombel = {
         id: `rombel-man-${Date.now()}`,
         code: rombelFormCode.trim() || `ROMBEL-${Date.now().toString().slice(-4)}`,
-        name: rombelFormName.trim(),
+        name: trimmedName,
         grade: rombelFormGrade,
         phase: rombelFormPhase,
-        teacher: rombelFormTeacher.trim() || 'Wali Kelas',
-        teacherNip: rombelFormTeacherNip.trim() || '-',
+        teacher: teacherName,
+        teacherNip: teacherNip,
         capacity: rombelFormCapacity,
         academicYear: rombelFormYear,
         status: rombelFormStatus,
         source: 'INPUT_MANUAL',
+        schoolId: currentSchoolId,
+        schoolName: currentSchoolName,
       };
       updateRombels([...rombels, newRombel]);
       showToast(`Rombongan Belajar ${newRombel.name} berhasil ditambahkan!`);
@@ -3387,21 +3468,50 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Penempatan Rombel / Kelas <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={studentFormClass}
-                      onChange={(e) => setStudentFormClass(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20"
-                    >
-                      <option value="">-- Pilih Rombel / Kelas --</option>
-                      {rombels.map((r) => (
-                        <option key={r.id} value={r.name}>
-                          {r.name} ({r.phase})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-700">
+                        Penempatan Rombel / Kelas <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomClassInput(!isCustomClassInput)}
+                        className="text-[10px] text-[#0753A5] font-bold hover:underline cursor-pointer"
+                      >
+                        {isCustomClassInput
+                          ? (rombels.length > 0 ? 'Pilih dari Rombel' : '')
+                          : '+ Ketik Kelas Baru'}
+                      </button>
+                    </div>
+                    {isCustomClassInput || rombels.length === 0 ? (
+                      <div>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ketik nama kelas, contoh: Kelas 7-A"
+                          value={studentFormClass}
+                          onChange={(e) => setStudentFormClass(e.target.value)}
+                          className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20 focus:border-[#0753A5]"
+                        />
+                        {rombels.length === 0 && (
+                          <span className="text-[10px] text-amber-600 font-medium block mt-1">
+                            Tip: Rombel akan otomatis dibuat di sistem sekolah.
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <select
+                        value={studentFormClass}
+                        onChange={(e) => setStudentFormClass(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20"
+                      >
+                        <option value="">-- Pilih Rombel / Kelas --</option>
+                        {rombels.map((r) => (
+                          <option key={r.id} value={r.name}>
+                            {r.name} ({r.phase})
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">Tanggal Lahir</label>
@@ -3573,16 +3683,23 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">
-                      Guru Wali Kelas <span className="text-rose-500">*</span>
+                      Guru Wali Kelas
                     </label>
                     <input
                       type="text"
-                      required
+                      list="rombel-teachers-datalist"
                       value={rombelFormTeacher}
                       onChange={(e) => setRombelFormTeacher(e.target.value)}
                       placeholder="Contoh: Pak Ahmad Fauzi, S.Pd."
                       className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20"
                     />
+                    <datalist id="rombel-teachers-datalist">
+                      {availableTeachers.map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name} {t.nip ? `(${t.nip})` : ''}
+                        </option>
+                      ))}
+                    </datalist>
                   </div>
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">NIP / NUPTK Guru</label>

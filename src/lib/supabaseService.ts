@@ -654,9 +654,15 @@ export async function saveSuperAdminMasterDataToSupabase(
       },
     };
 
-    // Sematkan array schools langsung dalam event realtime agar perangkat lain langsung menerima data
+    // Sematkan array schools, rombels, students langsung dalam event realtime agar perangkat lain langsung menerima data
     if (payload.schools && Array.isArray(payload.schools)) {
       syncMetadata.schools = payload.schools;
+    }
+    if (payload.rombels && Array.isArray(payload.rombels)) {
+      syncMetadata.rombels = payload.rombels;
+    }
+    if (payload.students && Array.isArray(payload.students)) {
+      syncMetadata.students = payload.students;
     }
 
     const { error: syncMetaErr } = await supabase.from('si7kaih_users').upsert(
@@ -827,14 +833,25 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.rombels && Array.isArray(data.rombels)) {
+      const localRombels = getStoredRombels();
+      // Smart union: gabungkan rombel remote dan rombel lokal yang belum tersinkron
+      const rombelMap = new Map<string, Rombel>();
+      data.rombels.forEach((r) => rombelMap.set(r.id || r.code || r.name, r));
+      localRombels.forEach((r) => {
+        const key = r.id || r.code || r.name;
+        if (!rombelMap.has(key)) {
+          rombelMap.set(key, r);
+        }
+      });
+      const finalRombels = Array.from(rombelMap.values());
       const current = localStorage.getItem('si7kaih_rombels_mandiri');
-      const serialized = JSON.stringify(data.rombels);
+      const serialized = JSON.stringify(finalRombels);
       if (!current || current !== serialized) {
         localStorage.setItem('si7kaih_rombels_mandiri', serialized);
         if (typeof window !== 'undefined') {
           setTimeout(() => {
             try {
-              window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: data.rombels }));
+              window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: finalRombels }));
             } catch (_e) {}
           }, 0);
         }
@@ -843,14 +860,25 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.students && Array.isArray(data.students)) {
+      const localStudents = getStoredStudents();
+      // Smart union: gabungkan siswa remote dan siswa lokal yang belum tersinkron
+      const studentMap = new Map<string, Student>();
+      data.students.forEach((s) => studentMap.set(s.nisn || s.id, s));
+      localStudents.forEach((s) => {
+        const key = s.nisn || s.id;
+        if (!studentMap.has(key)) {
+          studentMap.set(key, s);
+        }
+      });
+      const finalStudents = Array.from(studentMap.values());
       const current = localStorage.getItem('si7kaih_students_mandiri');
-      const serialized = JSON.stringify(data.students);
+      const serialized = JSON.stringify(finalStudents);
       if (!current || current !== serialized) {
         localStorage.setItem('si7kaih_students_mandiri', serialized);
         if (typeof window !== 'undefined') {
           setTimeout(() => {
             try {
-              window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: data.students }));
+              window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: finalStudents }));
             } catch (_e) {}
           }, 0);
         }
@@ -1116,17 +1144,27 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
             // Handle Master Sync triggered by Super Admin
             if (payload.new.id === 'sys_master_data_sync') {
               const syncData = payload.new.data;
+              let anySync = false;
               if (syncData?.schools && Array.isArray(syncData.schools)) {
                 applySuperAdminMasterDataToStorage({ schools: syncData.schools });
                 callbacks.onSuperAdminMasterSync?.({ schools: syncData.schools }, 'realtime');
+                anySync = true;
+              }
+              if (syncData?.rombels && Array.isArray(syncData.rombels)) {
+                applySuperAdminMasterDataToStorage({ rombels: syncData.rombels });
+                callbacks.onSuperAdminMasterSync?.({ rombels: syncData.rombels }, 'realtime');
+                anySync = true;
+              }
+              if (syncData?.students && Array.isArray(syncData.students)) {
+                applySuperAdminMasterDataToStorage({ students: syncData.students });
+                callbacks.onSuperAdminMasterSync?.({ students: syncData.students }, 'realtime');
+                anySync = true;
+              }
+              if (anySync) {
                 currentStatus.syncCount++;
                 currentStatus.lastSyncedAt = new Date().toISOString();
-                currentStatus.lastSyncEvent = 'Sinkronisasi realtime data master satuan pendidikan dari Super Admin';
+                currentStatus.lastSyncEvent = 'Sinkronisasi realtime data master (satuan pendidikan/rombel/siswa)';
                 notifyListeners();
-                callbacks.onNotification?.(
-                  'Data Satuan Pendidikan Diperbarui',
-                  'Data master satuan pendidikan diperbarui oleh Super Admin dan disinkronkan otomatis.'
-                );
               }
 
               fetchSuperAdminMasterDataFromSupabase().then((masterPayload) => {
@@ -1197,6 +1235,22 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
                 'Data Satuan Pendidikan Diperbarui',
                 'Data master satuan pendidikan diperbarui oleh Super Admin dan disinkronkan otomatis.'
               );
+            } else if (payload.new.id === 'sys_master_rombels' && payload.new.data?.list) {
+              const rombelsList = payload.new.data.list;
+              applySuperAdminMasterDataToStorage({ rombels: rombelsList });
+              callbacks.onSuperAdminMasterSync?.({ rombels: rombelsList }, 'realtime');
+              currentStatus.syncCount++;
+              currentStatus.lastSyncedAt = new Date().toISOString();
+              currentStatus.lastSyncEvent = 'Pembaruan data rombongan belajar disinkronkan';
+              notifyListeners();
+            } else if (payload.new.id === 'sys_master_students' && payload.new.data?.list) {
+              const studentsList = payload.new.data.list;
+              applySuperAdminMasterDataToStorage({ students: studentsList });
+              callbacks.onSuperAdminMasterSync?.({ students: studentsList }, 'realtime');
+              currentStatus.syncCount++;
+              currentStatus.lastSyncedAt = new Date().toISOString();
+              currentStatus.lastSyncEvent = 'Pembaruan data peserta didik disinkronkan';
+              notifyListeners();
             } else if (String(payload.new.id).startsWith('sys_master_')) {
               fetchSuperAdminMasterDataFromSupabase().then((masterPayload) => {
                 if (masterPayload && !isCleanedUp) {
