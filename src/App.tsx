@@ -8,7 +8,7 @@
 // Main Application Component
 // ============================================================================
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   USER_PERSONAS,
   UserPersona,
@@ -18,6 +18,7 @@ import {
   LogoutSettings,
   getStoredLogoutSettings,
   isDeprecatedOrDummyUser,
+  isDeprecatedOrDummyJournal,
 } from './lib/constants';
 import {
   DailyJournal,
@@ -35,6 +36,7 @@ import {
   DEFAULT_STUDENT_REFLECTION,
   DEFAULT_PARENT_REFLECTION,
   generateSyntheticJournals,
+  calculateBadgesFromJournals,
 } from './lib/mockData';
 
 // UI Components
@@ -64,6 +66,10 @@ import {
   fetchReflectionsFromSupabase,
   fetchUsersFromSupabase,
   saveJournalToSupabase,
+  deleteJournalFromSupabase,
+  deleteAllJournalsFromSupabase,
+  recordDeletedJournalTombstone,
+  isJournalTombstoned,
   saveStudentReflectionToSupabase,
   saveParentReflectionToSupabase,
   saveSingleUserToSupabase,
@@ -73,7 +79,8 @@ import {
   fetchSuperAdminMasterDataFromSupabase,
   applySuperAdminMasterDataToStorage,
 } from './lib/supabaseService';
-import { Database, Zap, CheckCircle2 } from 'lucide-react';
+import { Database, Zap, CheckCircle2, Clock } from 'lucide-react';
+import { formatRealtimeSaveTime } from './lib/dateUtils';
 
 export default function App() {
   // Active Persona (Loaded from persistent storage if active session exists in browser)
@@ -175,22 +182,81 @@ export default function App() {
   // Reset kosongkan isian jurnal siswa sesuai permintaan pengguna
   const [journals, setJournals] = useState<DailyJournal[]>(() => {
     try {
-      const resetKey = 'si7kaih_journals_clean_reset_v3';
+      const resetKey = 'si7kaih_journals_clean_reset_v4';
       if (!localStorage.getItem(resetKey)) {
         localStorage.setItem(resetKey, 'true');
         localStorage.removeItem('si7kaih_journals_prod');
         return [];
       }
       const saved = localStorage.getItem('si7kaih_journals_prod');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
     } catch (_e) {}
     return [];
   });
 
+  // Listen to journal updates across tabs for realtime synchronization (avoid self-triggering loop)
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'si7kaih_journals_prod' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+            setJournals((prev) => {
+              if (JSON.stringify(prev) === JSON.stringify(cleaned)) {
+                return prev;
+              }
+              return cleaned;
+            });
+          }
+        } catch (_e) {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = (msg) => {
+          if (msg.data?.type === 'JOURNALS_UPDATED' && msg.data?.sender !== 'APP_ROOT') {
+            try {
+              const saved = localStorage.getItem('si7kaih_journals_prod');
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) {
+                  const cleaned = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+                  setJournals((prev) => {
+                    if (JSON.stringify(prev) === JSON.stringify(cleaned)) {
+                      return prev;
+                    }
+                    return cleaned;
+                  });
+                }
+              }
+            } catch (_e) {}
+          }
+        };
+      } catch (_e) {}
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      if (bc) bc.close();
+    };
+  }, []);
+
   const [badges, setBadges] = useState<Badge[]>(() => {
     try {
-      const saved = localStorage.getItem('si7kaih_badges_prod');
-      if (saved) return JSON.parse(saved);
+      const savedJournals = localStorage.getItem('si7kaih_journals_prod');
+      const parsedJournals: DailyJournal[] = savedJournals ? JSON.parse(savedJournals) : [];
+      return calculateBadgesFromJournals(parsedJournals);
     } catch (_e) {}
     return DEFAULT_BADGES;
   });
@@ -198,17 +264,31 @@ export default function App() {
   const [programs, setPrograms] = useState<SchoolProgram[]>(() => {
     try {
       const saved = localStorage.getItem('si7kaih_programs_prod');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (p: SchoolProgram) => !p.id.startsWith('prog-0') && !p.id.includes('default') && !p.id.includes('sample')
+          );
+        }
+      }
     } catch (_e) {}
-    return DEFAULT_PROGRAMS;
+    return [];
   });
 
   const [followUps, setFollowUps] = useState<FollowUpPlan[]>(() => {
     try {
       const saved = localStorage.getItem('si7kaih_followups_prod');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (f: FollowUpPlan) => !f.id.startsWith('rtl-0') && !f.id.includes('default') && !f.id.includes('sample')
+          );
+        }
+      }
     } catch (_e) {}
-    return DEFAULT_FOLLOW_UPS;
+    return [];
   });
 
   const [studentReflection, setStudentReflection] = useState<StudentMonthlyReflection>(() => {
@@ -253,13 +333,17 @@ export default function App() {
     try {
       localStorage.setItem('si7kaih_journals_prod', JSON.stringify(journals));
       if (typeof window !== 'undefined') {
-        setTimeout(() => {
-          try {
-            window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: journals }));
-          } catch (_e) {}
-        }, 0);
+        window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: journals }));
       }
     } catch (_e) {}
+    // Reset or unlock badges dynamically based on updated journal records without triggering reference churn
+    setBadges((prevBadges) => {
+      const newBadges = calculateBadgesFromJournals(journals);
+      if (JSON.stringify(prevBadges) === JSON.stringify(newBadges)) {
+        return prevBadges;
+      }
+      return newBadges;
+    });
   }, [journals]);
 
   useEffect(() => {
@@ -330,7 +414,10 @@ export default function App() {
         ]);
         if (isMounted) {
           if (remoteJournals && remoteJournals.length > 0) {
-            setJournals(remoteJournals);
+            const filteredJournals = remoteJournals.filter(
+              (j) => !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date)
+            );
+            setJournals(filteredJournals);
           }
           if (remoteReflections) {
             if (remoteReflections.studentReflection) {
@@ -391,6 +478,10 @@ export default function App() {
     const stopAutoSync = startAutomaticSynchronization({
       onJournalUpdate: (updatedJournal, _source) => {
         if (!isMounted) return;
+        const date = updatedJournal.journalDate || (updatedJournal as any).date;
+        if (isJournalTombstoned(updatedJournal.studentId, date)) {
+          return;
+        }
         setJournals((prev) => {
           const idx = prev.findIndex(
             (j) =>
@@ -406,17 +497,34 @@ export default function App() {
           return [updatedJournal, ...prev];
         });
       },
+      onJournalDeleted: (studentId, date) => {
+        if (!isMounted) return;
+        setJournals((prev) => {
+          const next = prev.filter(
+            (j) => !(j.journalDate === date && (j.studentId === studentId || !j.studentId || !studentId))
+          );
+          try {
+            localStorage.setItem('si7kaih_journals_prod', JSON.stringify(next));
+          } catch (_e) {}
+          return next;
+        });
+      },
       onAllJournalsSync: (remoteJournals) => {
         if (!isMounted) return;
         setJournals((prev) => {
           const map = new Map<string, DailyJournal>();
           prev.forEach((j) => {
-            const key = `${j.studentId || 'default'}_${j.journalDate || j.id}`;
-            map.set(key, j);
+            const date = j.journalDate || (j as any).date;
+            if (!isJournalTombstoned(j.studentId, date)) {
+              const key = `${j.studentId || 'default'}_${date || j.id}`;
+              map.set(key, j);
+            }
           });
           let hasChange = false;
           remoteJournals.forEach((rj) => {
-            const key = `${rj.studentId || 'default'}_${rj.journalDate || rj.id}`;
+            const date = rj.journalDate || (rj as any).date;
+            if (isJournalTombstoned(rj.studentId, date)) return;
+            const key = `${rj.studentId || 'default'}_${date || rj.id}`;
             const existing = map.get(key);
             if (!existing || JSON.stringify(existing) !== JSON.stringify(rj)) {
               map.set(key, rj);
@@ -531,9 +639,13 @@ export default function App() {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const emptyDefaultJournal: DailyJournal = useMemo(
     () => ({
-      id: `journal-${todayStr}`,
+      id: `journal-${todayStr}-${currentPersona.id}`,
       studentId: currentPersona.id,
+      studentName: currentPersona.name,
+      studentNisn: currentPersona.identifierValue,
+      className: currentPersona.className,
       schoolId: currentPersona.schoolId || 's1000000-0000-0000-0000-000000000001',
+      schoolName: currentPersona.schoolName,
       journalDate: todayStr,
       status: 'DRAFT',
       completedCount: 0,
@@ -541,36 +653,139 @@ export default function App() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }),
-    [todayStr, currentPersona.id, currentPersona.schoolId]
+    [todayStr, currentPersona]
   );
 
   const todayJournal = useMemo(() => {
-    return journals.find((j) => j.journalDate === todayStr) || emptyDefaultJournal;
-  }, [journals, todayStr, emptyDefaultJournal]);
+    return (
+      journals.find(
+        (j) =>
+          j.journalDate === todayStr &&
+          (j.studentId === currentPersona.id ||
+            (currentPersona.identifierValue && j.studentNisn === currentPersona.identifierValue) ||
+            (currentPersona.name && j.studentName && j.studentName.toLowerCase() === currentPersona.name.toLowerCase()) ||
+            (!j.studentId && currentPersona.id === 'usr-student-01'))
+      ) || emptyDefaultJournal
+    );
+  }, [journals, todayStr, emptyDefaultJournal, currentPersona]);
 
   // Handle resetting a single date's journal
   const handleResetSingleDateJournal = (dateStr: string) => {
-    setJournals((prev) => prev.filter((j) => j.journalDate !== dateStr));
+    const studentId = currentPersona.id;
+    recordDeletedJournalTombstone(studentId, dateStr);
+
+    setJournals((prev) => {
+      const next = prev.filter(
+        (j) => !(j.journalDate === dateStr && (j.studentId === studentId || !j.studentId || currentPersona.role === 'STUDENT'))
+      );
+      try {
+        localStorage.setItem('si7kaih_journals_prod', JSON.stringify(next));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: next }));
+        }
+      } catch (_e) {}
+      return next;
+    });
+
+    // Delete from Supabase cloud database
+    deleteJournalFromSupabase(studentId, dateStr).catch((err) =>
+      console.warn('Supabase deleteJournal error:', err)
+    );
+
+    // Audit log
+    fetch('/api/audit-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actorId: currentPersona.id,
+        actorRole: currentPersona.role,
+        action: 'RESET_JOURNAL',
+        targetEntity: 'daily_journals',
+        targetId: `journal-${dateStr}`,
+        metadata: {
+          journalDate: dateStr,
+        },
+      }),
+    }).catch(() => {});
+
+    setSyncToast({
+      id: `reset-${Date.now()}`,
+      title: 'Isian Jurnal Berhasil Dikosongkan',
+      detail: `Data isian Jurnal 7 Kebiasaan tanggal ${dateStr} telah direset menjadi bersih.`,
+    });
   };
 
   // Handle resetting all journals
   const handleResetAllJournals = () => {
+    journals.forEach((j) => recordDeletedJournalTombstone(j.studentId, j.journalDate));
     setJournals([]);
     try {
       localStorage.removeItem('si7kaih_journals_prod');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: [] }));
+      }
     } catch (_e) {}
+    deleteAllJournalsFromSupabase().catch((err) => console.warn('Supabase deleteAllJournals error:', err));
+    setSyncToast({
+      id: `reset-all-${Date.now()}`,
+      title: 'Seluruh Jurnal Dikosongkan',
+      detail: 'Semua data jurnal telah direset menjadi bersih.',
+    });
   };
 
-  // Handle saving daily journal
+  // Handle saving daily journal with synchronized metadata
   const handleSaveJournal = (updated: DailyJournal) => {
+    const realtimeInfo = updated.savedAt || formatRealtimeSaveTime(new Date());
+    const studentId = updated.studentId || currentPersona.id || 'usr-student-01';
+    const schoolId = updated.schoolId || currentPersona.schoolId || 's1000000-0000-0000-0000-000000000001';
+    const schoolName = updated.schoolName || currentPersona.schoolName || 'Satuan Pendidikan';
+    const className = updated.className || currentPersona.className || '';
+    const studentName = updated.studentName || currentPersona.name || 'Siswa';
+    const studentNisn = updated.studentNisn || currentPersona.identifierValue || '';
+
+    const journalWithSaveTime: DailyJournal = {
+      ...updated,
+      studentId,
+      schoolId,
+      schoolName,
+      className,
+      studentName,
+      studentNisn,
+      savedAt: realtimeInfo,
+    };
+
+    let updatedJournalsList: DailyJournal[] = [];
     setJournals((prev) => {
-      const idx = prev.findIndex((j) => j.journalDate === updated.journalDate);
+      const idx = prev.findIndex(
+        (j) =>
+          (j.id && j.id === journalWithSaveTime.id) ||
+          (j.journalDate === journalWithSaveTime.journalDate &&
+            (j.studentId === journalWithSaveTime.studentId ||
+              (j.studentNisn && journalWithSaveTime.studentNisn && j.studentNisn === journalWithSaveTime.studentNisn) ||
+              (!j.studentId && !journalWithSaveTime.studentId)))
+      );
+      let next: DailyJournal[];
       if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = updated;
-        return next;
+        next = [...prev];
+        next[idx] = journalWithSaveTime;
+      } else {
+        next = [journalWithSaveTime, ...prev];
       }
-      return [...prev, updated];
+      updatedJournalsList = next;
+      try {
+        localStorage.setItem('si7kaih_journals_prod', JSON.stringify(next));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: next }));
+        }
+      } catch (_e) {}
+      return next;
+    });
+
+    // Show realtime sync notification toast
+    setSyncToast({
+      id: `save-${Date.now()}`,
+      title: 'Info Simpan Realtime: Jurnal Berhasil Disimpan',
+      detail: `Data jurnal tanggal ${journalWithSaveTime.journalDate} ananda ${studentName} (${className || 'Kelas'}) terekam realtime pada ${realtimeInfo} dan tersinkronisasi ke Dashboard Guru Wali Kelas.`,
     });
 
     // Record audit log via server API
@@ -582,18 +797,33 @@ export default function App() {
         actorRole: currentPersona.role,
         action: 'SUBMIT_JOURNAL',
         targetEntity: 'daily_journals',
-        targetId: updated.id,
+        targetId: journalWithSaveTime.id,
         metadata: {
-          journalDate: updated.journalDate,
-          completedCount: updated.completedCount,
+          journalDate: journalWithSaveTime.journalDate,
+          completedCount: journalWithSaveTime.completedCount,
+          savedAt: realtimeInfo,
+          studentName,
+          className,
+          schoolId,
         },
       }),
     }).catch(() => {});
 
     // Save permanently to Supabase
-    saveJournalToSupabase(updated).catch((err) =>
+    saveJournalToSupabase(journalWithSaveTime).catch((err) =>
       console.warn('Supabase save error:', err)
     );
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.postMessage({
+          type: 'JOURNALS_UPDATED',
+          journals: updatedJournalsList.length > 0 ? updatedJournalsList : [journalWithSaveTime],
+          latestJournal: journalWithSaveTime,
+        });
+        bc.close();
+      }
+    } catch (_e) {}
   };
 
   // Handle parent or teacher journal validation
@@ -605,7 +835,8 @@ export default function App() {
     let updatedJournalToPersist: DailyJournal | null = null;
     setJournals((prev) =>
       prev.map((j) => {
-        if (j.id === journalId) {
+        const isMatch = j.id === journalId || (j.journalDate && (journalId === j.journalDate || journalId.includes(j.journalDate)));
+        if (isMatch) {
           const updatedEntries = { ...j.entries };
           if (habitCode) {
             if (updatedEntries[habitCode]) {
@@ -628,7 +859,14 @@ export default function App() {
               };
             });
           }
-          const updatedJournal = { ...j, entries: updatedEntries };
+          const isParent = currentPersona.role === 'PARENT';
+          const updatedJournal: DailyJournal = {
+            ...j,
+            entries: updatedEntries,
+            parentValidated: isParent ? true : j.parentValidated,
+            parentValidatedAt: isParent ? new Date().toISOString() : j.parentValidatedAt,
+            parentValidationNote: isParent ? (note || j.parentValidationNote) : j.parentValidationNote,
+          };
           updatedJournalToPersist = updatedJournal;
           return updatedJournal;
         }
@@ -641,6 +879,13 @@ export default function App() {
       saveJournalToSupabase(updatedJournalToPersist).catch((err) =>
         console.warn('Supabase validation save error:', err)
       );
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('si7kaih_sync_channel');
+          bc.postMessage({ type: 'JOURNALS_UPDATED' });
+          bc.close();
+        }
+      } catch (_e) {}
     }
 
     // Record audit log
@@ -772,11 +1017,11 @@ export default function App() {
   };
 
   // Handlers for Inactivity Warning Modal
-  const handleStayLoggedIn = () => {
+  const handleStayLoggedIn = useCallback(() => {
     setIsInactivityWarningOpen(false);
-  };
+  }, []);
 
-  const handleInactivityLogout = () => {
+  const handleInactivityLogout = useCallback(() => {
     setIsInactivityWarningOpen(false);
     try {
       sessionStorage.setItem(
@@ -787,7 +1032,7 @@ export default function App() {
       );
     } catch (_e) {}
     executeLogout(logoutSettings.clearDraftOnLogout);
-  };
+  }, [currentPersona.role, executeLogout, logoutSettings.clearDraftOnLogout]);
 
   // Auto-logout on inactivity: otomatis 5 menit untuk dashboard murid dan orang tua dengan notifikasi peringatan interaktif
   useEffect(() => {
@@ -905,6 +1150,7 @@ export default function App() {
               todayJournal={todayJournal}
               allJournals={journals}
               onOpenJournal={() => openJournalForDate(todayStr)}
+              onResetTodayJournal={() => handleResetSingleDateJournal(todayStr)}
               onOpenReflection={() => setActiveTab('reflection')}
               onOpenBadges={() => setActiveTab('badges')}
               onOpenAICoach={() => setActiveTab('ai-coach')}
@@ -921,6 +1167,7 @@ export default function App() {
               onResetDateJournal={handleResetSingleDateJournal}
               onResetAllJournals={handleResetAllJournals}
               studentName={activeStudentName}
+              currentPersona={currentPersona}
             />
           );
         case 'calendar':
@@ -937,6 +1184,8 @@ export default function App() {
               initialReflection={studentReflection}
               studentName={activeStudentName}
               onSaveReflection={handleSaveStudentReflection}
+              journals={journals}
+              activeStudentId={currentPersona.id}
             />
           );
         case 'badges':
@@ -949,6 +1198,7 @@ export default function App() {
               todayJournal={todayJournal}
               allJournals={journals}
               onOpenJournal={() => openJournalForDate(todayStr)}
+              onResetTodayJournal={() => handleResetSingleDateJournal(todayStr)}
               onOpenReflection={() => setActiveTab('reflection')}
               onOpenBadges={() => setActiveTab('badges')}
               onOpenAICoach={() => setActiveTab('ai-coach')}
@@ -979,6 +1229,9 @@ export default function App() {
           studentName={activeChildName}
           className={activeClassName}
           schoolName={currentPersona.schoolName || ''}
+          currentPersona={currentPersona}
+          studentId={currentPersona.childId}
+          studentNisn={currentPersona.childNisn}
           onValidateJournal={handleValidateJournal}
           onSaveReflection={handleSaveParentReflection}
           activeNavTab={activeTab}
@@ -1020,6 +1273,7 @@ export default function App() {
           activeNavTab={activeTab}
           currentPersona={currentPersona}
           journals={journals}
+          followUps={followUps}
         />
       );
     }
@@ -1063,9 +1317,27 @@ export default function App() {
     return <div>Tampilan Peran</div>;
   };
 
-  const selectedJournalForModal = journals.find(
-    (j) => j.journalDate === selectedJournalDate
-  );
+  const activeStudentIdForModal =
+    currentPersona.role === 'STUDENT'
+      ? currentPersona.id
+      : currentPersona.role === 'PARENT'
+      ? currentPersona.childId || currentPersona.childNisn
+      : undefined;
+
+  const selectedJournalForModal = useMemo(() => {
+    return journals.find(
+      (j) =>
+        j.journalDate === selectedJournalDate &&
+        (!activeStudentIdForModal ||
+          j.studentId === activeStudentIdForModal ||
+          (currentPersona.identifierValue && j.studentNisn === currentPersona.identifierValue) ||
+          (currentPersona.role === 'STUDENT' &&
+            j.studentName &&
+            currentPersona.name &&
+            j.studentName.toLowerCase() === currentPersona.name.toLowerCase()) ||
+          (!j.studentId && activeStudentIdForModal === 'usr-student-01'))
+    );
+  }, [journals, selectedJournalDate, activeStudentIdForModal, currentPersona]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
@@ -1160,6 +1432,7 @@ export default function App() {
         initialJournal={selectedJournalForModal}
         onSave={handleSaveJournal}
         onReset={handleResetSingleDateJournal}
+        currentPersona={currentPersona}
       />
 
       {/* 6. Printable Official Report Modal */}

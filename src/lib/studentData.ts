@@ -68,11 +68,16 @@ export const saveStoredStudents = (students: Student[]): void => {
   try {
     localStorage.setItem('si7kaih_students_mandiri', JSON.stringify(students));
     if (typeof window !== 'undefined') {
-      setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: students }));
+      } catch (_e) {}
+      if ('BroadcastChannel' in window) {
         try {
-          window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: students }));
+          const bc = new BroadcastChannel('si7kaih_sync_channel');
+          bc.postMessage({ type: 'STUDENTS_UPDATED', students });
+          bc.close();
         } catch (_e) {}
-      }, 0);
+      }
     }
   } catch (_e) {}
 };
@@ -81,11 +86,16 @@ export const resetStoredStudents = (): Student[] => {
   try {
     localStorage.setItem('si7kaih_students_mandiri', JSON.stringify([]));
     if (typeof window !== 'undefined') {
-      setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: [] }));
+      } catch (_e) {}
+      if ('BroadcastChannel' in window) {
         try {
-          window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: [] }));
+          const bc = new BroadcastChannel('si7kaih_sync_channel');
+          bc.postMessage({ type: 'STUDENTS_UPDATED', students: [] });
+          bc.close();
         } catch (_e) {}
-      }, 0);
+      }
     }
   } catch (_e) {}
   return [];
@@ -117,11 +127,16 @@ export const saveStoredRombels = (rombels: Rombel[]): void => {
   try {
     localStorage.setItem('si7kaih_rombels_mandiri', JSON.stringify(rombels));
     if (typeof window !== 'undefined') {
-      setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: rombels }));
+      } catch (_e) {}
+      if ('BroadcastChannel' in window) {
         try {
-          window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: rombels }));
+          const bc = new BroadcastChannel('si7kaih_sync_channel');
+          bc.postMessage({ type: 'ROMBELS_UPDATED', rombels });
+          bc.close();
         } catch (_e) {}
-      }, 0);
+      }
     }
   } catch (_e) {}
 };
@@ -130,11 +145,16 @@ export const resetStoredRombels = (): Rombel[] => {
   try {
     localStorage.setItem('si7kaih_rombels_mandiri', JSON.stringify([]));
     if (typeof window !== 'undefined') {
-      setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: [] }));
+      } catch (_e) {}
+      if ('BroadcastChannel' in window) {
         try {
-          window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: [] }));
+          const bc = new BroadcastChannel('si7kaih_sync_channel');
+          bc.postMessage({ type: 'ROMBELS_UPDATED', rombels: [] });
+          bc.close();
         } catch (_e) {}
-      }, 0);
+      }
     }
   } catch (_e) {}
   return [];

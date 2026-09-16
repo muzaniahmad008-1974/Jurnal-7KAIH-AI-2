@@ -3,7 +3,7 @@
 // Peringatan Otomatis Sebelum Sesi Berakhir Akibat Inaktivitas (Khusus Murid & Akun Aktif)
 // ============================================================================
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Clock, LogOut, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 interface InactivityWarningModalProps {
@@ -26,6 +26,10 @@ export const InactivityWarningModal: React.FC<InactivityWarningModalProps> = ({
   onLogoutNow,
 }) => {
   const [secondsRemaining, setSecondsRemaining] = useState<number>(warningDurationSeconds);
+  const onLogoutNowRef = useRef(onLogoutNow);
+  onLogoutNowRef.current = onLogoutNow;
+  const onStayLoggedInRef = useRef(onStayLoggedIn);
+  onStayLoggedInRef.current = onStayLoggedIn;
 
   // Reset countdown every time the modal is opened
   useEffect(() => {
@@ -40,7 +44,7 @@ export const InactivityWarningModal: React.FC<InactivityWarningModalProps> = ({
       setSecondsRemaining((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          onLogoutNow();
+          onLogoutNowRef.current();
           return 0;
         }
         return prev - 1;
@@ -48,23 +52,19 @@ export const InactivityWarningModal: React.FC<InactivityWarningModalProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isOpen, warningDurationSeconds, onLogoutNow]);
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (!isOpen) return;
-      if (e.key === 'Escape' || e.key === 'Enter') {
-        e.preventDefault();
-        onStayLoggedIn();
-      }
-    },
-    [isOpen, onStayLoggedIn]
-  );
+  }, [isOpen, warningDurationSeconds]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Enter') {
+        e.preventDefault();
+        onStayLoggedInRef.current();
+      }
+    };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

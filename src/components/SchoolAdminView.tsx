@@ -132,17 +132,21 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   useEffect(() => {
     const syncUsers = () => {
       const freshUsers = getStoredUsers();
-      setUserAccounts(freshUsers);
+      setUserAccounts((prev) => (JSON.stringify(prev) === JSON.stringify(freshUsers) ? prev : freshUsers));
     };
     syncUsers();
 
     const syncMaster = () => {
-      setSchools(getStoredSchools());
+      const freshSchools = getStoredSchools();
+      setSchools((prev) => (JSON.stringify(prev) === JSON.stringify(freshSchools) ? prev : freshSchools));
       const allS = getStoredStudents();
-      setStudents(allS.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName)));
+      const freshStudents = allS.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName));
+      setStudents((prev) => (JSON.stringify(prev) === JSON.stringify(freshStudents) ? prev : freshStudents));
       const allR = getStoredRombels();
-      setRombels(allR.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName)));
+      const freshRombels = allR.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName));
+      setRombels((prev) => (JSON.stringify(prev) === JSON.stringify(freshRombels) ? prev : freshRombels));
     };
+    syncMaster();
 
     window.addEventListener('storage', syncUsers);
     window.addEventListener('si7kaih_users_updated', syncUsers);
@@ -159,15 +163,6 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       window.removeEventListener('si7kaih_rombels_updated', syncMaster);
       window.removeEventListener('focus', syncUsers);
     };
-  }, [activeNavTab, activeSubTab, currentSchoolId, currentSchoolName]);
-
-  // Re-read storage if current persona's school changes
-  useEffect(() => {
-    const allS = getStoredStudents();
-    setStudents(allS.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName)));
-    const allR = getStoredRombels();
-    setRombels(allR.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName)));
-    setUserAccounts(getStoredUsers());
   }, [currentSchoolId, currentSchoolName]);
 
   const [searchUserQuery, setSearchUserQuery] = useState('');

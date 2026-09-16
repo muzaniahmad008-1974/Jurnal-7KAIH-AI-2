@@ -180,7 +180,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   </span>
                   {journal && (
                     <span className="text-[10px] hidden sm:inline">
-                      {journal.entries.WORSHIP?.parentValidated ? '✅ Tervalidasi' : '⏳ Menunggu'}
+                      {journal.parentValidated || Object.values(journal.entries || {}).some((e: any) => e?.parentValidated)
+                        ? '✅ Tervalidasi'
+                        : '⏳ Menunggu'}
                     </span>
                   )}
                 </div>

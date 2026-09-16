@@ -26,6 +26,7 @@ import {
   Smile,
   ShieldCheck,
   RotateCcw,
+  Clock,
 } from 'lucide-react';
 import {
   DailyJournal,
@@ -38,7 +39,8 @@ import {
   SocialData,
   SleepEarlyData,
 } from '../../packages/types/src/index';
-import { HABIT_LIST } from '../lib/constants';
+import { HABIT_LIST, UserPersona } from '../lib/constants';
+import { formatRealtimeSaveTime } from '../lib/dateUtils';
 
 interface StudentJournalViewProps {
   journals: DailyJournal[];
@@ -46,6 +48,7 @@ interface StudentJournalViewProps {
   onResetDateJournal?: (date: string) => void;
   onResetAllJournals?: () => void;
   studentName: string;
+  currentPersona?: UserPersona;
 }
 
 export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
@@ -54,18 +57,37 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
   onResetDateJournal,
   onResetAllJournals,
   studentName,
+  currentPersona,
 }) => {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Find existing journal for selectedDate or prepare fallback
+  const studentId = currentPersona?.id || 'usr-student-01';
+  const schoolId = currentPersona?.schoolId || 's1000000-0000-0000-0000-000000000001';
+  const schoolName = currentPersona?.schoolName || 'Satuan Pendidikan';
+  const className = currentPersona?.className || '';
+  const studentNisn = currentPersona?.identifierValue || '';
+
+  // Find existing journal for selectedDate matching this student
   const currentJournal = useMemo(() => {
     return (
-      journals.find((j) => j.journalDate === selectedDate) || {
-        id: `journal-${selectedDate}`,
-        studentId: 'usr-student-01',
-        schoolId: 's1000000-0000-0000-0000-000000000001',
+      journals.find(
+        (j) =>
+          j.journalDate === selectedDate &&
+          (j.studentId === studentId ||
+            (studentNisn && j.studentId === studentNisn) ||
+            (studentNisn && j.studentNisn === studentNisn) ||
+            (j.studentName && j.studentName.toLowerCase() === studentName.toLowerCase()) ||
+            (!j.studentId && studentId === 'usr-student-01'))
+      ) || {
+        id: `journal-${selectedDate}-${studentId}`,
+        studentId,
+        studentName,
+        studentNisn,
+        schoolId,
+        schoolName,
+        className,
         journalDate: selectedDate,
         status: 'DRAFT',
         completedCount: 0,
@@ -74,7 +96,15 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
         updatedAt: new Date().toISOString(),
       }
     );
-  }, [journals, selectedDate]);
+  }, [journals, selectedDate, studentId, studentName, studentNisn, schoolId, schoolName, className]);
+
+  const currentSavedRealtime = useMemo(() => {
+    if (currentJournal?.savedAt) return currentJournal.savedAt;
+    if (currentJournal?.updatedAt && currentJournal.completedCount > 0) {
+      return formatRealtimeSaveTime(currentJournal.updatedAt);
+    }
+    return null;
+  }, [currentJournal]);
 
   // Local entry states for the 7 habits - defaults clean & empty
   const [wakeEarly, setWakeEarly] = useState<WakeEarlyData>({
@@ -196,16 +226,24 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
     (sleepEarly.completed ? 1 : 0);
 
   const handleSave = () => {
-    const journalId = currentJournal?.id || `journal-${selectedDate}`;
+    const journalId = currentJournal?.id || `journal-${selectedDate}-${studentId}`;
+    const now = new Date();
+    const realtimeInfo = formatRealtimeSaveTime(now);
+
     const updatedJournal: DailyJournal = {
       id: journalId,
-      studentId: 'usr-student-01',
-      schoolId: 's1000000-0000-0000-0000-000000000001',
+      studentId,
+      studentName,
+      studentNisn,
+      schoolId,
+      schoolName,
+      className,
       journalDate: selectedDate,
       status: completedCount >= 6 ? 'SUBMITTED_COMPLETED' : 'SUBMITTED_NOT_COMPLETED',
       completedCount,
-      createdAt: currentJournal?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      savedAt: realtimeInfo,
+      createdAt: currentJournal?.createdAt || now.toISOString(),
+      updatedAt: now.toISOString(),
       entries: {
         WAKE_EARLY: {
           id: `entry-${selectedDate}-WAKE_EARLY`,
@@ -311,7 +349,7 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
       });
     }
 
-    showToast(`Jurnal tanggal ${selectedDate} berhasil disimpan dengan gembira!`);
+    showToast(`Pengisian selesai! Jurnal tanggal ${selectedDate} berhasil disimpan secara realtime: ${realtimeInfo}`);
   };
 
   // Reset / kosongkan isian form tanggal ini
@@ -452,9 +490,23 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
       {/* Daily Progress Banner */}
       <div className="bg-gradient-to-r from-[#0753A5] to-[#0A64C2] rounded-3xl p-6 text-white shadow-md flex flex-wrap items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full">
-            Tanggal Jurnal: {formattedSelectedDate}
-          </span>
+          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full">
+              Tanggal Jurnal: {formattedSelectedDate}
+            </span>
+            {currentSavedRealtime ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-300/40 text-[11px] font-semibold text-emerald-100 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <Clock className="w-3 h-3 text-emerald-300" />
+                <span>Info Simpan Realtime: {currentSavedRealtime}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/10 text-[11px] font-medium text-blue-100">
+                <Clock className="w-3 h-3 text-blue-200" />
+                <span>Info Simpan: Belum pernah disimpan</span>
+              </span>
+            )}
+          </div>
           <h3 className="text-xl font-black mt-1">
             {completedCount === 7
               ? 'Luar Biasa! Semua 7 Kebiasaan Tuntas Hari Ini 🎉'
@@ -834,7 +886,14 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>Pengisian jujur dinilai lebih tinggi daripada sekadar angka. Belajar bertanggung jawab!</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {currentSavedRealtime && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/90 px-3 py-2 rounded-2xl border border-slate-200 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Info Simpan Realtime: <strong className="text-slate-900 font-bold">{currentSavedRealtime}</strong></span>
+            </span>
+          )}
           <button
             id="btn-reset-journal-entry-bottom"
             type="button"

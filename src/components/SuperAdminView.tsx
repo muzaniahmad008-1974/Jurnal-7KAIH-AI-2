@@ -73,6 +73,10 @@ import {
   DEFAULT_ROLE_PREFERENCES,
   getStoredRolePreferences,
   saveStoredRolePreferences,
+  markUserAsDeleted,
+  markUsersAsDeleted,
+  unmarkUserAsDeleted,
+  isUserDeleted,
 } from '../lib/constants';
 import {
   SchoolMaster,
@@ -99,6 +103,8 @@ import { UserAvatar } from './UserAvatar';
 import {
   saveSuperAdminMasterDataToSupabase,
   syncOnSuperAdminLogin,
+  deleteUserFromSupabase,
+  deleteUsersFromSupabase,
 } from '../lib/supabaseService';
 
 interface SuperAdminViewProps {
@@ -181,11 +187,16 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   // Real-time synchronization of users & master records across tabs / window mutations
   useEffect(() => {
     const syncAllMaster = () => {
-      setUserAccounts(getStoredUsers());
-      setSchools(getStoredSchools());
-      setRombels(getStoredRombels());
-      setStudents(getStoredStudents());
-      setHabitMasters(getStoredHabitMasters());
+      const freshUsers = getStoredUsers();
+      setUserAccounts((prev) => (JSON.stringify(prev) === JSON.stringify(freshUsers) ? prev : freshUsers));
+      const freshSchools = getStoredSchools();
+      setSchools((prev) => (JSON.stringify(prev) === JSON.stringify(freshSchools) ? prev : freshSchools));
+      const freshRombels = getStoredRombels();
+      setRombels((prev) => (JSON.stringify(prev) === JSON.stringify(freshRombels) ? prev : freshRombels));
+      const freshStudents = getStoredStudents();
+      setStudents((prev) => (JSON.stringify(prev) === JSON.stringify(freshStudents) ? prev : freshStudents));
+      const freshHabits = getStoredHabitMasters();
+      setHabitMasters((prev) => (JSON.stringify(prev) === JSON.stringify(freshHabits) ? prev : freshHabits));
     };
     syncAllMaster();
 
@@ -206,7 +217,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       window.removeEventListener('si7kaih_habits_updated', syncAllMaster);
       window.removeEventListener('focus', syncAllMaster);
     };
-  }, [activeNavTab, activeTab]);
+  }, []);
 
   // Search & Filter
   const [schoolSearchQuery, setSchoolSearchQuery] = useState('');
@@ -527,10 +538,10 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
     setDeleteModalState({
       isOpen: true,
       type: 'USER',
-      title: 'Hapus Akun Pengguna',
-      itemName: user.name,
-      itemIdentifier: `@${user.username} • Peran: ${user.role} • Lembaga: ${user.schoolName || 'SIM Pusat'}`,
-      warningMessage: `Akun pengguna "${user.name}" (@${user.username}) akan dihapus dan tidak dapat lagi masuk ke sistem.`,
+      title: 'Hapus Akun Pengguna Secara Permanen',
+      itemName: `${user.name} (@${user.username})`,
+      itemIdentifier: `Peran: ${user.role} • Satuan Pendidikan: ${user.schoolName || 'SIM Pusat'}`,
+      warningMessage: `Akun pengguna "${user.name}" (@${user.username}) akan dihapus secara permanen dari basis data dan dicatat dalam daftar proteksi agar tidak otomatis muncul kembali.`,
       data: user,
     });
   };
@@ -548,14 +559,26 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   };
 
   const handleOpenDeleteSelectedUsers = () => {
-    if (selectedUserIds.size === 0) return;
+    const validSelected = Array.from(selectedUserIds).filter((id) => {
+      const u = userAccounts.find((acc) => acc.id === id);
+      if (!u) return false;
+      if (u.role === 'SUPER_ADMIN' && userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length <= 1) return false;
+      if (currentPersona && u.id === currentPersona.id) return false;
+      return true;
+    });
+
+    if (validSelected.length === 0) {
+      showToast('Tidak ada akun yang dapat dihapus (akun Super Admin aktif dilindungi).');
+      return;
+    }
+
     setDeleteModalState({
       isOpen: true,
       type: 'BULK_USER',
-      title: `Hapus ${selectedUserIds.size} Akun Pengguna Terpilih`,
-      itemName: `${selectedUserIds.size} Akun Pengguna terpilih`,
-      itemIdentifier: 'Penghapusan massal akun pengguna',
-      warningMessage: `Semua ${selectedUserIds.size} akun pengguna yang dipilih akan dihapus secara permanen dari sistem.`,
+      title: `Hapus ${validSelected.length} Akun Pengguna Terpilih`,
+      itemName: `${validSelected.length} Akun Pengguna terpilih`,
+      itemIdentifier: 'Penghapusan massal akun pengguna secara permanen',
+      warningMessage: `Semua ${validSelected.length} akun pengguna terpilih akan dihapus secara permanen dari basis data dan dicatat dalam daftar proteksi agar tidak otomatis muncul kembali.`,
     });
   };
 
@@ -615,10 +638,22 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       });
     } else if (type === 'USER' && data) {
       const user = data as UserPersona;
-      const updated = userAccounts.filter((u) => u.id !== user.id);
+
+      // 1. Rekam tombstone agar tidak otomatis muncul kembali saat refresh atau sinkronisasi
+      markUserAsDeleted(user.id, user.username, currentPersona?.name);
+
+      // 2. Hapus langsung dari Supabase database
+      deleteUserFromSupabase(user.id, user.username).catch((err) => {
+        console.warn('Gagal menghapus user dari Supabase:', err);
+      });
+
+      // 3. Hapus dari state lokal
+      const updated = userAccounts.filter(
+        (u) => u.id !== user.id && (!user.username || u.username.toLowerCase() !== user.username.toLowerCase())
+      );
       updateUsers(updated);
 
-      // Sinkronisasi: Jika akun adalah Admin Sekolah, perbarui Master Satuan Pendidikan
+      // 4. Sinkronisasi: Jika akun adalah Admin Sekolah, perbarui Master Satuan Pendidikan
       if (user.role === 'SCHOOL_ADMIN') {
         const updatedSchools = schools.map((s) => {
           if (
@@ -637,7 +672,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         updateSchools(updatedSchools);
       }
 
-      showToast(`Akun pengguna "${user.name}" (@${user.username}) berhasil dihapus & data master disinkronkan.`);
+      showToast(`Akun pengguna "${user.name}" (@${user.username}) berhasil dihapus secara permanen.`);
       setSelectedUserIds((prev) => {
         const next = new Set(prev);
         next.delete(user.id);
@@ -649,13 +684,59 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       showToast(`${selectedStudentIds.size} peserta didik terpilih berhasil dihapus.`);
       setSelectedStudentIds(new Set());
     } else if (type === 'BULK_USER') {
-      const updated = userAccounts.filter((u) => {
-        if (!selectedUserIds.has(u.id)) return true;
-        if (u.role === 'SUPER_ADMIN' || (currentPersona && u.id === currentPersona.id)) return true;
-        return false;
+      const usersToDelete = userAccounts.filter((u) => {
+        if (!selectedUserIds.has(u.id)) return false;
+        if (u.role === 'SUPER_ADMIN' && userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length <= 1) return false;
+        if (currentPersona && u.id === currentPersona.id) return false;
+        return true;
       });
+
+      if (usersToDelete.length === 0) {
+        showToast('Tidak ada akun valid yang dapat dihapus.');
+        setDeleteModalState((prev) => ({ ...prev, isOpen: false }));
+        return;
+      }
+
+      // 1. Rekam tombstone massal
+      markUsersAsDeleted(
+        usersToDelete.map((u) => ({ id: u.id, username: u.username })),
+        currentPersona?.name
+      );
+
+      // 2. Hapus dari Supabase database
+      const delIds = usersToDelete.map((u) => u.id);
+      const delUsernames = usersToDelete.map((u) => u.username);
+      deleteUsersFromSupabase(delIds, delUsernames).catch((err) => {
+        console.warn('Gagal menghapus massal user dari Supabase:', err);
+      });
+
+      // 3. Hapus dari state lokal
+      const idSet = new Set(delIds);
+      const updated = userAccounts.filter((u) => !idSet.has(u.id));
       updateUsers(updated);
-      showToast(`Akun terpilih berhasil dihapus.`);
+
+      // 4. Sinkronisasi sekolah jika ada admin sekolah yang dihapus
+      const deletedAdminUsernames = new Set(
+        usersToDelete
+          .filter((u) => u.role === 'SCHOOL_ADMIN')
+          .map((u) => u.username.toLowerCase())
+      );
+      if (deletedAdminUsernames.size > 0) {
+        const updatedSchools = schools.map((s) => {
+          if (s.adminUsername && deletedAdminUsernames.has(s.adminUsername.toLowerCase())) {
+            return {
+              ...s,
+              adminName: '',
+              adminUsername: '',
+              adminEmail: '',
+            };
+          }
+          return s;
+        });
+        updateSchools(updatedSchools);
+      }
+
+      showToast(`${usersToDelete.length} akun pengguna terpilih berhasil dihapus secara permanen.`);
       setSelectedUserIds(new Set());
     } else if (type === 'AUDIT_LOGS') {
       setLogs([]);
@@ -679,10 +760,21 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         setSelectedStudentIds(new Set());
         showToast('Master Peserta Didik berhasil dikosongkan.');
       } else if (data.action === 'RESET_USERS') {
+        const usersToDelete = userAccounts.filter((u) => u.role !== 'SUPER_ADMIN');
+        if (usersToDelete.length > 0) {
+          markUsersAsDeleted(
+            usersToDelete.map((u) => ({ id: u.id, username: u.username })),
+            currentPersona?.name
+          );
+          deleteUsersFromSupabase(
+            usersToDelete.map((u) => u.id),
+            usersToDelete.map((u) => u.username)
+          ).catch((err) => console.warn('Supabase reset users delete notice:', err));
+        }
         const def = resetStoredUsers();
         updateUsers(def);
         setSelectedUserIds(new Set());
-        showToast('Master Akun berhasil dibersihkan (hanya Super Admin aktif).');
+        showToast('Master Akun berhasil dibersihkan permanen (hanya Super Admin aktif).');
       }
     }
 
@@ -1215,6 +1307,15 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           };
         } else if (sch.adminUsername && sch.adminUsername.trim()) {
           const cleanUser = sch.adminUsername.trim().toLowerCase();
+          // Jika username sudah pernah dihapus permanen oleh Super Admin, jangan buat akun baru
+          if (isUserDeleted(undefined, cleanUser)) {
+            return {
+              ...sch,
+              adminUsername: '',
+              adminName: '',
+              adminEmail: '',
+            };
+          }
           const newAdmin: UserPersona = {
             id: `usr-admin-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
             name: sch.adminName || `Admin ${sch.name}`,
@@ -1384,6 +1485,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         email: cleanEmail,
       };
 
+      unmarkUserAsDeleted(updatedUser.id, updatedUser.username);
       const updatedUsersList = userAccounts.map((u) => (u.id === editingUser.id ? updatedUser : u));
       updateUsers(updatedUsersList);
 
@@ -1486,6 +1588,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         createdDate: new Date().toISOString().split('T')[0],
       };
 
+      unmarkUserAsDeleted(newAccount.id, newAccount.username);
       updateUsers([...userAccounts, newAccount]);
 
       // Sinkronisasi otomatis ke Data Master Global
@@ -2674,10 +2777,69 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                 ))}
               </div>
 
+              {/* Bulk Actions Banner if users are selected */}
+              {selectedUserIds.size > 0 && (
+                <div className="flex items-center justify-between p-3.5 bg-rose-50 rounded-2xl border border-rose-200 text-rose-900 text-xs animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2 font-bold">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{selectedUserIds.size} akun pengguna dipilih untuk penghapusan permanen</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedUserIds(new Set())}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-bold cursor-pointer transition-colors shadow-2xs"
+                    >
+                      Batalkan Pilihan
+                    </button>
+                    <button
+                      id="btn-bulk-delete-master-users"
+                      onClick={handleOpenDeleteSelectedUsers}
+                      className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus Permanen {selectedUserIds.size} Akun Terpilih</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-500 font-bold">
+                      <th className="p-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={
+                            filteredUsers.length > 0 &&
+                            filteredUsers
+                              .filter(
+                                (u) =>
+                                  u.id !== currentPersona?.id &&
+                                  (u.role !== 'SUPER_ADMIN' ||
+                                    userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length > 1)
+                              )
+                              .every((u) => selectedUserIds.has(u.id))
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const selectable = filteredUsers
+                                .filter(
+                                  (u) =>
+                                    u.id !== currentPersona?.id &&
+                                    (u.role !== 'SUPER_ADMIN' ||
+                                      userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length > 1)
+                                )
+                                .map((u) => u.id);
+                              setSelectedUserIds(new Set(selectable));
+                            } else {
+                              setSelectedUserIds(new Set());
+                            }
+                          }}
+                          className="rounded text-[#0753A5] focus:ring-[#0753A5] cursor-pointer"
+                          title="Pilih Semua Akun yang Dapat Dihapus"
+                        />
+                      </th>
                       <th className="p-3">Pengguna</th>
                       <th className="p-3">Peran / Role</th>
                       <th className="p-3">Username</th>
@@ -2690,8 +2852,37 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {filteredUsers.map((u) => {
                       const conn = getMasterConnectionInfo(u);
+                      const isProtected =
+                        currentPersona?.id === u.id ||
+                        (u.role === 'SUPER_ADMIN' &&
+                          userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length <= 1);
+
                       return (
-                        <tr key={u.id} className="hover:bg-slate-50/60">
+                        <tr
+                          key={u.id}
+                          className={`transition-colors ${
+                            selectedUserIds.has(u.id) ? 'bg-rose-50/40' : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <td className="p-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedUserIds.has(u.id)}
+                              disabled={isProtected}
+                              onChange={(e) => {
+                                setSelectedUserIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) {
+                                    next.add(u.id);
+                                  } else {
+                                    next.delete(u.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                              className="rounded text-[#0753A5] focus:ring-[#0753A5] disabled:opacity-30 cursor-pointer"
+                            />
+                          </td>
                           <td className="p-3">
                             <div className="flex items-center gap-2.5">
                               <UserAvatar avatar={u.avatar} role={u.role} name={u.name} size="sm" />
@@ -2761,11 +2952,18 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                               {u.accountStatus === 'MANDIRI_NONAKTIF' ? 'Aktifkan' : 'Nonaktifkan'}
                             </button>
                             <button
+                              id={`btn-delete-master-user-${u.id}`}
                               onClick={() => handleDeleteUser(u)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer inline-flex items-center justify-center align-middle"
-                              title="Hapus Akun Pengguna dari Master Global"
+                              disabled={isProtected}
+                              className="px-2 py-1 rounded-lg border border-rose-200 bg-rose-50/70 text-rose-700 hover:bg-rose-100 hover:border-rose-300 disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                              title={
+                                isProtected
+                                  ? 'Akun aktif atau Super Admin utama dilindungi dari penghapusan'
+                                  : 'Hapus Akun Pengguna Secara Permanen'
+                              }
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3 h-3 text-rose-600" />
+                              <span>Hapus</span>
                             </button>
                           </td>
                         </tr>
@@ -3150,11 +3348,70 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
               </div>
             </div>
 
+            {/* Bulk Actions Banner if users are selected */}
+            {selectedUserIds.size > 0 && (
+              <div className="flex items-center justify-between p-3.5 bg-rose-50 rounded-2xl border border-rose-200 text-rose-900 text-xs animate-in fade-in duration-150">
+                <div className="flex items-center gap-2 font-bold">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{selectedUserIds.size} akun pengguna dipilih untuk penghapusan permanen</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedUserIds(new Set())}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-bold cursor-pointer transition-colors shadow-2xs"
+                  >
+                    Batalkan Pilihan
+                  </button>
+                  <button
+                    id="btn-bulk-delete-users"
+                    onClick={handleOpenDeleteSelectedUsers}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Permanen {selectedUserIds.size} Akun Terpilih</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Users Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-500 font-bold">
+                    <th className="p-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={
+                          filteredUsers.length > 0 &&
+                          filteredUsers
+                            .filter(
+                              (u) =>
+                                u.id !== currentPersona?.id &&
+                                (u.role !== 'SUPER_ADMIN' ||
+                                  userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length > 1)
+                            )
+                            .every((u) => selectedUserIds.has(u.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            const selectable = filteredUsers
+                              .filter(
+                                (u) =>
+                                  u.id !== currentPersona?.id &&
+                                  (u.role !== 'SUPER_ADMIN' ||
+                                    userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length > 1)
+                              )
+                              .map((u) => u.id);
+                            setSelectedUserIds(new Set(selectable));
+                          } else {
+                            setSelectedUserIds(new Set());
+                          }
+                        }}
+                        className="rounded text-[#0753A5] focus:ring-[#0753A5] cursor-pointer"
+                        title="Pilih Semua Akun yang Dapat Dihapus"
+                      />
+                    </th>
                     <th className="p-3">Nama Pengguna</th>
                     <th className="p-3">Peran & Tanggung Jawab</th>
                     <th className="p-3">Satuan Pendidikan</th>
@@ -3169,13 +3426,41 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   {filteredUsers.map((u) => {
                     const isSchoolAdmin = u.role === 'SCHOOL_ADMIN';
                     const conn = getMasterConnectionInfo(u);
+                    const isProtected =
+                      currentPersona?.id === u.id ||
+                      (u.role === 'SUPER_ADMIN' &&
+                        userAccounts.filter((acc) => acc.role === 'SUPER_ADMIN').length <= 1);
+
                     return (
                       <tr
                         key={u.id}
                         className={`transition-colors ${
-                          isSchoolAdmin ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50/60'
+                          selectedUserIds.has(u.id)
+                            ? 'bg-rose-50/40'
+                            : isSchoolAdmin
+                            ? 'bg-amber-50/30 hover:bg-amber-50/60'
+                            : 'hover:bg-slate-50/60'
                         }`}
                       >
+                        <td className="p-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.has(u.id)}
+                            disabled={isProtected}
+                            onChange={(e) => {
+                              setSelectedUserIds((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) {
+                                  next.add(u.id);
+                                } else {
+                                  next.delete(u.id);
+                                }
+                                return next;
+                              });
+                            }}
+                            className="rounded text-[#0753A5] focus:ring-[#0753A5] disabled:opacity-30 cursor-pointer"
+                          />
+                        </td>
                         <td className="p-3 font-bold text-slate-900">
                           <div className="flex items-center gap-2.5">
                             <UserAvatar avatar={u.avatar} role={u.role} name={u.name} size="md" />
@@ -3264,11 +3549,18 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                             {u.accountStatus === 'MANDIRI_NONAKTIF' ? 'Aktifkan' : 'Nonaktifkan'}
                           </button>
                           <button
+                            id={`btn-delete-user-${u.id}`}
                             onClick={() => handleDeleteUser(u)}
-                            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer inline-flex items-center justify-center align-middle"
-                            title="Hapus Akun Pengguna dari Master Global"
+                            disabled={isProtected}
+                            className="px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50/70 text-rose-700 hover:bg-rose-100 hover:border-rose-300 disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                            title={
+                              isProtected
+                                ? 'Akun aktif atau Super Admin utama dilindungi dari penghapusan'
+                                : 'Hapus Akun Pengguna Secara Permanen'
+                            }
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3 h-3 text-rose-600" />
+                            <span>Hapus</span>
                           </button>
                         </td>
                       </tr>
@@ -3944,6 +4236,41 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-1.5 sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Aturan & Kebijakan Validasi Harian Orang Tua</span>
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                          Standar Nasional
+                        </span>
+                      </label>
+                      <select
+                        id="select-parent-validation-req"
+                        value={rolePreferences.parentValidationRequirement || 'ACCORDING_TO_CHILD_JOURNAL'}
+                        onChange={(e) =>
+                          setRolePreferences((prev) => ({
+                            ...prev,
+                            parentValidationRequirement: e.target.value as 'ACCORDING_TO_CHILD_JOURNAL' | 'REQUIRE_ALL_7',
+                          }))
+                        }
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-medium text-slate-800"
+                      >
+                        <option value="ACCORDING_TO_CHILD_JOURNAL">
+                          Sesuai Data Jurnal Anak (Fleksibel & Realistis — Tidak Harus 7 Kebiasaan Selesai)
+                        </option>
+                        <option value="REQUIRE_ALL_7">
+                          Harus Selesai Seluruh 7 Kebiasaan (Ketat)
+                        </option>
+                      </select>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        {rolePreferences.parentValidationRequirement === 'REQUIRE_ALL_7'
+                          ? 'Validasi harian orang tua baru dapat disetujui jika seluruh 7 indikator kebiasaan telah dicentang selesai oleh siswa.'
+                          : 'Validasi harian orang tua tidak mengharuskan seluruh 7 kebiasaan dicentang selesai, melainkan memvalidasi sesuai data aktual yang dicatatkan anak pada hari tersebut guna membina kejujuran dan apresiasi positif.'}
+                      </p>
+                    </div>
+
                     <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-1.5">
                       <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-blue-600" />
@@ -3980,6 +4307,26 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                           }))
                         }
                         className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-4 sm:col-span-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">Izinkan Validasi Parsial / Berapapun Kebiasaan Terisi</span>
+                        <span className="text-[11px] text-slate-500 block leading-relaxed">
+                          Orang tua tetap dapat memberikan validasi dan apresiasi motivasi meskipun anak baru mengisi sebagian kebiasaan hari ini.
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={rolePreferences.parentAllowPartialValidation ?? true}
+                        onChange={(e) =>
+                          setRolePreferences((prev) => ({
+                            ...prev,
+                            parentAllowPartialValidation: e.target.checked,
+                          }))
+                        }
+                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
                       />
                     </div>
                   </div>

@@ -58,7 +58,7 @@ interface StudentClassRow {
   completedTodayCount: number;
   monthlyConsistency: number; // %
   completenessRate: number; // %
-  category: EarlyWarningCategory;
+  category: EarlyWarningCategory | 'BELUM_ADA_DATA';
   lastJournalDate: string;
   validatedByTeacher: boolean;
   gender?: 'L' | 'P';
@@ -75,20 +75,68 @@ const getStoredValidations = (): Record<string, boolean> => {
     const raw = localStorage.getItem(VALIDATIONS_STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch (_e) {}
-  return {
-    'usr-student-01': true,
-    'usr-student-02': true,
-    'usr-student-04': true,
-    'usr-student-06': true,
-    'usr-student-07': true,
-    'usr-student-09': true,
-  };
+  return {};
 };
 
 const saveStoredValidations = (val: Record<string, boolean>) => {
   try {
     localStorage.setItem(VALIDATIONS_STORAGE_KEY, JSON.stringify(val));
   } catch (_e) {}
+};
+
+const FOLLOWUPS_STORAGE_KEY = 'si7kaih_teacher_followups_prod';
+const PROGRAMS_STORAGE_KEY = 'si7kaih_teacher_programs_prod';
+
+const normalizeClassName = (name?: string): string => {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .replace(/^kelas\s*/i, '')
+    .replace(/^kls\s*/i, '')
+    .replace(/viii/g, '8')
+    .replace(/vii/g, '7')
+    .replace(/ix/g, '9')
+    .replace(/x/g, '10')
+    .replace(/[\s\-_]/g, '')
+    .trim();
+};
+
+const getStoredTeacherFollowUps = (): FollowUpPlan[] => {
+  try {
+    const raw = localStorage.getItem(FOLLOWUPS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(
+          (f: FollowUpPlan) => !f.id.startsWith('rtl-0') && !f.id.includes('default') && !f.id.includes('sample')
+        );
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(FOLLOWUPS_STORAGE_KEY, JSON.stringify(cleaned));
+        }
+        return cleaned;
+      }
+    }
+  } catch (_e) {}
+  return [];
+};
+
+const getStoredTeacherPrograms = (): SchoolProgram[] => {
+  try {
+    const raw = localStorage.getItem(PROGRAMS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(
+          (p: SchoolProgram) => !p.id.startsWith('prog-0') && !p.id.includes('default') && !p.id.includes('sample')
+        );
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(PROGRAMS_STORAGE_KEY, JSON.stringify(cleaned));
+        }
+        return cleaned;
+      }
+    }
+  } catch (_e) {}
+  return [];
 };
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
@@ -101,7 +149,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'STUDENTS' | 'MONITORING' | 'PROGRAMS' | 'RTL' | 'AI_INSIGHT'>('OVERVIEW');
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'TERPANTAU_BAIK' | 'PERLU_PENGUATAN' | 'PERLU_PENDAMPINGAN'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'TERPANTAU_BAIK' | 'PERLU_PENGUATAN' | 'PERLU_PENDAMPINGAN' | 'BELUM_ADA_DATA'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'AKTIF' | 'MUTASI' | 'LULUS'>('ALL');
   const [selectedStudent, setSelectedStudent] = useState<StudentDossierData | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [aiAnalysisResult, setAiAnalysisResult] = useState<any | null>(null);
@@ -116,6 +165,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [lastSyncTime, setLastSyncTime] = useState<string>(() => new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Synchronized journals state reflecting real-time updates from students
+  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(journals);
+  const [liveSyncToast, setLiveSyncToast] = useState<{ studentName: string; time: string; count: number; className?: string } | null>(null);
+
+  useEffect(() => {
+    setSyncedJournals((prev) => (JSON.stringify(prev) === JSON.stringify(journals) ? prev : journals));
+  }, [journals]);
+
   // Select active rombel based on persona or default to first rombel
   const [selectedRombelId, setSelectedRombelId] = useState<string>(() => {
     const allRombels = getStoredRombels();
@@ -128,10 +185,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         )) ||
         (currentPersona?.name && r.teacher.toLowerCase().includes(currentPersona.name.toLowerCase()))
     );
-    return matched ? matched.id : allRombels[0]?.id || 'rmb-01';
+    return matched ? matched.id : allRombels[0]?.id || '';
   });
 
-  // Sync listener for updates from Admin Sekolah or Super Admin
+  // Sync listener for updates from Admin Sekolah, Super Admin, and Student Journals
   useEffect(() => {
     const handleUpdate = () => {
       setStudents(getStoredStudents());
@@ -139,20 +196,86 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setSchools(getStoredSchools());
       setUsers(getStoredUsers());
       setTeacherValidations(getStoredValidations());
+      setLocalFollowUps(getStoredTeacherFollowUps());
+      setLocalPrograms(getStoredTeacherPrograms());
       setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
     };
+
+    const handleJournalUpdate = (e: any) => {
+      const updatedList = e.detail || [];
+      if (Array.isArray(updatedList)) {
+        setSyncedJournals((prev) => (JSON.stringify(prev) === JSON.stringify(updatedList) ? prev : updatedList));
+        setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+
+        const latest = updatedList[0];
+        if (latest) {
+          const sName = latest.studentName || 'Peserta Didik';
+          setLiveSyncToast({
+            studentName: sName,
+            time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+            count: latest.completedCount || 0,
+            className: latest.className,
+          });
+          setTimeout(() => setLiveSyncToast(null), 7000);
+        }
+      }
+    };
+
+    // Cross-tab and window real-time broadcast channel
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = (ev) => {
+          if (!ev.data) return;
+          if (ev.data.type === 'JOURNALS_UPDATED' || ev.data.type === 'JOURNAL_SUBMITTED') {
+            if (Array.isArray(ev.data.journals)) {
+              setSyncedJournals(ev.data.journals);
+            } else {
+              try {
+                const raw = localStorage.getItem('si7kaih_journals_prod');
+                if (raw) setSyncedJournals(JSON.parse(raw));
+              } catch (_e) {}
+            }
+            setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+            if (ev.data.latestJournal) {
+              const latest = ev.data.latestJournal;
+              setLiveSyncToast({
+                studentName: latest.studentName || 'Peserta Didik',
+                time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+                count: latest.completedCount || 0,
+                className: latest.className,
+              });
+              setTimeout(() => setLiveSyncToast(null), 7000);
+            }
+          } else if (
+            ev.data.type === 'STUDENTS_UPDATED' ||
+            ev.data.type === 'ROMBELS_UPDATED' ||
+            ev.data.type === 'USERS_UPDATED' ||
+            ev.data.type === 'USERS_SAVED' ||
+            ev.data.type === 'SCHOOLS_UPDATED' ||
+            ev.data.type === 'SUPER_ADMIN_MASTER_SYNC'
+          ) {
+            handleUpdate();
+          }
+        };
+      }
+    } catch (_e) {}
 
     window.addEventListener('si7kaih_students_updated', handleUpdate);
     window.addEventListener('si7kaih_rombels_updated', handleUpdate);
     window.addEventListener('si7kaih_schools_updated', handleUpdate);
     window.addEventListener('si7kaih_users_updated', handleUpdate);
+    window.addEventListener('si7kaih_journals_updated', handleJournalUpdate);
     window.addEventListener('storage', handleUpdate);
 
     return () => {
+      if (bc) bc.close();
       window.removeEventListener('si7kaih_students_updated', handleUpdate);
       window.removeEventListener('si7kaih_rombels_updated', handleUpdate);
       window.removeEventListener('si7kaih_schools_updated', handleUpdate);
       window.removeEventListener('si7kaih_users_updated', handleUpdate);
+      window.removeEventListener('si7kaih_journals_updated', handleJournalUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
   }, []);
@@ -165,8 +288,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setSchools(getStoredSchools());
       setUsers(getStoredUsers());
       setTeacherValidations(getStoredValidations());
+      setLocalFollowUps(getStoredTeacherFollowUps());
+      setLocalPrograms(getStoredTeacherPrograms());
+      try {
+        const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
+        if (storedJournalsStr) {
+          setSyncedJournals(JSON.parse(storedJournalsStr));
+        }
+      } catch (_e) {}
       setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
-      showToast('Data dashboard kelas berhasil disinkronkan dengan Admin Sekolah.');
+      showToast('Data dashboard wali kelas berhasil disinkronkan dengan isian jurnal murid & data sekolah.');
     } finally {
       setTimeout(() => setIsSyncing(false), 500);
     }
@@ -214,6 +345,90 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     };
   }, [schools, activeRombel, currentPersona]);
 
+  // Filter rombels specifically for this teacher's school, augmented with classes found in school students
+  const schoolRombels = useMemo(() => {
+    const list = rombels.filter(
+      (r) =>
+        !activeSchool.id ||
+        !r.schoolId ||
+        r.schoolId === activeSchool.id ||
+        (r.schoolName && activeSchool.name && r.schoolName.toLowerCase() === activeSchool.name.toLowerCase())
+    );
+
+    const existingNorms = new Set(list.map((r) => normalizeClassName(r.name)));
+    const schoolMasterStudents = students.filter((s) => {
+      if (!s.schoolId && !s.schoolName) return true;
+      if (activeSchool.id && activeSchool.id !== 'sch-default' && s.schoolId) {
+        return s.schoolId.toLowerCase() === activeSchool.id.toLowerCase();
+      }
+      if (activeSchool.name && s.schoolName) {
+        return s.schoolName.toLowerCase().includes(activeSchool.name.toLowerCase()) || activeSchool.name.toLowerCase().includes(s.schoolName.toLowerCase());
+      }
+      return true;
+    });
+
+    const derivedRombels: Rombel[] = [];
+    schoolMasterStudents.forEach((s) => {
+      if (s.className && s.className.trim()) {
+        const norm = normalizeClassName(s.className);
+        if (norm && !existingNorms.has(norm)) {
+          existingNorms.add(norm);
+          const gradeNum = norm.includes('8') ? 8 : norm.includes('9') ? 9 : norm.includes('7') ? 7 : 7;
+          derivedRombels.push({
+            id: `rmb-derived-${norm}`,
+            code: s.className.toUpperCase().replace(/\s+/g, '-'),
+            name: s.className,
+            phase: gradeNum >= 7 ? 'Fase D' : 'Fase C',
+            grade: gradeNum,
+            teacher: 'Wali Kelas',
+            teacherNip: '-',
+            capacity: 32,
+            academicYear: '2026/2027 Ganjil',
+            status: 'AKTIF',
+            source: 'INPUT_MANUAL',
+            schoolId: activeSchool.id,
+            schoolName: activeSchool.name,
+          });
+        }
+      }
+    });
+
+    const combined = [...list, ...derivedRombels];
+    if (activeRombel && !combined.some((r) => r.id === activeRombel.id)) {
+      return [activeRombel, ...combined];
+    }
+    return combined.length > 0 ? combined : [activeRombel];
+  }, [rombels, students, activeSchool, activeRombel]);
+
+  // Ensure selectedRombelId points to an existing rombel in the school list
+  useEffect(() => {
+    if (schoolRombels.length > 0) {
+      const exists = schoolRombels.some((r) => r.id === selectedRombelId);
+      if (!exists) {
+        setSelectedRombelId(schoolRombels[0].id);
+      }
+    }
+  }, [schoolRombels, selectedRombelId]);
+
+  // Keep selectedRombelId synchronized if persona changes
+  useEffect(() => {
+    if (currentPersona) {
+      const allRombels = getStoredRombels();
+      const matched = allRombels.find(
+        (r) =>
+          (currentPersona.className && (
+            r.name.toLowerCase().includes(currentPersona.className.toLowerCase().replace('kelas', '').trim()) ||
+            currentPersona.className.toLowerCase().includes(r.name.toLowerCase()) ||
+            currentPersona.className.toLowerCase().includes(r.code.toLowerCase())
+          )) ||
+          (currentPersona.name && r.teacher.toLowerCase().includes(currentPersona.name.toLowerCase()))
+      );
+      if (matched && matched.id !== selectedRombelId) {
+        setSelectedRombelId(matched.id);
+      }
+    }
+  }, [currentPersona, rombels]);
+
   // Sync with Header navigation tabs
   useEffect(() => {
     if (!activeNavTab) return;
@@ -232,74 +447,132 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   }, [activeNavTab]);
 
-  // Students for the active class derived from Admin Sekolah data
+  // Students for the active class derived directly from Admin Sekolah master data
   const rawClassStudents = useMemo(() => {
-    const activeRombelCleanName = activeRombel.name.toLowerCase().replace('kelas', '').trim();
-    const matched = students.filter((s) => {
-      const sClass = (s.className || '').toLowerCase().replace('kelas', '').trim();
-      if (sClass && activeRombelCleanName && (sClass === activeRombelCleanName || sClass.includes(activeRombelCleanName) || activeRombelCleanName.includes(sClass))) {
-        return true;
-      }
-      if (activeRombel.code && sClass.includes(activeRombel.code.toLowerCase())) {
-        return true;
-      }
+    const targetSchoolId = (activeSchool.id || '').trim();
+    const targetSchoolName = (activeSchool.name || '').toLowerCase().trim();
+
+    const isClassMatch = (className?: string) => {
+      if (!className) return false;
+      const clean = normalizeClassName(className);
+      const activeNorm = normalizeClassName(activeRombel.name);
+      const activeCodeNorm = normalizeClassName(activeRombel.code || '');
+      if (!clean || !activeNorm) return false;
+      if (clean === activeNorm) return true;
+      if (activeCodeNorm && clean === activeCodeNorm) return true;
+      const rawClean = className.trim().toLowerCase();
+      const rawActive = activeRombel.name.trim().toLowerCase();
+      if (rawClean === rawActive) return true;
       return false;
+    };
+
+    const isSchoolMatch = (schoolId?: string, schoolName?: string) => {
+      if (!schoolId && !schoolName) return true;
+      if (!targetSchoolId || targetSchoolId === 'sch-default' || !targetSchoolName || targetSchoolName === 'satuan pendidikan') return true;
+      if (schoolId && targetSchoolId && schoolId.toLowerCase() === targetSchoolId.toLowerCase()) return true;
+      if (schoolName && targetSchoolName && (schoolName.toLowerCase().includes(targetSchoolName) || targetSchoolName.includes(schoolName.toLowerCase()))) return true;
+      return false;
+    };
+
+    const studentMap = new Map<string, Student>();
+
+    // 1. Primary Authority: Master Data Siswa Mandiri yang dikelola Admin Sekolah
+    const schoolMasterStudents = students.filter((s) => isSchoolMatch(s.schoolId, s.schoolName));
+
+    schoolMasterStudents.forEach((s) => {
+      if (isClassMatch(s.className)) {
+        studentMap.set(s.id, s);
+      }
     });
 
-    if (matched.length > 0) return matched;
-    // Fallback if class was just created or class names differ
-    return students.slice(0, 32);
-  }, [students, activeRombel]);
+    // 2. Fallback ONLY if master data for this school is completely empty
+    if (schoolMasterStudents.length === 0) {
+      users.forEach((u) => {
+        if (u.role === 'STUDENT' && isClassMatch(u.className) && isSchoolMatch(u.schoolId, u.schoolName)) {
+          const sid = u.identifierValue || u.username;
+          if (!studentMap.has(u.id) && !Array.from(studentMap.values()).some((s) => s.nisn === sid)) {
+            studentMap.set(u.id, {
+              id: u.id,
+              nisn: sid,
+              name: u.name,
+              gender: (u.avatar === '👧🏻' ? 'P' : 'L') as 'L' | 'P',
+              className: u.className || activeRombel.name,
+              parentName: u.childName ? `Orang Tua ${u.name}` : '-',
+              status: 'AKTIF',
+              source: 'INPUT_MANUAL',
+              createdAt: u.createdDate || new Date().toISOString(),
+              schoolId: u.schoolId || activeSchool.id,
+              schoolName: u.schoolName || activeSchool.name,
+            });
+          }
+        }
+      });
+    }
 
-  // Calculate synchronized student rows with journal metrics
+    return Array.from(studentMap.values());
+  }, [students, users, activeRombel, activeSchool]);
+
+  // Calculate synchronized student rows with journal metrics (0 when no data)
   const studentsList: StudentClassRow[] = useMemo(() => {
-    return rawClassStudents.map((st, idx) => {
-      const studentJournals = journals.filter(
-        (j) => j.studentId === st.id || j.studentId === st.nisn || (st.id === 'usr-student-01' && j.studentId === 'usr-student-01')
-      );
+    return rawClassStudents.map((st) => {
+      const studentJournals = syncedJournals.filter((j) => {
+        if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) {
+          if (j.schoolName && activeSchool.name && !j.schoolName.toLowerCase().includes(activeSchool.name.toLowerCase()) && !activeSchool.name.toLowerCase().includes(j.schoolName.toLowerCase())) {
+            return false;
+          }
+        }
+        if (j.studentId && (j.studentId === st.id || j.studentId === st.nisn)) return true;
+        if (j.studentNisn && st.nisn && j.studentNisn === st.nisn) return true;
+        if (j.studentName && st.name && j.studentName.toLowerCase().trim() === st.name.toLowerCase().trim()) return true;
+        return false;
+      });
 
       let completedToday = 0;
       let monthlyConsistency = 0;
       let completenessRate = 0;
+      let lastDate = '-';
 
       if (studentJournals.length > 0) {
         const todayDate = new Date().toISOString().split('T')[0];
-        const todayJournal = studentJournals.find((j) => j.date === todayDate) || studentJournals[0];
-        completedToday = Object.values(todayJournal.habits || {}).filter((h: any) => h?.completed).length;
+        const todayJournal = studentJournals.find((j) => (j.journalDate || (j as any).date) === todayDate);
+        if (todayJournal) {
+          if (todayJournal.entries) {
+            completedToday = Object.values(todayJournal.entries).filter((h: any) => h?.completed).length;
+          } else if (todayJournal.habits) {
+            completedToday = Object.values(todayJournal.habits).filter((h: any) => h?.completed).length;
+          } else if (typeof todayJournal.completedCount === 'number') {
+            completedToday = todayJournal.completedCount;
+          }
+        }
 
         const totalEntries = studentJournals.length;
         let totalCompletedHabits = 0;
         studentJournals.forEach((j) => {
-          totalCompletedHabits += Object.values(j.habits || {}).filter((h: any) => h?.completed).length;
+          if (j.entries) {
+            totalCompletedHabits += Object.values(j.entries).filter((h: any) => h?.completed).length;
+          } else if (j.habits) {
+            totalCompletedHabits += Object.values(j.habits).filter((h: any) => h?.completed).length;
+          } else if (typeof j.completedCount === 'number') {
+            totalCompletedHabits += j.completedCount;
+          }
         });
         completenessRate = Math.min(100, Math.round((totalEntries / 30) * 100));
-        monthlyConsistency = totalEntries > 0 ? Math.min(100, Math.round((totalCompletedHabits / (totalEntries * 7)) * 100)) : 82;
-      } else {
-        const seed = (st.nisn ? parseInt(st.nisn.slice(-3), 10) : idx * 17) || (idx * 17 + 5);
-        const mod = (seed + idx) % 10;
-        if (mod < 6) {
-          completedToday = 6 + (seed % 2);
-          monthlyConsistency = 86 + (seed % 12);
-          completenessRate = 92 + (seed % 9);
-        } else if (mod < 9) {
-          completedToday = 4 + (seed % 2);
-          monthlyConsistency = 72 + (seed % 12);
-          completenessRate = 82 + (seed % 9);
-        } else {
-          completedToday = 2 + (seed % 2);
-          monthlyConsistency = 54 + (seed % 15);
-          completenessRate = 65 + (seed % 12);
-        }
+        monthlyConsistency = totalEntries > 0 ? Math.min(100, Math.round((totalCompletedHabits / (totalEntries * 7)) * 100)) : 0;
+        
+        const sortedJournals = [...studentJournals].sort((a, b) => (b.journalDate || '').localeCompare(a.journalDate || ''));
+        lastDate = sortedJournals[0]?.journalDate || (sortedJournals[0] as any)?.date || '-';
       }
 
-      const category: EarlyWarningCategory =
-        monthlyConsistency >= 85
+      const category: EarlyWarningCategory | 'BELUM_ADA_DATA' =
+        studentJournals.length === 0
+          ? 'BELUM_ADA_DATA'
+          : monthlyConsistency >= 85
           ? 'TERPANTAU_BAIK'
           : monthlyConsistency >= 70
           ? 'PERLU_PENGUATAN'
           : 'PERLU_PENDAMPINGAN';
 
-      const isValidated = teacherValidations[st.id] ?? (category === 'TERPANTAU_BAIK');
+      const isValidated = !!teacherValidations[st.id];
 
       return {
         id: st.id,
@@ -309,7 +582,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         monthlyConsistency: Math.min(100, Math.max(0, monthlyConsistency)),
         completenessRate: Math.min(100, Math.max(0, completenessRate)),
         category,
-        lastJournalDate: new Date().toISOString().split('T')[0],
+        lastJournalDate: lastDate,
         validatedByTeacher: isValidated,
         gender: st.gender,
         parentName: st.parentName,
@@ -318,10 +591,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         status: st.status,
       };
     });
-  }, [rawClassStudents, journals, teacherValidations]);
+  }, [rawClassStudents, syncedJournals, teacherValidations, activeSchool.id]);
 
-  const [localFollowUps, setLocalFollowUps] = useState<FollowUpPlan[]>(followUps);
-  const [localPrograms, setLocalPrograms] = useState<SchoolProgram[]>(programs);
+  const [localFollowUps, setLocalFollowUps] = useState<FollowUpPlan[]>(() => getStoredTeacherFollowUps());
+  const [localPrograms, setLocalPrograms] = useState<SchoolProgram[]>(() => getStoredTeacherPrograms());
   const [isRtlModalOpen, setIsRtlModalOpen] = useState(false);
   const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
 
@@ -371,7 +644,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       createdAt: new Date().toISOString().split('T')[0],
       updatedAt: new Date().toISOString().split('T')[0],
     };
-    setLocalFollowUps((prev) => [newPlan, ...prev]);
+    const updated = [newPlan, ...localFollowUps];
+    setLocalFollowUps(updated);
+    try {
+      localStorage.setItem(FOLLOWUPS_STORAGE_KEY, JSON.stringify(updated));
+    } catch (_e) {}
     setIsRtlModalOpen(false);
     setNewRtlFinding('');
     setNewRtlActionPlan('');
@@ -393,18 +670,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   const handleUpdateRtlProgress = (id: string, newPercent: number) => {
-    setLocalFollowUps((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              progressPercent: newPercent,
-              status: newPercent >= 100 ? 'COMPLETED' : 'ACTIVE',
-              updatedAt: new Date().toISOString().split('T')[0],
-            }
-          : r
-      )
+    const updated = localFollowUps.map((r) =>
+      r.id === id
+        ? {
+            ...r,
+            progressPercent: newPercent,
+            status: (newPercent >= 100 ? 'COMPLETED' : 'ACTIVE') as 'COMPLETED' | 'ACTIVE',
+            updatedAt: new Date().toISOString().split('T')[0],
+          }
+        : r
     );
+    setLocalFollowUps(updated);
+    try {
+      localStorage.setItem(FOLLOWUPS_STORAGE_KEY, JSON.stringify(updated));
+    } catch (_e) {}
     showToast('Progres RTL berhasil diperbarui.');
   };
 
@@ -427,7 +706,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       evidenceCount: 0,
       isActive: true,
     };
-    setLocalPrograms((prev) => [newProg, ...prev]);
+    const updated = [newProg, ...localPrograms];
+    setLocalPrograms(updated);
+    try {
+      localStorage.setItem(PROGRAMS_STORAGE_KEY, JSON.stringify(updated));
+    } catch (_e) {}
     setIsProgramModalOpen(false);
     setNewProgTitle('');
     setNewProgDesc('');
@@ -455,54 +738,194 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     showToast(`Jurnal ananda ${s?.name || 'siswa'} berhasil divalidasi oleh Wali Kelas.`);
   };
 
-  // Synchronized aggregates
+  // Synchronized aggregates (reset to 0 if no students or no journal entries)
   const totalStudentsCount = studentsList.length;
   const filledTodayCount = studentsList.filter((s) => s.completedTodayCount > 0).length;
   const averageConsistency = studentsList.length > 0
-    ? Math.round(studentsList.reduce((acc, s) => acc + s.monthlyConsistency, 0) / studentsList.length * 10) / 10
-    : 85;
+    ? Math.round((studentsList.reduce((acc, s) => acc + s.monthlyConsistency, 0) / studentsList.length) * 10) / 10
+    : 0;
   const averageCompleteness = studentsList.length > 0
-    ? Math.round(studentsList.reduce((acc, s) => acc + s.completenessRate, 0) / studentsList.length * 10) / 10
-    : 90;
+    ? Math.round((studentsList.reduce((acc, s) => acc + s.completenessRate, 0) / studentsList.length) * 10) / 10
+    : 0;
 
   const goodCount = studentsList.filter((s) => s.category === 'TERPANTAU_BAIK').length;
   const strengthenCount = studentsList.filter((s) => s.category === 'PERLU_PENGUATAN').length;
   const supportCount = studentsList.filter((s) => s.category === 'PERLU_PENDAMPINGAN').length;
+  const unupdatedCount = studentsList.filter((s) => s.category === 'BELUM_ADA_DATA').length;
   const validatedCount = studentsList.filter((s) => s.validatedByTeacher).length;
 
+  // Class journals strictly matched to students in this rombel and school
+  const classJournals = useMemo(() => {
+    const studentIds = new Set(rawClassStudents.map((s) => s.id));
+    const studentNisns = new Set(rawClassStudents.map((s) => s.nisn).filter(Boolean));
+    const studentNames = new Set(rawClassStudents.map((s) => s.name.toLowerCase().trim()));
+    const normActiveRombel = normalizeClassName(activeRombel.name);
+
+    return syncedJournals.filter((j) => {
+      if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) {
+        if (j.schoolName && activeSchool.name && !j.schoolName.toLowerCase().includes(activeSchool.name.toLowerCase()) && !activeSchool.name.toLowerCase().includes(j.schoolName.toLowerCase())) {
+          return false;
+        }
+      }
+      if (studentIds.has(j.studentId)) return true;
+      if (j.studentNisn && studentNisns.has(j.studentNisn)) return true;
+      if (studentNisns.has(j.studentId)) return true;
+      if (j.studentName && studentNames.has(j.studentName.toLowerCase().trim())) return true;
+      if (j.className && normActiveRombel) {
+        const normJ = normalizeClassName(j.className);
+        if (normJ === normActiveRombel || normJ.includes(normActiveRombel) || normActiveRombel.includes(normJ)) return true;
+      }
+      return false;
+    });
+  }, [rawClassStudents, syncedJournals, activeSchool, activeRombel]);
+
+  const hasJournalData = useMemo(() => {
+    return classJournals.length > 0;
+  }, [classJournals]);
+
   const classHabitStats = useMemo(() => {
-    const wakeAvg = Math.min(100, Math.round(averageConsistency * 1.07));
-    const worshipAvg = Math.min(100, Math.round(averageConsistency * 1.11));
-    const exerciseAvg = Math.min(100, Math.round(averageConsistency * 0.90));
-    const healthyEatingAvg = Math.min(100, Math.round(averageConsistency * 1.04));
-    const learningAvg = Math.min(100, Math.round(averageConsistency * 1.02));
-    const socialAvg = Math.min(100, Math.round(averageConsistency * 0.98));
-    const sleepEarlyAvg = Math.min(100, Math.round(averageConsistency * 0.76));
-
-    return [
-      { code: 'WAKE_EARLY', name: 'Bangun Pagi', percentage: wakeAvg, status: wakeAvg >= 85 ? 'TERPANTAU_BAIK' : wakeAvg >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN' },
-      { code: 'WORSHIP', name: 'Beribadah', percentage: worshipAvg, status: worshipAvg >= 85 ? 'TERPANTAU_BAIK' : worshipAvg >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN' },
-      { code: 'EXERCISE', name: 'Berolahraga', percentage: exerciseAvg, status: exerciseAvg >= 85 ? 'TERPANTAU_BAIK' : exerciseAvg >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN' },
-      { code: 'HEALTHY_EATING', name: 'Makan Sehat & Bergizi', percentage: healthyEatingAvg, status: healthyEatingAvg >= 85 ? 'TERPANTAU_BAIK' : healthyEatingAvg >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN' },
-      { code: 'LEARNING', name: 'Gemar Belajar', percentage: learningAvg, status: learningAvg >= 85 ? 'TERPANTAU_BAIK' : learningAvg >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN' },
-      { code: 'SOCIAL', name: 'Bermasyarakat', percentage: socialAvg, status: socialAvg >= 85 ? 'TERPANTAU_BAIK' : socialAvg >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN' },
-      { code: 'SLEEP_EARLY', name: 'Tidur Cepat', percentage: sleepEarlyAvg, status: sleepEarlyAvg >= 85 ? 'TERPANTAU_BAIK' : sleepEarlyAvg >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN' },
+    const habitDefinitions = [
+      { code: 'WAKE_EARLY', name: 'Bangun Pagi' },
+      { code: 'WORSHIP', name: 'Beribadah' },
+      { code: 'EXERCISE', name: 'Berolahraga' },
+      { code: 'HEALTHY_EATING', name: 'Makan Sehat & Bergizi' },
+      { code: 'LEARNING', name: 'Gemar Belajar' },
+      { code: 'SOCIAL', name: 'Bermasyarakat' },
+      { code: 'SLEEP_EARLY', name: 'Tidur Cepat' },
     ];
-  }, [averageConsistency]);
 
-  const lowestHabit = useMemo(() => {
-    return [...classHabitStats].sort((a, b) => a.percentage - b.percentage)[0];
+    if (classJournals.length === 0) {
+      return habitDefinitions.map((h) => ({
+        code: h.code,
+        name: h.name,
+        percentage: 0,
+        status: 'BELUM_ADA_DATA' as const,
+      }));
+    }
+
+    const totalJournalCount = classJournals.length;
+
+    return habitDefinitions.map((h) => {
+      let completedCount = 0;
+      classJournals.forEach((j) => {
+        const habitEntry = (j.entries && j.entries[h.code]) || (j.habits && j.habits[h.code]);
+        if (habitEntry && habitEntry.completed) {
+          completedCount++;
+        }
+      });
+      const pct = Math.min(100, Math.round((completedCount / totalJournalCount) * 100));
+      return {
+        code: h.code,
+        name: h.name,
+        percentage: pct,
+        status: (pct >= 85 ? 'TERPANTAU_BAIK' : pct >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN') as any,
+      };
+    });
+  }, [classJournals]);
+
+  const sortedHabits = useMemo(() => {
+    return [...classHabitStats].sort((a, b) => b.percentage - a.percentage);
   }, [classHabitStats]);
 
+  const topHabit = sortedHabits[0];
+  const secondTopHabit = sortedHabits[1];
+  const lowestHabit = useMemo(() => {
+    if (!hasJournalData) return null;
+    return sortedHabits[sortedHabits.length - 1];
+  }, [sortedHabits, hasJournalData]);
+  const secondLowestHabit = useMemo(() => {
+    if (!hasJournalData || sortedHabits.length < 2) return null;
+    return sortedHabits[sortedHabits.length - 2];
+  }, [sortedHabits, hasJournalData]);
+
+  // Open real Student Dossier with true data or structured empty state
+  const openStudentDossier = (s: StudentClassRow) => {
+    const sJournals = syncedJournals.filter((j) => {
+      if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) return false;
+      return (
+        j.studentId === s.id ||
+        j.studentId === s.nisn ||
+        (j.studentNisn && s.nisn && j.studentNisn === s.nisn) ||
+        (j.studentName && s.name && j.studentName.toLowerCase().trim() === s.name.toLowerCase().trim())
+      );
+    });
+    const habitCodes: HabitCode[] = [
+      'WAKE_EARLY',
+      'WORSHIP',
+      'EXERCISE',
+      'HEALTHY_EATING',
+      'LEARNING',
+      'SOCIAL',
+      'SLEEP_EARLY',
+    ];
+
+    const habitBreakdown: Record<HabitCode, { percentage: number; days: number }> = {
+      WAKE_EARLY: { percentage: 0, days: 0 },
+      WORSHIP: { percentage: 0, days: 0 },
+      EXERCISE: { percentage: 0, days: 0 },
+      HEALTHY_EATING: { percentage: 0, days: 0 },
+      LEARNING: { percentage: 0, days: 0 },
+      SOCIAL: { percentage: 0, days: 0 },
+      SLEEP_EARLY: { percentage: 0, days: 0 },
+    };
+
+    if (sJournals.length > 0) {
+      habitCodes.forEach((code) => {
+        const count = sJournals.filter((j) => {
+          const entry = (j.entries && j.entries[code]) || (j.habits && j.habits[code]);
+          return entry && entry.completed;
+        }).length;
+        habitBreakdown[code] = {
+          percentage: Math.min(100, Math.round((count / sJournals.length) * 100)),
+          days: count,
+        };
+      });
+    }
+
+    const dossierData: StudentDossierData = {
+      id: s.id,
+      nisn: s.nisn,
+      name: s.name,
+      className: activeRombel.name,
+      completedTodayCount: s.completedTodayCount,
+      monthlyConsistency: s.monthlyConsistency,
+      completenessRate: s.completenessRate,
+      category: s.category,
+      parentName: s.parentName,
+      parentPhone: s.parentPhone,
+      gender: s.gender,
+      status: s.status,
+      validatedByTeacher: s.validatedByTeacher,
+      lastJournalDate: s.lastJournalDate,
+      habitBreakdown,
+      recentJournals: sJournals.slice(0, 10).map((j) => {
+        const count = j.entries
+          ? Object.values(j.entries).filter((e: any) => e?.completed).length
+          : j.habits
+          ? Object.values(j.habits).filter((e: any) => e?.completed).length
+          : j.completedCount || 0;
+        return {
+          date: j.journalDate || (j as any).date || '',
+          count,
+          status: count >= 6 ? 'Lengkap' : count >= 4 ? 'Cukup' : 'Perlu Pendampingan',
+          time: (j as any).savedAt || (j as any).time || (j.updatedAt ? new Date(j.updatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB' : '-'),
+        };
+      }),
+    };
+    setSelectedStudent(dossierData);
+  };
+
   const handleExportCsv = () => {
-    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Kelamin', 'Nama Orang Tua', 'Jurnal Hari Ini', 'Kelengkapan (%)', 'Konsistensi (%)', 'Kategori Monitoring', 'Validasi Guru'];
+    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Kelamin', 'Status Siswa', 'Nama Orang Tua', 'No. HP Orang Tua', 'Jurnal Hari Ini', 'Kelengkapan (%)', 'Konsistensi (%)', 'Kategori Monitoring', 'Validasi Guru'];
     const rows = filteredStudents.map((s, idx) => [
       idx + 1,
       `"${s.nisn}"`,
       `"${s.name}"`,
       `"${activeRombel.name}"`,
       s.gender || 'L',
+      `"${s.status || 'AKTIF'}"`,
       `"${s.parentName || '-'}"`,
+      `"${s.parentPhone || '-'}"`,
       `"${s.completedTodayCount}/7"`,
       `${s.completenessRate}%`,
       `${s.monthlyConsistency}%`,
@@ -546,36 +969,65 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         const json = await res.json();
         setAiAnalysisResult(json.data);
       } else {
-        setAiAnalysisResult({
-          recordedFacts: [
-            `Kelengkapan jurnal harian ${activeRombel.name} (${activeRombel.phase || 'Fase D'}) mencapai ${averageCompleteness}% dengan ${totalStudentsCount} siswa terdaftar.`,
-            `Pembiasaan Beribadah (${classHabitStats.find(h => h.code === 'WORSHIP')?.percentage}%) dan Bangun Pagi (${classHabitStats.find(h => h.code === 'WAKE_EARLY')?.percentage}%) mencatat konsistensi tertinggi.`,
-            `Pembiasaan Tidur Cepat berada pada angka ${classHabitStats.find(h => h.code === 'SLEEP_EARLY')?.percentage}% (memerlukan pendampingan bersama keluarga).`,
-          ],
-          habitPatterns: [
-            'Konsistensi hari Senin-Kamis jauh lebih tinggi dibandingkan akhir pekan (Jumat-Sabtu malam).',
-            'Siswa dengan keteraturan sarapan sehat dan olahraga pagi mencatat tingkat konsentrasi belajar yang lebih stabil.',
-          ],
-          dataLimitations: [
-            `Sebanyak ${Math.max(0, Math.round(100 - averageCompleteness))}% catatan harian belum terisi lengkap saat akhir pekan, sehingga perlu konfirmasi berkala via paguyuban.`,
-          ],
-          hypothesesToVerify: [
-            'Diduga waktu tidur malam bergeser mundur saat libur akhir pekan karena kelonggaran pembatasan durasi gawai di rumah.',
-          ],
-          actionableRecommendations: [
-            'Gagas program kesepakatan keluarga "30 Menit Bebas Gawai Sebelum Tidur" berkolaborasi dengan komite paguyuban kelas.',
-            `Apresiasi ${goodCount} siswa terpantau konsisten pada kegiatan literasi dan apel pagi sekolah.`,
-            `Lakukan dialog suportif dengan ${supportCount} siswa kategori pendampingan untuk memetakan tantangan di rumah tanpa pelabelan negatif.`,
-          ],
-        });
+        if (!hasJournalData || totalStudentsCount === 0) {
+          setAiAnalysisResult({
+            recordedFacts: [
+              `Belum ada data jurnal pembiasaan yang diperbarui untuk rombel ${activeRombel.name} (${activeRombel.phase || 'Fase D'}).`,
+              `Total ${totalStudentsCount} siswa terdaftar di rombel ini dengan status pemantauan aktif.`,
+            ],
+            habitPatterns: [
+              'Data pembiasaan harian menunggu entri pertama dari siswa atau orang tua.',
+            ],
+            dataLimitations: [
+              'Ketiadaan data jurnal menandakan sistem belum menerima pembaruan dari Admin Sekolah atau peserta didik.',
+            ],
+            hypothesesToVerify: [
+              'Perlu sosialisasi pengisian jurnal 7 Kebiasaan Anak Indonesia Hebat kepada peserta didik dan orang tua.',
+            ],
+            actionableRecommendations: [
+              'Sosialisasikan jadwal dan tata cara pengisian jurnal mandiri kepada siswa.',
+              'Koordinasikan dengan paguyuban kelas untuk mendukung pembiasaan di rumah.',
+            ],
+          });
+        } else {
+          setAiAnalysisResult({
+            recordedFacts: [
+              `Kelengkapan jurnal harian ${activeRombel.name} (${activeRombel.phase || 'Fase D'}) mencapai ${averageCompleteness}% dengan ${totalStudentsCount} siswa terdaftar.`,
+              topHabit && topHabit.percentage > 0
+                ? `Pembiasaan ${topHabit.name} (${topHabit.percentage}%)${secondTopHabit && secondTopHabit.percentage > 0 ? ` dan ${secondTopHabit.name} (${secondTopHabit.percentage}%)` : ''} mencatat konsistensi tertinggi terpantau.`
+                : 'Belum ada pembiasaan yang mencatat konsistensi mandiri signifikan.',
+              lowestHabit
+                ? `Pembiasaan ${lowestHabit.name} berada pada angka ${lowestHabit.percentage}%.`
+                : 'Belum ada data pembiasaan tercatat.',
+            ],
+            habitPatterns: [
+              'Konsistensi hari kerja menunjukkan keteraturan yang lebih baik dibanding akhir pekan.',
+              'Keteraturan pagi berkaitan erat dengan persiapan belajar siswa di kelas.',
+            ],
+            dataLimitations: [
+              `Sebanyak ${Math.max(0, Math.round(100 - averageCompleteness))}% jurnal harian masih menunggu pengisian berkala.`,
+            ],
+            hypothesesToVerify: [
+              'Dukungan dan monitoring berkala orang tua di rumah berpengaruh signifikan terhadap kontinuitas pembiasaan.',
+            ],
+            actionableRecommendations: [
+              'Diskusikan penguatan pembiasaan bersama paguyuban kelas secara berkala.',
+              goodCount > 0 ? `Apresiasi ${goodCount} siswa terpantau konsisten dalam apel pagi sekolah.` : 'Sosialisasikan tata cara pengisian jurnal 7KAIH.',
+              supportCount > 0 ? `Lakukan pendampingan suportif terhadap ${supportCount} siswa tanpa pelabelan negatif.` : 'Pertahankan budaya positif kelas.',
+            ],
+          });
+        }
       }
     } catch {
       setAiAnalysisResult({
-        recordedFacts: [`Data ${activeRombel.name} menunjukkan konsistensi rata-rata ${averageConsistency}% pada jadwal pagi.`],
-        habitPatterns: ['Rutinitas tidur malam memerlukan koordinasi suportif dengan orang tua.'],
-        dataLimitations: ['Pengisian jurnal akhir pekan masih perlu penguatan pendampingan.'],
-        hypothesesToVerify: ['Faktor layar gawai malam hari perlu diverifikasi bersama orang tua.'],
-        actionableRecommendations: ['Diskusikan pembiasaan tidur tepat waktu dalam forum paguyuban kelas.'],
+        recordedFacts: [
+          `Data ${activeRombel.name} menunjukkan kelengkapan ${averageCompleteness}% dan konsistensi rata-rata ${averageConsistency}%.`,
+          topHabit && topHabit.percentage > 0 ? `Pembiasaan tertinggi: ${topHabit.name} (${topHabit.percentage}%).` : 'Belum ada pembiasaan dengan konsistensi tercatat.',
+        ],
+        habitPatterns: ['Pengisian jurnal membutuhkan koordinasi suportif dengan peserta didik dan orang tua.'],
+        dataLimitations: ['Data entri pembiasaan sedang dalam pembaruan berkala dari peserta didik.'],
+        hypothesesToVerify: ['Komunikasi dengan orang tua menjadi faktor pendukung utama pembiasaan mandiri.'],
+        actionableRecommendations: ['Sosialisasikan pembiasaan 7 Kebiasaan Anak Indonesia Hebat dalam paguyuban kelas.'],
       });
     } finally {
       setIsAnalyzingAi(false);
@@ -585,7 +1037,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const filteredStudents = studentsList.filter((s) => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
     const matchesCategory = categoryFilter === 'ALL' || s.category === categoryFilter;
-    return matchesSearch && matchesCategory;
+    const matchesStatus = statusFilter === 'ALL' || (s.status || 'AKTIF') === statusFilter;
+    return matchesSearch && matchesCategory && matchesStatus;
   });
 
   return (
@@ -604,6 +1057,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                   Terhubung Admin Sekolah
                 </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                  Sinkronisasi Isian Jurnal Aktif
+                </span>
               </div>
               <p className="text-xs text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                 <span>Wali Kelas: <strong className="text-slate-700 font-semibold">{activeRombel.teacher}</strong></span>
@@ -619,13 +1076,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
               <Layers className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-[11px] font-semibold text-slate-500">Pilih Rombel:</span>
+              <span className="text-[11px] font-semibold text-slate-500">Pilih Rombel ({activeSchool.name}):</span>
               <select
                 value={selectedRombelId}
                 onChange={(e) => setSelectedRombelId(e.target.value)}
                 className="bg-transparent text-xs font-bold text-slate-800 border-none outline-none cursor-pointer"
               >
-                {rombels.map((r) => (
+                {schoolRombels.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} ({r.phase || 'Fase D'}) - Wali: {r.teacher}
                   </option>
@@ -706,6 +1163,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       </div>
 
+      {/* Real-time Student Journal Update Alert Banner */}
+      {liveSyncToast && (
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300/80 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3 text-emerald-900 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <span className="flex h-3 w-3 relative shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <div className="text-xs">
+              <span className="font-bold text-emerald-800 uppercase tracking-wider text-[10px] mr-1.5 px-1.5 py-0.5 rounded bg-emerald-200/60">
+                Update Isian Murid Baru
+              </span>
+              Ananda <strong className="font-bold text-emerald-950">{liveSyncToast.studentName}</strong>
+              {liveSyncToast.className ? ` (${liveSyncToast.className})` : ''} baru saja menyimpan jurnal ({liveSyncToast.count}/7 Kebiasaan) pada {liveSyncToast.time}. Data dashboard kelas telah otomatis terbarui.
+            </div>
+          </div>
+          <button
+            onClick={() => setLiveSyncToast(null)}
+            className="text-emerald-700 hover:text-emerald-950 text-xs font-bold px-2.5 py-1 rounded-lg hover:bg-emerald-100/80 transition-colors shrink-0 cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
+
       {activeTab === 'OVERVIEW' && (
         <div className="space-y-6">
           {/* 4 Metric Summary Cards */}
@@ -716,7 +1198,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </span>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-black text-[#0753A5]">{averageCompleteness}%</span>
-                <span className="text-xs font-semibold text-emerald-600">+4.2% bln lalu</span>
+                <span className={`text-xs font-semibold ${averageCompleteness > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  {averageCompleteness > 0 ? `${averageCompleteness}% Lengkap` : 'Belum Ada Data'}
+                </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
                 {filledTodayCount} dari {totalStudentsCount} siswa sudah mengisi hari ini
@@ -729,8 +1213,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </span>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-black text-slate-900">{averageConsistency}%</span>
-                <span className="text-xs font-semibold text-emerald-600">
-                  {averageConsistency >= 80 ? 'Terbiasa' : 'Perlu Penguatan'}
+                <span className={`text-xs font-semibold ${averageConsistency >= 80 ? 'text-emerald-600' : averageConsistency > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                  {averageConsistency >= 80 ? 'Terbiasa' : averageConsistency > 0 ? 'Perlu Penguatan' : 'Belum Ada Data'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
@@ -742,7 +1226,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 Distribusi Pemantauan
               </span>
-              <div className="flex items-center gap-1.5 mt-2">
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
                 <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="Terpantau Baik">
                   {goodCount} Baik
                 </span>
@@ -752,6 +1236,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-xs font-bold" title="Perlu Pendampingan">
                   {supportCount} Damping
                 </span>
+                {unupdatedCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-xs font-bold" title="Belum Ada Data">
+                    {unupdatedCount} Belum Ada Data
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-slate-400 mt-1">
                 *Kategori monitoring internal kelas
@@ -764,8 +1253,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </span>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-black text-slate-900">{validatedCount} / {totalStudentsCount}</span>
-                <span className={`text-xs font-semibold ${totalStudentsCount - validatedCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {totalStudentsCount - validatedCount > 0 ? `${totalStudentsCount - validatedCount} Menunggu` : 'Semua Tervalidasi'}
+                <span className={`text-xs font-semibold ${totalStudentsCount === 0 ? 'text-slate-400' : totalStudentsCount - validatedCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {totalStudentsCount === 0 ? 'Belum Ada Siswa' : totalStudentsCount - validatedCount > 0 ? `${totalStudentsCount - validatedCount} Menunggu` : 'Semua Tervalidasi'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
@@ -802,14 +1291,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             ? 'bg-emerald-100 text-emerald-800'
                             : habit.percentage >= 70
                             ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800'
+                            : habit.percentage > 0
+                            ? 'bg-rose-100 text-rose-800'
+                            : 'bg-slate-100 text-slate-600'
                         }`}
                       >
                         {habit.percentage >= 85
                           ? 'Terpantau Baik'
                           : habit.percentage >= 70
                           ? 'Perlu Penguatan'
-                          : 'Perlu Pendampingan'}
+                          : habit.percentage > 0
+                          ? 'Perlu Pendampingan'
+                          : 'Belum Ada Data'}
                       </span>
                       <span className="font-black text-slate-900 w-12 text-right">
                         {habit.percentage}%
@@ -823,7 +1316,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                           ? 'bg-[#41A85F]'
                           : habit.percentage >= 70
                           ? 'bg-[#F5B900]'
-                          : 'bg-rose-500'
+                          : habit.percentage > 0
+                          ? 'bg-rose-500'
+                          : 'bg-slate-200'
                       }`}
                       style={{ width: `${habit.percentage}%` }}
                     />
@@ -836,7 +1331,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <span className="flex items-center gap-1">
                 <Info className="w-3.5 h-3.5 text-blue-500" />
                 <span>
-                  Kebiasaan {lowestHabit ? `${lowestHabit.name} (${lowestHabit.percentage}%)` : 'Tidur Cepat'} menjadi sasaran prioritas Rencana Tindak Lanjut (RTL).
+                  {lowestHabit && lowestHabit.percentage > 0
+                    ? `Kebiasaan ${lowestHabit.name} (${lowestHabit.percentage}%) menjadi sasaran prioritas Rencana Tindak Lanjut (RTL).`
+                    : 'Belum ada data jurnal pembiasaan yang diperbarui untuk rombel ini (data 0%).'}
                 </span>
               </span>
               <button
@@ -879,30 +1376,55 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           </div>
 
-          {/* Category Filter Pills */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
-              <Filter className="w-3 h-3" />
-              <span>Filter:</span>
-            </span>
-            {[
-              { id: 'ALL', label: 'Semua Siswa', count: studentsList.length },
-              { id: 'TERPANTAU_BAIK', label: 'Terpantau Baik', count: studentsList.filter((s) => s.category === 'TERPANTAU_BAIK').length },
-              { id: 'PERLU_PENGUATAN', label: 'Perlu Penguatan', count: studentsList.filter((s) => s.category === 'PERLU_PENGUATAN').length },
-              { id: 'PERLU_PENDAMPINGAN', label: 'Perlu Pendampingan', count: studentsList.filter((s) => s.category === 'PERLU_PENDAMPINGAN').length },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setCategoryFilter(f.id as any)}
-                className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all cursor-pointer ${
-                  categoryFilter === f.id
-                    ? 'bg-[#0753A5] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {f.label} ({f.count})
-              </button>
-            ))}
+          {/* Category & Status Filter Pills */}
+          <div className="space-y-2 pt-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                <Filter className="w-3 h-3" />
+                <span>Kategori:</span>
+              </span>
+              {[
+                { id: 'ALL', label: 'Semua Kategori', count: studentsList.length },
+                { id: 'TERPANTAU_BAIK', label: 'Terpantau Baik', count: studentsList.filter((s) => s.category === 'TERPANTAU_BAIK').length },
+                { id: 'PERLU_PENGUATAN', label: 'Perlu Penguatan', count: studentsList.filter((s) => s.category === 'PERLU_PENGUATAN').length },
+                { id: 'PERLU_PENDAMPINGAN', label: 'Perlu Pendampingan', count: studentsList.filter((s) => s.category === 'PERLU_PENDAMPINGAN').length },
+                { id: 'BELUM_ADA_DATA', label: 'Belum Ada Data', count: studentsList.filter((s) => s.category === 'BELUM_ADA_DATA').length },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setCategoryFilter(f.id as any)}
+                  className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all cursor-pointer ${
+                    categoryFilter === f.id
+                      ? 'bg-[#0753A5] text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {f.label} ({f.count})
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-400">Status Siswa:</span>
+              {[
+                { id: 'ALL', label: 'Semua Status' },
+                { id: 'AKTIF', label: 'Aktif' },
+                { id: 'MUTASI', label: 'Mutasi' },
+                { id: 'LULUS', label: 'Lulus' },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setStatusFilter(st.id as any)}
+                  className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full transition-all cursor-pointer ${
+                    statusFilter === st.id
+                      ? 'bg-slate-800 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  {st.label} {st.id !== 'ALL' ? `(${studentsList.filter((s) => (s.status || 'AKTIF') === st.id).length})` : ''}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Student Table */}
@@ -920,87 +1442,112 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredStudents.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-3">
-                      <button
-                        onClick={() => setSelectedStudent(s as any)}
-                        className="text-left group cursor-pointer"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-900 group-hover:text-[#0753A5] transition-colors">
-                            {s.name}
-                          </span>
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                              s.gender === 'P'
-                                ? 'bg-pink-100 text-pink-700'
-                                : 'bg-blue-100 text-blue-700'
-                            }`}
-                          >
-                            {s.gender === 'P' ? 'P' : 'L'}
-                          </span>
-                        </div>
-                        <span className="block text-[10px] text-slate-400 font-mono">
-                          NISN: {s.nisn} {s.parentName ? `• Wali: ${s.parentName}` : ''}
-                        </span>
-                      </button>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                        {s.completedTodayCount}/7 Kebiasaan
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="font-semibold text-slate-700">{s.completenessRate}%</span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="font-semibold text-slate-700">{s.monthlyConsistency}%</span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          s.category === 'TERPANTAU_BAIK'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : s.category === 'PERLU_PENGUATAN'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
-                      >
-                        {s.category === 'TERPANTAU_BAIK'
-                          ? 'Terpantau Baik'
-                          : s.category === 'PERLU_PENGUATAN'
-                          ? 'Perlu Penguatan'
-                          : 'Perlu Pendampingan'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <button
-                        onClick={() => setSelectedStudent(s as any)}
-                        className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-[#0753A5] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
-                        title="Buka rekap portofolio & pembiasaan siswa"
-                      >
-                        <Eye className="w-3 h-3" />
-                        <span>Detail</span>
-                      </button>
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      {s.validatedByTeacher ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Tervalidasi</span>
-                        </span>
-                      ) : (
-                        <button
-                          className="px-2.5 py-1 rounded-lg bg-[#0753A5] hover:bg-blue-700 text-white font-bold text-[11px] cursor-pointer shadow-xs"
-                          onClick={() => handleValidateStudent(s.id)}
-                        >
-                          Validasi
-                        </button>
-                      )}
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      {studentsList.length === 0
+                        ? 'Belum ada data siswa di rombel ini. Sinkronkan atau tambahkan siswa melalui menu Admin Sekolah.'
+                        : 'Tidak ada siswa yang sesuai dengan filter.'}
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredStudents.map((s) => (
+                    <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3 px-3">
+                        <button
+                          onClick={() => openStudentDossier(s)}
+                          className="text-left group cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-900 group-hover:text-[#0753A5] transition-colors">
+                              {s.name}
+                            </span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                s.gender === 'P'
+                                  ? 'bg-pink-100 text-pink-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}
+                            >
+                              {s.gender === 'P' ? 'P' : 'L'}
+                            </span>
+                            {s.status && s.status !== 'AKTIF' && (
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                  s.status === 'MUTASI'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-purple-100 text-purple-800'
+                                }`}
+                              >
+                                {s.status}
+                              </span>
+                            )}
+                          </div>
+                          <span className="block text-[10px] text-slate-400 font-mono">
+                            NISN: {s.nisn} {s.parentName ? `• Wali: ${s.parentName}` : ''} {s.parentPhone ? `• HP: ${s.parentPhone}` : ''}
+                          </span>
+                        </button>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`font-bold px-2 py-0.5 rounded ${s.completedTodayCount > 0 ? 'text-blue-700 bg-blue-50' : 'text-slate-500 bg-slate-100'}`}>
+                          {s.completedTodayCount}/7 Kebiasaan
+                        </span>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="font-semibold text-slate-700">{s.completenessRate}%</span>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="font-semibold text-slate-700">{s.monthlyConsistency}%</span>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            s.category === 'TERPANTAU_BAIK'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : s.category === 'PERLU_PENGUATAN'
+                              ? 'bg-amber-100 text-amber-800'
+                              : s.category === 'PERLU_PENDAMPINGAN'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {s.category === 'TERPANTAU_BAIK'
+                            ? 'Terpantau Baik'
+                            : s.category === 'PERLU_PENGUATAN'
+                            ? 'Perlu Penguatan'
+                            : s.category === 'PERLU_PENDAMPINGAN'
+                            ? 'Perlu Pendampingan'
+                            : 'Belum Ada Data'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          onClick={() => openStudentDossier(s)}
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-[#0753A5] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Buka rekap portofolio & pembiasaan siswa"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Detail</span>
+                        </button>
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        {s.validatedByTeacher ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Tervalidasi</span>
+                          </span>
+                        ) : (
+                          <button
+                            className="px-2.5 py-1 rounded-lg bg-[#0753A5] hover:bg-blue-700 text-white font-bold text-[11px] cursor-pointer shadow-xs"
+                            onClick={() => handleValidateStudent(s.id)}
+                          >
+                            Validasi
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -1041,7 +1588,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <span>Dimensi Kekuatan Terpantau Baik</span>
               </div>
               <p className="text-xs text-emerald-800 leading-relaxed">
-                <strong>Beribadah ({classHabitStats.find(h => h.code === 'WORSHIP')?.percentage || 96}%)</strong> dan <strong>Bangun Pagi ({classHabitStats.find(h => h.code === 'WAKE_EARLY')?.percentage || 92}%)</strong> menunjukkan konsistensi tertinggi di kelas. Peserta didik memiliki kesiapan awal pagi yang tertib.
+                {hasJournalData && topHabit && topHabit.percentage > 0 ? (
+                  <>
+                    <strong>{topHabit.name} ({topHabit.percentage}%)</strong>
+                    {secondTopHabit && secondTopHabit.percentage > 0 && (
+                      <> dan <strong>{secondTopHabit.name} ({secondTopHabit.percentage}%)</strong></>
+                    )}{' '}
+                    menunjukkan konsistensi tertinggi di kelas. Peserta didik memiliki kesiapan pembiasaan yang tertib.
+                  </>
+                ) : (
+                  'Belum ada data jurnal pembiasaan siswa yang diperbarui untuk pemetaan dimensi kekuatan (data 0%).'
+                )}
               </p>
             </div>
             <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-1">
@@ -1050,7 +1607,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <span>Dimensi Memerlukan Penguatan Bersama</span>
               </div>
               <p className="text-xs text-amber-800 leading-relaxed">
-                <strong>Tidur Cepat ({classHabitStats.find(h => h.code === 'SLEEP_EARLY')?.percentage || 65}%)</strong> dan <strong>Berolahraga ({classHabitStats.find(h => h.code === 'EXERCISE')?.percentage || 78}%)</strong> memerlukan kolaborasi dengan orang tua melalui kesepakatan batasan layar gawai di malam hari.
+                {hasJournalData && lowestHabit && lowestHabit.percentage < 100 ? (
+                  <>
+                    <strong>{lowestHabit.name} ({lowestHabit.percentage}%)</strong>
+                    {secondLowestHabit && secondLowestHabit.percentage !== lowestHabit.percentage && (
+                      <> dan <strong>{secondLowestHabit.name} ({secondLowestHabit.percentage}%)</strong></>
+                    )}{' '}
+                    memerlukan kolaborasi dan penguatan bersama orang tua tanpa pelabelan negatif.
+                  </>
+                ) : (
+                  'Belum ada data jurnal pembiasaan siswa yang diperbarui untuk pemetaan penguatan dimensi (data 0%).'
+                )}
               </p>
             </div>
           </div>
@@ -1074,78 +1641,96 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredStudents.map((s, idx) => {
-                  // Synthetic realistic completion distribution per student
-                  const isHigh = s.monthlyConsistency >= 85;
-                  const isMed = s.monthlyConsistency >= 70;
-                  return (
-                    <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <div className="font-bold text-slate-900">{s.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{s.nisn}</div>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className="inline-block w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px] leading-6">✓</span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className="inline-block w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px] leading-6">✓</span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className={`inline-block w-6 h-6 rounded-full font-bold text-[10px] leading-6 ${
-                          isHigh ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                        }`}>{isHigh ? '✓' : '•'}</span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className="inline-block w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px] leading-6">✓</span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className="inline-block w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px] leading-6">✓</span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className="inline-block w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px] leading-6">✓</span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center">
-                        <span className={`inline-block w-6 h-6 rounded-full font-bold text-[10px] leading-6 ${
-                          idx % 3 === 0 ? 'bg-amber-100 text-amber-700' : isMed ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                        }`}>{idx % 3 === 0 ? '•' : isMed ? '✓' : '!'}</span>
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <span className="font-mono font-bold text-slate-800">{s.monthlyConsistency}%</span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            s.category === 'TERPANTAU_BAIK'
-                              ? 'bg-emerald-100 text-emerald-800'
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-8 text-center text-slate-400">
+                      Belum ada data siswa untuk rombel ini.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((s) => {
+                    const studentJournals = syncedJournals.filter((j) => {
+                      if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) return false;
+                      return (
+                        j.studentId === s.id ||
+                        j.studentId === s.nisn ||
+                        (j.studentNisn && s.nisn && j.studentNisn === s.nisn) ||
+                        (j.studentName && s.name && j.studentName.toLowerCase().trim() === s.name.toLowerCase().trim())
+                      );
+                    });
+                    const hasStudentJournal = studentJournals.length > 0;
+
+                    const getHabitStatus = (habitKey: string) => {
+                      if (!hasStudentJournal) return { label: '-', className: 'bg-slate-100 text-slate-400' };
+                      let completedCount = 0;
+                      studentJournals.forEach((j) => {
+                        const entry = (j.entries && j.entries[habitKey]) || (j.habits && j.habits[habitKey]);
+                        if (entry && entry.completed) completedCount++;
+                      });
+                      const rate = Math.round((completedCount / studentJournals.length) * 100);
+                      if (rate >= 80) return { label: '✓', className: 'bg-emerald-100 text-emerald-700' };
+                      if (rate >= 50) return { label: '•', className: 'bg-amber-100 text-amber-700' };
+                      return { label: '!', className: 'bg-rose-100 text-rose-700' };
+                    };
+
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <div className="font-bold text-slate-900">{s.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{s.nisn}</div>
+                        </td>
+                        {['WAKE_EARLY', 'WORSHIP', 'EXERCISE', 'HEALTHY_EATING', 'LEARNING', 'SOCIAL', 'SLEEP_EARLY'].map((hKey) => {
+                          const status = getHabitStatus(hKey);
+                          return (
+                            <td key={hKey} className="py-2.5 px-2 text-center">
+                              <span className={`inline-block w-6 h-6 rounded-full font-bold text-[10px] leading-6 ${status.className}`}>
+                                {status.label}
+                              </span>
+                            </td>
+                          );
+                        })}
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="font-mono font-bold text-slate-800">{s.monthlyConsistency}%</span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              s.category === 'TERPANTAU_BAIK'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : s.category === 'PERLU_PENGUATAN'
+                                ? 'bg-amber-100 text-amber-800'
+                                : s.category === 'PERLU_PENDAMPINGAN'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {s.category === 'TERPANTAU_BAIK'
+                              ? 'Terpantau Baik'
                               : s.category === 'PERLU_PENGUATAN'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {s.category === 'TERPANTAU_BAIK'
-                            ? 'Terpantau Baik'
-                            : s.category === 'PERLU_PENGUATAN'
-                            ? 'Perlu Penguatan'
-                            : 'Perlu Pendampingan'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <button
-                          onClick={() => setSelectedStudent(s as any)}
-                          className="px-2 py-1 rounded-lg border border-slate-200 hover:bg-blue-50 text-[#0753A5] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>Lihat</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                              ? 'Perlu Penguatan'
+                              : s.category === 'PERLU_PENDAMPINGAN'
+                              ? 'Perlu Pendampingan'
+                              : 'Belum Ada Data'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            onClick={() => openStudentDossier(s)}
+                            className="px-2 py-1 rounded-lg border border-slate-200 hover:bg-blue-50 text-[#0753A5] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Lihat</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
           <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-100">
-            Keterangan Simbol: (✓) Terbiasa Mandiri • (•) Sedang Dikuatkan • (!) Perlu Pendampingan Khusus Bersama Keluarga.
+            Keterangan Simbol: (✓) Terbiasa Mandiri • (•) Sedang Dikuatkan • (!) Perlu Pendampingan Khusus Bersama Keluarga • (-) Belum Ada Data Jurnal.
           </div>
         </div>
       )}
@@ -1176,31 +1761,38 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {localPrograms.map((prog) => (
-              <div
-                key={prog.id}
-                className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3 flex flex-col justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-[#0753A5]">
-                      {prog.habitCode}
-                    </span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      Aktif Berjalan
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-bold text-slate-900">{prog.title}</h4>
-                  <p className="text-xs text-slate-600 leading-relaxed">{prog.description}</p>
-                </div>
-
-                <div className="pt-3 border-t border-slate-200/60 text-[11px] text-slate-500 space-y-1">
-                  <div>⏰ Jadwal: <strong className="text-slate-800">{prog.schedule}</strong></div>
-                  <div>👤 Penanggung Jawab: <strong className="text-slate-800">{prog.pic}</strong></div>
-                  <div>🎯 Sasaran: <strong className="text-slate-800">{prog.participantScope}</strong></div>
-                </div>
+            {localPrograms.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 col-span-2">
+                <p className="font-semibold text-xs text-slate-700">Belum ada Program Pembiasaan Terdaftar</p>
+                <p className="text-[11px] text-slate-400 mt-1">Klik tombol "Usulkan Inisiatif" untuk menambahkan program kelas.</p>
               </div>
-            ))}
+            ) : (
+              localPrograms.map((prog) => (
+                <div
+                  key={prog.id}
+                  className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3 flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-[#0753A5]">
+                        {prog.habitCode}
+                      </span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                        Aktif Berjalan
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">{prog.title}</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed">{prog.description}</p>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200/60 text-[11px] text-slate-500 space-y-1">
+                    <div>⏰ Jadwal: <strong className="text-slate-800">{prog.schedule}</strong></div>
+                    <div>👤 Penanggung Jawab: <strong className="text-slate-800">{prog.pic}</strong></div>
+                    <div>🎯 Sasaran: <strong className="text-slate-800">{prog.participantScope}</strong></div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -1232,61 +1824,68 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
 
             <div className="space-y-4">
-              {localFollowUps.map((rtl) => (
-                <div
-                  key={rtl.id}
-                  className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-[#0753A5]">
-                      {rtl.finding}
-                    </span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      rtl.status === 'COMPLETED'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-blue-100 text-[#0753A5]'
-                    }`}>
-                      Status: {rtl.status === 'COMPLETED' ? 'Selesai' : 'Sedang Berjalan'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-400 font-medium">Akar Masalah ({rtl.rootCauseType === 'FACT' ? 'Fakta Terverifikasi' : 'Hipotesis'}):</span>
-                      <p className="text-slate-800 font-semibold mt-0.5">{rtl.rootCause}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-medium">Rencana Aksi:</span>
-                      <p className="text-slate-800 font-semibold mt-0.5">{rtl.actionPlan}</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-2 w-full sm:w-1/2">
-                      <span className="text-slate-500 text-[11px]">Progres:</span>
-                      <div className="flex-1 bg-slate-200 rounded-full h-2">
-                        <div
-                          className="bg-[#41A85F] h-2 rounded-full"
-                          style={{ width: `${rtl.progressPercent}%` }}
-                        />
-                      </div>
-                      <span className="font-bold text-slate-700 text-[11px]">{rtl.progressPercent}%</span>
-                      {rtl.progressPercent < 100 && (
-                        <button
-                          onClick={() => handleUpdateRtlProgress(rtl.id, Math.min(100, rtl.progressPercent + 25))}
-                          className="px-2 py-0.5 rounded-lg border border-slate-300 hover:bg-emerald-50 hover:text-emerald-700 text-[10px] font-bold text-slate-600 transition-colors cursor-pointer"
-                          title="Tingkatkan Progres"
-                        >
-                          +25%
-                        </button>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-slate-500">
-                      Tenggat: <strong className="text-slate-700">{rtl.deadline}</strong> • PIC: {rtl.owner}
-                    </span>
-                  </div>
+              {localFollowUps.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500">
+                  <p className="font-semibold text-xs text-slate-700">Belum ada Rencana Tindak Lanjut (RTL)</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Gunakan tombol "Tambah RTL Baru" untuk menyusun intervensi berbasis data.</p>
                 </div>
-              ))}
+              ) : (
+                localFollowUps.map((rtl) => (
+                  <div
+                    key={rtl.id}
+                    className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-[#0753A5]">
+                        {rtl.finding}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        rtl.status === 'COMPLETED'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-blue-100 text-[#0753A5]'
+                      }`}>
+                        Status: {rtl.status === 'COMPLETED' ? 'Selesai' : 'Sedang Berjalan'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-400 font-medium">Akar Masalah ({rtl.rootCauseType === 'FACT' ? 'Fakta Terverifikasi' : 'Hipotesis'}):</span>
+                        <p className="text-slate-800 font-semibold mt-0.5">{rtl.rootCause}</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-medium">Rencana Aksi:</span>
+                        <p className="text-slate-800 font-semibold mt-0.5">{rtl.actionPlan}</p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2 w-full sm:w-1/2">
+                        <span className="text-slate-500 text-[11px]">Progres:</span>
+                        <div className="flex-1 bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-[#41A85F] h-2 rounded-full"
+                            style={{ width: `${rtl.progressPercent}%` }}
+                          />
+                        </div>
+                        <span className="font-bold text-slate-700 text-[11px]">{rtl.progressPercent}%</span>
+                        {rtl.progressPercent < 100 && (
+                          <button
+                            onClick={() => handleUpdateRtlProgress(rtl.id, Math.min(100, rtl.progressPercent + 25))}
+                            className="px-2 py-0.5 rounded-lg border border-slate-300 hover:bg-emerald-50 hover:text-emerald-700 text-[10px] font-bold text-slate-600 transition-colors cursor-pointer"
+                            title="Tingkatkan Progres"
+                          >
+                            +25%
+                          </button>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-500">
+                        Tenggat: <strong className="text-slate-700">{rtl.deadline}</strong> • PIC: {rtl.owner}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

@@ -3,13 +3,13 @@
 // Warm parent-child communication, positive feedback loop, fast approval
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   DailyJournal,
   ParentMonthlyReflection,
   HabitCode,
 } from '../../packages/types/src/index';
-import { HABIT_LIST } from '../lib/constants';
+import { HABIT_LIST, UserPersona, isDeprecatedOrDummyJournal } from '../lib/constants';
 import {
   Heart,
   CheckCircle2,
@@ -29,6 +29,7 @@ import {
   ArrowRight,
   TrendingUp,
   FileText,
+  RefreshCw,
 } from 'lucide-react';
 
 interface ParentValidationViewProps {
@@ -37,6 +38,9 @@ interface ParentValidationViewProps {
   studentName: string;
   className: string;
   schoolName?: string;
+  currentPersona?: UserPersona;
+  studentId?: string;
+  studentNisn?: string;
   onValidateJournal: (journalId: string, habitCode?: HabitCode, parentNote?: string) => void;
   onSaveReflection: (reflection: ParentMonthlyReflection) => void;
   activeNavTab?: string;
@@ -49,17 +53,23 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
   studentName,
   className,
   schoolName,
+  currentPersona,
+  studentId,
+  studentNisn,
   onValidateJournal,
   onSaveReflection,
   activeNavTab,
   onOpenReportModal,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'OVERVIEW' | 'VALIDATION' | 'REFLECTION' | 'CHALLENGES'>('OVERVIEW');
-  const [encouragementNote, setEncouragementNote] = useState('');
+  const [notesByJournalId, setNotesByJournalId] = useState<Record<string, string>>({});
   const [validatedSuccessId, setValidatedSuccessId] = useState<string | null>(null);
+  const [liveSyncTime, setLiveSyncTime] = useState<string>(() =>
+    new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
 
   // Sync with Header navigation tabs
-  React.useEffect(() => {
+  useEffect(() => {
     if (!activeNavTab) return;
     if (activeNavTab === 'dashboard') {
       setActiveSubTab('OVERVIEW');
@@ -71,6 +81,71 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
       setActiveSubTab('CHALLENGES');
     }
   }, [activeNavTab]);
+
+  // Realtime synchronization listener for student journal updates
+  useEffect(() => {
+    const handleJournalSync = () => {
+      setLiveSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    };
+
+    window.addEventListener('si7kaih_journals_updated', handleJournalSync);
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'si7kaih_journals_prod') {
+        handleJournalSync();
+      }
+    });
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = (msg) => {
+          if (msg.data?.type === 'JOURNALS_UPDATED') {
+            handleJournalSync();
+          }
+        };
+      } catch (_e) {}
+    }
+
+    return () => {
+      window.removeEventListener('si7kaih_journals_updated', handleJournalSync);
+      if (bc) bc.close();
+    };
+  }, []);
+
+  // Filter journals specifically for this child without any hardcoded/default/dummy data
+  const childJournals = useMemo(() => {
+    const cleanStudentName = (studentName || currentPersona?.childName || '').toLowerCase().trim();
+    const cleanStudentId = (studentId || currentPersona?.childId || '').toLowerCase().trim();
+    const cleanStudentNisn = (studentNisn || currentPersona?.childNisn || '').toLowerCase().trim();
+
+    return journals.filter((j) => {
+      if (!j) return false;
+      if (isDeprecatedOrDummyJournal(j)) return false;
+
+      const jStudentId = (j.studentId || '').toLowerCase().trim();
+      const jStudentNisn = (j.studentNisn || '').toLowerCase().trim();
+      const jStudentName = (j.studentName || '').toLowerCase().trim();
+
+      // Check ID match
+      if (cleanStudentId && jStudentId && jStudentId === cleanStudentId) return true;
+      // Check NISN match
+      if (cleanStudentNisn && jStudentNisn && jStudentNisn === cleanStudentNisn) return true;
+      // Check Name match
+      if (cleanStudentName && jStudentName) {
+        if (jStudentName === cleanStudentName || jStudentName.includes(cleanStudentName) || cleanStudentName.includes(jStudentName)) {
+          return true;
+        }
+      }
+
+      // If neither has explicit IDs but only one student context exists
+      if (!cleanStudentId && !cleanStudentNisn && !jStudentId && !jStudentNisn && cleanStudentName && jStudentName) {
+        return true;
+      }
+
+      return false;
+    });
+  }, [journals, studentName, studentId, studentNisn, currentPersona]);
 
   // Family Challenges State (starts clean without default completed progress)
   const [familyChallenges, setFamilyChallenges] = useState([
@@ -145,28 +220,41 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
   const [parentNote, setParentNote] = useState(initialReflection?.parentNote || '');
   const [isReflectionSaved, setIsReflectionSaved] = useState(false);
 
-  React.useEffect(() => {
-    setObservedChange(initialReflection?.observedChange || '');
-    setDifficulty(initialReflection?.difficulty || '');
-    setFamilySupport(initialReflection?.familySupport || '');
-    setNextMonthSupport(initialReflection?.nextMonthSupport || '');
-    setParentNote(initialReflection?.parentNote || '');
-  }, [initialReflection]);
+  useEffect(() => {
+    if (initialReflection) {
+      setObservedChange((prev) => (prev !== (initialReflection.observedChange || '') ? (initialReflection.observedChange || '') : prev));
+      setDifficulty((prev) => (prev !== (initialReflection.difficulty || '') ? (initialReflection.difficulty || '') : prev));
+      setFamilySupport((prev) => (prev !== (initialReflection.familySupport || '') ? (initialReflection.familySupport || '') : prev));
+      setNextMonthSupport((prev) => (prev !== (initialReflection.nextMonthSupport || '') ? (initialReflection.nextMonthSupport || '') : prev));
+      setParentNote((prev) => (prev !== (initialReflection.parentNote || '') ? (initialReflection.parentNote || '') : prev));
+    }
+  }, [
+    initialReflection?.observedChange,
+    initialReflection?.difficulty,
+    initialReflection?.familySupport,
+    initialReflection?.nextMonthSupport,
+    initialReflection?.parentNote,
+  ]);
 
-  // Dynamic metrics calculation from journals
+  // Dynamic metrics calculation strictly based on child's journals (no default mock data)
   const daysInMonth = 31;
-  const recordedDays = journals.length;
+  const recordedDays = childJournals.length;
   const completenessPct = Math.round((recordedDays / daysInMonth) * 100);
 
-  const validatedCount = journals.filter((j) => {
-    return Object.values(j.entries).some((val) => (val as any)?.parentValidated);
-  }).length;
+  const isJournalParentValidated = (j: DailyJournal): boolean => {
+    if (j.parentValidated) return true;
+    if ((j as any).parent_validated) return true;
+    const entries = Object.values(j.entries || {});
+    return entries.length > 0 && entries.every((val) => (val as any)?.parentValidated);
+  };
+
+  const validatedCount = childJournals.filter(isJournalParentValidated).length;
 
   let totalCompletedSlots = 0;
   const totalSlots = recordedDays * 7;
   if (recordedDays > 0) {
-    journals.forEach((j) => {
-      Object.values(j.entries).forEach((entry) => {
+    childJournals.forEach((j) => {
+      Object.values(j.entries || {}).forEach((entry) => {
         if ((entry as { completed?: boolean })?.completed) totalCompletedSlots++;
       });
     });
@@ -182,7 +270,7 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
     { code: 'SOCIAL' as HabitCode, name: 'Bermasyarakat & Peduli Sesama', desc: 'Sopan santun, gotong royong, dan peduli sesama' },
     { code: 'SLEEP_EARLY' as HabitCode, name: 'Tidur Cepat & Cukup', desc: 'Tidur teratur dan istirahat berkualitas' },
   ].map((h) => {
-    const completedCount = journals.filter((j) => j.entries[h.code]?.completed).length;
+    const completedCount = childJournals.filter((j) => j.entries?.[h.code]?.completed).length;
     const pct = recordedDays > 0 ? Math.round((completedCount / recordedDays) * 100) : 0;
     return {
       ...h,
@@ -192,15 +280,20 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
     };
   });
 
-  // Sort journals descending (newest first)
-  const sortedJournals = [...journals].sort((a, b) => b.journalDate.localeCompare(a.journalDate));
-  const pendingJournals = sortedJournals.filter(
-    (j) => !j.entries.WORSHIP?.parentValidated || !j.entries.WAKE_EARLY?.parentValidated
-  );
+  // Sort child journals descending (newest first)
+  const sortedJournals = useMemo(() => {
+    return [...childJournals].sort((a, b) => b.journalDate.localeCompare(a.journalDate));
+  }, [childJournals]);
 
-  const handleValidate = (journalId: string) => {
-    onValidateJournal(journalId, undefined, encouragementNote.trim() || undefined);
+  const pendingJournals = useMemo(() => {
+    return sortedJournals.filter((j) => !isJournalParentValidated(j));
+  }, [sortedJournals]);
+
+  const handleValidate = (journalId: string, habitCode?: HabitCode, customNote?: string) => {
+    const note = customNote !== undefined ? customNote : (notesByJournalId[journalId] ?? '');
+    onValidateJournal(journalId, habitCode, note.trim() || undefined);
     setValidatedSuccessId(journalId);
+    showToast('Validasi data jurnal anak berhasil diperbarui!');
     setTimeout(() => setValidatedSuccessId(null), 3000);
   };
 
@@ -216,6 +309,7 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
     };
     onSaveReflection(updated);
     setIsReflectionSaved(true);
+    showToast('Refleksi bulanan orang tua berhasil disimpan!');
     setTimeout(() => setIsReflectionSaved(false), 3000);
   };
 
@@ -499,78 +593,169 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
       {/* 2. VALIDATION */}
       {activeSubTab === 'VALIDATION' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between px-1">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-1">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <span>Daftar Jurnal yang Perlu Divalidasi</span>
               <span className="text-xs font-semibold text-slate-500">
                 ({pendingJournals.length} menunggu konfirmasi)
               </span>
             </h3>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Sinkron Realtime ({liveSyncTime} WIB)
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    window.dispatchEvent(new CustomEvent('si7kaih_journals_updated'));
+                    setLiveSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+                    showToast('Data jurnal anak berhasil disinkronkan!');
+                  } catch (_e) {}
+                }}
+                title="Sinkronkan pembaruan data jurnal anak"
+                className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Segarkan</span>
+              </button>
+            </div>
           </div>
 
-          {sortedJournals.slice(0, 5).map((journal) => {
-            const isFullyValidated =
-              journal.entries.WAKE_EARLY?.parentValidated &&
-              journal.entries.WORSHIP?.parentValidated;
+          {/* Kebijakan Validasi Harian Orang Tua */}
+          <div className="p-4 bg-gradient-to-r from-blue-50/90 to-indigo-50/70 rounded-3xl border border-blue-200/80 flex items-start gap-3.5 text-xs text-blue-950 shadow-xs">
+            <div className="w-9 h-9 rounded-2xl bg-[#0753A5] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-slate-900 text-sm">Validasi Harian Sesuai Isian Anak</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-[#0753A5] font-bold text-[10px] tracking-wide uppercase">
+                  Data Sinkron Realtime
+                </span>
+              </div>
+              <p className="text-slate-600 leading-relaxed text-xs">
+                Data jurnal di bawah ini disinkronkan langsung dari catatan harian yang diisi oleh ananda <strong>{studentName || 'Siswa'}</strong>. Orang tua memvalidasi dan mengapresiasi kebiasaan yang dicatatkan anak pada hari tersebut tanpa data default buatan.
+              </p>
+            </div>
+          </div>
 
-            return (
-              <div
-                key={journal.id}
-                className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">📅</span>
+          {sortedJournals.length === 0 ? (
+            <div className="bg-white p-8 rounded-3xl border border-slate-200/80 text-center space-y-3.5 shadow-xs">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 text-[#0753A5] flex items-center justify-center text-3xl">
+                📝
+              </div>
+              <h4 className="text-base font-bold text-slate-900">Belum Ada Data Jurnal dari Ananda</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                Ananda <strong className="text-slate-800">{studentName || 'Peserta Didik'}</strong> belum mencatatkan isian jurnal harian pembiasaan. Data jurnal harian akan otomatis muncul di sini secara tersinkronisasi segera setelah ananda mengisi dan menyimpan jurnalnya.
+              </p>
+              <div className="pt-2 flex items-center justify-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-800 text-xs font-semibold">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  Menunggu pengisian jurnal oleh ananda
+                </span>
+              </div>
+            </div>
+          ) : (
+            sortedJournals.map((journal) => {
+              const isFullyValidated = isJournalParentValidated(journal);
+              const completedCount = journal.completedCount ?? Object.values(journal.entries || {}).filter((e: any) => e?.completed).length;
+              const currentNote = notesByJournalId[journal.id] ?? (journal.parentValidationNote || '');
+
+              return (
+                <div
+                  key={journal.id}
+                  className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📅</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-slate-900">
+                            Jurnal Tanggal: {journal.journalDate}
+                          </h4>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                            {completedCount} dari 7 Kebiasaan Terisi
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Status Data: <span className="font-semibold text-blue-600">{completedCount} kebiasaan dicatatkan ananda</span>
+                          {journal.savedAt && (
+                            <span className="ml-2 text-slate-500">• Waktu Simpan: <strong className="text-emerald-700 font-semibold">{journal.savedAt}</strong></span>
+                          )}
+                          {journal.parentValidatedAt && (
+                            <span className="ml-2 text-slate-500">• Divalidasi: <strong className="text-indigo-700 font-semibold">{new Date(journal.parentValidatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB</strong></span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900">
-                        Jurnal Tanggal: {journal.journalDate}
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Status: <span className="font-semibold text-blue-600">{journal.completedCount} dari 7 kebiasaan tercatat</span>
-                      </p>
+                      {isFullyValidated ? (
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Tervalidasi Sesuai Jurnal Anak</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+                          <Clock className="w-4 h-4 text-amber-600" />
+                          <span>Siap Divalidasi Orang Tua</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  <div>
-                    {isFullyValidated ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Sudah Divalidasi Orang Tua</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                        <Clock className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Menunggu Validasi Orang Tua</span>
-                      </span>
-                    )}
+                  {/* Habit Cards Summary */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                      <span>Rincian Kebiasaan yang Diisi Ananda:</span>
+                      <span className="text-[10px] italic text-slate-400">Klik kebiasaan untuk validasi paraf individual</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                      {HABIT_LIST.map((h) => {
+                        const entry = journal.entries?.[h.code];
+                        const isDone = !!entry?.completed;
+                        const isEntryValidated = !!entry?.parentValidated;
+                        const noteSnippet = entry?.data?.optionalNote || entry?.data?.subject || entry?.data?.exerciseType || entry?.data?.socialAct;
+
+                        return (
+                          <button
+                            key={h.code}
+                            type="button"
+                            onClick={() => handleValidate(journal.id, h.code)}
+                            title={`Klik untuk validasi paraf ${h.name}`}
+                            className={`p-2.5 rounded-2xl border text-center text-xs transition-all cursor-pointer text-left flex flex-col justify-between ${
+                              isDone
+                                ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950 hover:bg-emerald-100/70'
+                                : 'bg-slate-50/80 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <div>
+                              <p className="font-bold truncate text-[11px]">{h.name}</p>
+                              <p className="text-[10px] mt-0.5 font-medium">
+                                {isDone ? '✓ Dilakukan' : 'Belum'}
+                              </p>
+                              {noteSnippet && (
+                                <p className="text-[9px] text-slate-500 truncate mt-0.5 italic">
+                                  {noteSnippet}
+                                </p>
+                              )}
+                            </div>
+                            <div className="mt-1 pt-1 border-t border-slate-200/50 flex items-center justify-between">
+                              <span className="text-[9px] font-semibold text-slate-400">Paraf:</span>
+                              <span className={`text-[9px] font-bold ${isEntryValidated ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                {isEntryValidated ? '✓ Ya' : '—'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
 
-                {/* Habit Cards Summary */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                  {HABIT_LIST.map((h) => {
-                    const entry = journal.entries[h.code];
-                    const isDone = !!entry?.completed;
-                    return (
-                      <div
-                        key={h.code}
-                        className={`p-2 rounded-xl border text-center text-xs ${
-                          isDone
-                            ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <p className="font-bold truncate text-[11px]">{h.name}</p>
-                        <p className="text-[10px] mt-0.5 font-semibold">
-                          {isDone ? '✓ Ya' : 'Belum'}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Actions & Encouragement Note */}
-                {!isFullyValidated && (
+                  {/* Actions & Encouragement Note */}
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
@@ -579,33 +764,48 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
                       </label>
                       <input
                         type="text"
-                        value={encouragementNote}
-                        onChange={(e) => setEncouragementNote(e.target.value)}
-                        placeholder="Tuliskan apresiasi hangat untuk usaha ananda..."
+                        value={currentNote}
+                        onChange={(e) =>
+                          setNotesByJournalId((prev) => ({ ...prev, [journal.id]: e.target.value }))
+                        }
+                        placeholder={journal.parentValidationNote || "Tuliskan apresiasi hangat untuk usaha ananda hari ini..."}
                         className="w-full p-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 bg-white focus:outline-blue-500"
                       />
+                      {journal.parentValidationNote && (
+                        <p className="text-[11px] text-slate-500 mt-1 italic">
+                          Catatan sebelumnya: "{journal.parentValidationNote}"
+                        </p>
+                      )}
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                       <span className="text-[11px] text-slate-500">
                         {validatedSuccessId === journal.id
-                          ? '✓ Jurnal berhasil divalidasi dengan penuh kasih!'
-                          : 'Validasi memastikan komunikasi hangat antara rumah dan sekolah.'}
+                          ? '✓ Jurnal berhasil divalidasi sesuai data ananda!'
+                          : `Validasi harian mengonfirmasi ${completedCount} kebiasaan yang dicatatkan ananda.`}
                       </span>
                       <button
                         id={`validate-btn-${journal.id}`}
-                        onClick={() => handleValidate(journal.id)}
-                        className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#41A85F] hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                        onClick={() => handleValidate(journal.id, undefined, currentNote)}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition-all cursor-pointer ${
+                          isFullyValidated
+                            ? 'bg-slate-700 hover:bg-slate-800'
+                            : 'bg-[#41A85F] hover:bg-emerald-700'
+                        }`}
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>Validasi & Beri Semangat</span>
+                        <span>
+                          {isFullyValidated
+                            ? 'Perbarui Validasi & Catatan'
+                            : `Validasi Sesuai Jurnal Anak (${completedCount}/7 Kebiasaan)`}
+                        </span>
                       </button>
                     </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
+                </div>
+              );
+            })
+          )}
         </div>
       )}
 

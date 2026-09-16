@@ -36,11 +36,16 @@ export interface StudentDossierData {
   completedTodayCount: number;
   monthlyConsistency: number; // %
   completenessRate: number; // %
-  category: 'TERPANTAU_BAIK' | 'PERLU_PENGUATAN' | 'PERLU_PENDAMPINGAN';
+  category: 'TERPANTAU_BAIK' | 'PERLU_PENGUATAN' | 'PERLU_PENDAMPINGAN' | 'BELUM_ADA_DATA';
   lastJournalDate: string;
   validatedByTeacher: boolean;
   parentName?: string;
+  parentPhone?: string;
+  gender?: 'L' | 'P';
+  status?: string;
   notes?: string;
+  habitBreakdown?: Record<HabitCode, { percentage: number; days: number }>;
+  recentJournals?: { date: string; count: number; status: string; time: string }[];
 }
 
 interface StudentDossierModalProps {
@@ -68,9 +73,7 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
   onValidateStudent,
   onOpenReportModal,
 }) => {
-  const [teacherNote, setTeacherNote] = useState(
-    student?.notes || 'Ananda menunjukkan antusiasme belajar yang tinggi serta sikap santun kepada sesama teman.'
-  );
+  const [teacherNote, setTeacherNote] = useState(student?.notes || '');
   const [isSavedNote, setIsSavedNote] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<any | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -78,19 +81,28 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
 
   if (!isOpen || !student) return null;
 
-  // Mock specific habit rates based on student profile
-  const isGood = student.category === 'TERPANTAU_BAIK';
-  const isWeak = student.category === 'PERLU_PENDAMPINGAN';
-
-  const habitRates: Record<HabitCode, { percentage: number; days: number }> = {
-    WAKE_EARLY: { percentage: isGood ? 96 : isWeak ? 70 : 85, days: isGood ? 29 : isWeak ? 21 : 26 },
-    WORSHIP: { percentage: isGood ? 98 : isWeak ? 85 : 92, days: isGood ? 30 : isWeak ? 26 : 28 },
-    EXERCISE: { percentage: isGood ? 85 : isWeak ? 60 : 75, days: isGood ? 26 : isWeak ? 18 : 23 },
-    HEALTHY_EATING: { percentage: isGood ? 92 : isWeak ? 65 : 82, days: isGood ? 28 : isWeak ? 20 : 25 },
-    LEARNING: { percentage: isGood ? 90 : isWeak ? 70 : 84, days: isGood ? 27 : isWeak ? 21 : 25 },
-    SOCIAL: { percentage: isGood ? 88 : isWeak ? 75 : 80, days: isGood ? 27 : isWeak ? 23 : 24 },
-    SLEEP_EARLY: { percentage: isGood ? 78 : isWeak ? 50 : 65, days: isGood ? 24 : isWeak ? 15 : 20 },
-  };
+  // Real or 0-reset habit rates
+  const habitRates: Record<HabitCode, { percentage: number; days: number }> =
+    student.habitBreakdown ||
+    (student.monthlyConsistency === 0
+      ? {
+          WAKE_EARLY: { percentage: 0, days: 0 },
+          WORSHIP: { percentage: 0, days: 0 },
+          EXERCISE: { percentage: 0, days: 0 },
+          HEALTHY_EATING: { percentage: 0, days: 0 },
+          LEARNING: { percentage: 0, days: 0 },
+          SOCIAL: { percentage: 0, days: 0 },
+          SLEEP_EARLY: { percentage: 0, days: 0 },
+        }
+      : {
+          WAKE_EARLY: { percentage: student.monthlyConsistency, days: Math.round((student.monthlyConsistency / 100) * 30) },
+          WORSHIP: { percentage: student.monthlyConsistency, days: Math.round((student.monthlyConsistency / 100) * 30) },
+          EXERCISE: { percentage: student.monthlyConsistency, days: Math.round((student.monthlyConsistency / 100) * 30) },
+          HEALTHY_EATING: { percentage: student.monthlyConsistency, days: Math.round((student.monthlyConsistency / 100) * 30) },
+          LEARNING: { percentage: student.monthlyConsistency, days: Math.round((student.monthlyConsistency / 100) * 30) },
+          SOCIAL: { percentage: student.monthlyConsistency, days: Math.round((student.monthlyConsistency / 100) * 30) },
+          SLEEP_EARLY: { percentage: student.monthlyConsistency, days: Math.round((student.monthlyConsistency / 100) * 30) },
+        });
 
   const handleSaveNote = () => {
     setIsSavedNote(true);
@@ -159,20 +171,58 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
                       ? 'bg-emerald-400 text-slate-900'
                       : student.category === 'PERLU_PENGUATAN'
                       ? 'bg-amber-300 text-slate-900'
-                      : 'bg-rose-300 text-slate-900'
+                      : student.category === 'PERLU_PENDAMPINGAN'
+                      ? 'bg-rose-300 text-slate-900'
+                      : 'bg-slate-200 text-slate-700'
                   }`}
                 >
                   {student.category === 'TERPANTAU_BAIK'
                     ? 'Terpantau Baik'
                     : student.category === 'PERLU_PENGUATAN'
                     ? 'Perlu Penguatan'
-                    : 'Perlu Pendampingan'}
+                    : student.category === 'PERLU_PENDAMPINGAN'
+                    ? 'Perlu Pendampingan'
+                    : 'Belum Ada Data (0%)'}
                 </span>
+                {student.status && (
+                  <span
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                      student.status === 'AKTIF'
+                        ? 'bg-emerald-500/30 text-white border border-emerald-300/40'
+                        : student.status === 'MUTASI'
+                        ? 'bg-amber-400 text-slate-900 font-bold'
+                        : 'bg-purple-400 text-slate-900 font-bold'
+                    }`}
+                  >
+                    {student.status}
+                  </span>
+                )}
+                {student.gender && (
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      student.gender === 'P' ? 'bg-pink-400/30 text-pink-100' : 'bg-blue-300/30 text-blue-100'
+                    }`}
+                  >
+                    {student.gender === 'P' ? 'Perempuan' : 'Laki-laki'}
+                  </span>
+                )}
               </div>
               <div className="text-xs text-blue-100 flex flex-wrap items-center gap-3">
                 <span>NISN: <strong>{student.nisn}</strong></span>
                 <span>•</span>
                 <span>Kelas: <strong>{student.className || 'Kelas 7-A (Fase D)'}</strong></span>
+                {student.parentName && (
+                  <>
+                    <span>•</span>
+                    <span>Wali: <strong>{student.parentName}</strong></span>
+                  </>
+                )}
+                {student.parentPhone && (
+                  <>
+                    <span>•</span>
+                    <span>No. HP: <strong>{student.parentPhone}</strong></span>
+                  </>
+                )}
                 <span>•</span>
                 <span>Jurnal Terakhir: <strong>{student.lastJournalDate}</strong></span>
               </div>
@@ -343,37 +393,47 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
               <div className="text-xs text-slate-500">
                 Rekam jejak 7 hari terakhir menunjukkan keteraturan pengisian jurnal harian.
               </div>
-              <div className="space-y-2.5">
-                {[
-                  { date: '2026-09-08 (Hari Ini)', count: student.completedTodayCount, status: 'Lengkap', time: '19:30' },
-                  { date: '2026-09-07 (Senin)', count: 7, status: 'Sempurna', time: '20:15' },
-                  { date: '2026-09-06 (Minggu)', count: 6, status: 'Lengkap', time: '20:00' },
-                  { date: '2026-09-05 (Sabtu)', count: 6, status: 'Lengkap', time: '21:10' },
-                  { date: '2026-09-04 (Jumat)', count: 7, status: 'Sempurna', time: '19:45' },
-                  { date: '2026-09-03 (Kamis)', count: 5, status: 'Perlu Tidur Cepat', time: '20:30' },
-                  { date: '2026-09-02 (Rabu)', count: 7, status: 'Sempurna', time: '19:50' },
-                ].map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/60 text-xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px]">
-                        ✓
+              {(!student.recentJournals || student.recentJournals.length === 0) ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                  <div className="text-2xl">📋</div>
+                  <div className="text-xs font-bold text-slate-700">Belum Ada Riwayat Jurnal (0)</div>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto leading-relaxed">
+                    Ananda belum memiliki entri jurnal harian yang tercatat dalam 7 hari terakhir. Data rekam jejak akan otomatis muncul saat jurnal mulai diisi.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {student.recentJournals.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/60 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] ${
+                            item.count >= 6
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : item.count > 0
+                              ? 'bg-blue-100 text-[#0753A5]'
+                              : 'bg-slate-200 text-slate-500'
+                          }`}
+                        >
+                          {item.count >= 6 ? '✓' : item.count > 0 ? '•' : '-'}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800">{item.date}</div>
+                          <div className="text-[10px] text-slate-400">Dicatat pukul {item.time} WIB</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-bold text-slate-800">{item.date}</div>
-                        <div className="text-[10px] text-slate-400">Dicatat pukul {item.time} WIB</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#0753A5] bg-blue-50 px-2 py-0.5 rounded text-[11px]">
+                          {item.count}/7 Selesai
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[#0753A5] bg-blue-50 px-2 py-0.5 rounded text-[11px]">
-                        {item.count}/7 Selesai
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

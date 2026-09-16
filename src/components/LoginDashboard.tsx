@@ -41,7 +41,7 @@ import {
   Building2,
   Clock,
 } from 'lucide-react';
-import { UserPersona, getStoredUsers, USER_PERSONAS } from '../lib/constants';
+import { UserPersona, getStoredUsers, USER_PERSONAS, isDeprecatedOrDummyJournal } from '../lib/constants';
 import { Student, Rombel, getStoredStudents, getStoredRombels } from '../lib/studentData';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { DailyJournal } from '../../packages/types/src/index';
@@ -52,113 +52,8 @@ import {
   applySuperAdminMasterDataToStorage,
 } from '../lib/supabaseService';
 
-// Sampel data murid referensi SMP jika belum ada murid yang diimpor oleh Admin
-const FALLBACK_SAMPLE_STUDENTS: Student[] = [
-  {
-    id: 'std-sample-01',
-    nisn: '0081234561',
-    name: 'Ahmad Fadhil Ramadhan',
-    gender: 'L',
-    className: 'Kelas 7A',
-    parentName: 'Hendra Gunawan',
-    parentPhone: '0812-3456-7801',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'ahmad.fadhil',
-  },
-  {
-    id: 'std-sample-02',
-    nisn: '0081234562',
-    name: 'Alya Putri Lestari',
-    gender: 'P',
-    className: 'Kelas 7A',
-    parentName: 'Bambang Sudibyo',
-    parentPhone: '0812-3456-7802',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'alya.putri',
-  },
-  {
-    id: 'std-sample-03',
-    nisn: '0081234563',
-    name: 'Bintang Pratama Putra',
-    gender: 'L',
-    className: 'Kelas 7B',
-    parentName: 'Joko Susilo',
-    parentPhone: '0812-3456-7803',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'bintang.pratama',
-  },
-  {
-    id: 'std-sample-04',
-    nisn: '0081234564',
-    name: 'Cantika Dewi Rahmawati',
-    gender: 'P',
-    className: 'Kelas 7B',
-    parentName: 'Surya Kencana',
-    parentPhone: '0812-3456-7804',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'cantika.dewi',
-  },
-  {
-    id: 'std-sample-05',
-    nisn: '0081234565',
-    name: 'Dimas Bagus Anggoro',
-    gender: 'L',
-    className: 'Kelas 8A',
-    parentName: 'Agus Setiawan',
-    parentPhone: '0812-3456-7805',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'dimas.bagus',
-  },
-  {
-    id: 'std-sample-06',
-    nisn: '0081234566',
-    name: 'Elisa Zahra Khairunnisa',
-    gender: 'P',
-    className: 'Kelas 8B',
-    parentName: 'Irwan Syahputra',
-    parentPhone: '0812-3456-7806',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'elisa.zahra',
-  },
-  {
-    id: 'std-sample-07',
-    nisn: '0081234567',
-    name: 'Farhan Maulana Akbar',
-    gender: 'L',
-    className: 'Kelas 9A',
-    parentName: 'Lukman Hakim',
-    parentPhone: '0812-3456-7807',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'farhan.maulana',
-  },
-  {
-    id: 'std-sample-08',
-    nisn: '0081234568',
-    name: 'Gita Maharani Sukma',
-    gender: 'P',
-    className: 'Kelas 9B',
-    parentName: 'Dedi Kurniawan',
-    parentPhone: '0812-3456-7808',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    createdAt: '2026-07-01',
-    username: 'gita.maharani',
-  },
-];
+// Data referensi murid kosong secara default bila belum diupdate oleh Super Admin atau Admin Sekolah
+const FALLBACK_SAMPLE_STUDENTS: Student[] = [];
 
 interface LoginDashboardProps {
   onLoginSuccess: (persona: UserPersona) => void;
@@ -202,14 +97,23 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
   const [isCardRoleDropdownOpen, setIsCardRoleDropdownOpen] = useState(false);
 
   // Pengaturan dropdown pilihan sekolah, kelas, dan murid untuk login Murid & Orang Tua
+  // Default ke '0' bila belum diupdate datanya oleh superadmin dan admin sekolah
   const [selectedSchoolForLogin, setSelectedSchoolForLogin] = useState<string>(() => {
+    const storedSchools = getStoredSchools();
+    if (storedSchools.length === 0) return '0';
     try {
-      return localStorage.getItem('si7kaih_remembered_school') || 'ALL';
-    } catch (_e) {
-      return 'ALL';
-    }
+      const saved = localStorage.getItem('si7kaih_remembered_school');
+      if (saved && saved !== '0' && (saved === 'ALL' || storedSchools.some((s) => s.name === saved))) {
+        return saved;
+      }
+    } catch (_e) {}
+    return 'ALL';
   });
-  const [selectedClassForLogin, setSelectedClassForLogin] = useState<string>('ALL');
+  const [selectedClassForLogin, setSelectedClassForLogin] = useState<string>(() => {
+    const storedRombels = getStoredRombels();
+    if (storedRombels.length === 0) return '0';
+    return 'ALL';
+  });
   const [selectedStudentNisn, setSelectedStudentNisn] = useState<string>('');
   const [loginInputMode, setLoginInputMode] = useState<'DROPDOWN' | 'MANUAL'>('DROPDOWN');
   const [inactivityNotice, setInactivityNotice] = useState<string | null>(null);
@@ -231,7 +135,13 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
   const [journals, setJournals] = useState<DailyJournal[]>(() => {
     try {
       const saved = localStorage.getItem('si7kaih_journals_prod');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
+      return [];
     } catch (_e) {
       return [];
     }
@@ -243,47 +153,62 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
   const [copiedContactId, setCopiedContactId] = useState<string | null>(null);
 
   // Dynamic real-time listener for data updates across the application
-  const syncLiveData = () => {
+  const syncLocalDataOnly = () => {
     try {
-      setStudents(getStoredStudents());
-      setRombels(getStoredRombels());
-      setSchools(getStoredSchools());
-      setUsers(getStoredUsers());
+      const freshStudents = getStoredStudents();
+      setStudents((prev) => (JSON.stringify(prev) === JSON.stringify(freshStudents) ? prev : freshStudents));
+      const freshRombels = getStoredRombels();
+      setRombels((prev) => (JSON.stringify(prev) === JSON.stringify(freshRombels) ? prev : freshRombels));
+      const freshSchools = getStoredSchools();
+      setSchools((prev) => (JSON.stringify(prev) === JSON.stringify(freshSchools) ? prev : freshSchools));
+      const freshUsers = getStoredUsers();
+      setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(freshUsers) ? prev : freshUsers));
       const savedJournals = localStorage.getItem('si7kaih_journals_prod');
-      setJournals(savedJournals ? JSON.parse(savedJournals) : []);
-
-      // Pull latest authoritative users, schools & journals from Supabase backend on access
-      fetchSchoolsFromSupabase()
-        .then((remoteSchools) => {
-          if (remoteSchools && remoteSchools.length > 0) {
-            setSchools(remoteSchools);
-            applySuperAdminMasterDataToStorage({ schools: remoteSchools });
-          }
-        })
-        .catch(() => {});
-
-      fetchUsersFromSupabase()
-        .then((remoteUsers) => {
-          if (remoteUsers && remoteUsers.length > 0) {
-            setUsers(remoteUsers);
-            localStorage.setItem('si7kaih_users_pool_prod', JSON.stringify(remoteUsers));
-          }
-        })
-        .catch(() => {});
-
-      fetchJournalsFromSupabase()
-        .then((remoteJournals) => {
-          if (remoteJournals && remoteJournals.length > 0) {
-            setJournals(remoteJournals);
-            localStorage.setItem('si7kaih_journals_prod', JSON.stringify(remoteJournals));
-          }
-        })
-        .catch(() => {});
+      if (savedJournals) {
+        const parsed = JSON.parse(savedJournals);
+        if (Array.isArray(parsed)) {
+          const fresh = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+          setJournals((prev) => (JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh));
+        }
+      }
     } catch (_e) {}
   };
 
   useEffect(() => {
-    syncLiveData();
+    syncLocalDataOnly();
+
+    // Pull latest authoritative users, schools & journals from Supabase once on mount
+    fetchSchoolsFromSupabase()
+      .then((remoteSchools) => {
+        if (remoteSchools && remoteSchools.length > 0) {
+          setSchools((prev) => (JSON.stringify(prev) === JSON.stringify(remoteSchools) ? prev : remoteSchools));
+          applySuperAdminMasterDataToStorage({ schools: remoteSchools });
+        }
+      })
+      .catch(() => {});
+
+    fetchUsersFromSupabase()
+      .then((remoteUsers) => {
+        if (remoteUsers && remoteUsers.length > 0) {
+          setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(remoteUsers) ? prev : remoteUsers));
+          try {
+            localStorage.setItem('si7kaih_users_pool_prod', JSON.stringify(remoteUsers));
+          } catch (_e) {}
+        }
+      })
+      .catch(() => {});
+
+    fetchJournalsFromSupabase()
+      .then((remoteJournals) => {
+        if (remoteJournals && remoteJournals.length > 0) {
+          const cleaned = remoteJournals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+          setJournals((prev) => (JSON.stringify(prev) === JSON.stringify(cleaned) ? prev : cleaned));
+          try {
+            localStorage.setItem('si7kaih_journals_prod', JSON.stringify(cleaned));
+          } catch (_e) {}
+        }
+      })
+      .catch(() => {});
 
     try {
       const notice = sessionStorage.getItem('si7kaih_auto_logout_notice');
@@ -293,22 +218,20 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       }
     } catch (_e) {}
 
-    window.addEventListener('storage', syncLiveData);
-    window.addEventListener('si7kaih_students_updated', syncLiveData);
-    window.addEventListener('si7kaih_journals_updated', syncLiveData);
-    window.addEventListener('si7kaih_rombels_updated', syncLiveData);
-    window.addEventListener('si7kaih_schools_updated', syncLiveData);
-    window.addEventListener('si7kaih_users_updated', syncLiveData);
-    window.addEventListener('focus', syncLiveData);
+    window.addEventListener('storage', syncLocalDataOnly);
+    window.addEventListener('si7kaih_students_updated', syncLocalDataOnly);
+    window.addEventListener('si7kaih_rombels_updated', syncLocalDataOnly);
+    window.addEventListener('si7kaih_schools_updated', syncLocalDataOnly);
+    window.addEventListener('si7kaih_users_updated', syncLocalDataOnly);
+    window.addEventListener('focus', syncLocalDataOnly);
 
     return () => {
-      window.removeEventListener('storage', syncLiveData);
-      window.removeEventListener('si7kaih_students_updated', syncLiveData);
-      window.removeEventListener('si7kaih_journals_updated', syncLiveData);
-      window.removeEventListener('si7kaih_rombels_updated', syncLiveData);
-      window.removeEventListener('si7kaih_schools_updated', syncLiveData);
-      window.removeEventListener('si7kaih_users_updated', syncLiveData);
-      window.removeEventListener('focus', syncLiveData);
+      window.removeEventListener('storage', syncLocalDataOnly);
+      window.removeEventListener('si7kaih_students_updated', syncLocalDataOnly);
+      window.removeEventListener('si7kaih_rombels_updated', syncLocalDataOnly);
+      window.removeEventListener('si7kaih_schools_updated', syncLocalDataOnly);
+      window.removeEventListener('si7kaih_users_updated', syncLocalDataOnly);
+      window.removeEventListener('focus', syncLocalDataOnly);
     };
   }, []);
 
@@ -543,12 +466,12 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
 
   const currentRoleInfo = roleScopeConfig[selectedRoleScope];
 
-  // Daftar lengkap murid untuk pilihan dropdown (menggabungkan master murid, akun pengguna murid, dan data referensi)
+  // Daftar lengkap murid untuk pilihan dropdown (hanya murid yang diinput/diimpor oleh Admin Sekolah atau didaftarkan di sistem)
   const allAvailableStudents = useMemo<Student[]>(() => {
     const map = new Map<string, Student>();
     const defaultSchool = schools[0]?.name || '';
 
-    // 1. Data murid tersimpan di master data
+    // 1. Data murid tersimpan di master data yang diunggah/diinput oleh Admin Sekolah
     students.forEach((s) => {
       const key = (s.nisn || s.username || s.id || s.name).trim().toLowerCase();
       if (key) {
@@ -560,7 +483,8 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
               (u.username && u.username.toLowerCase() === (s.username || s.nisn || '').toLowerCase()) ||
               u.id === s.id)
         );
-        const rawSchool = (s.schoolName || matchingUser?.schoolName || defaultSchool).trim();
+        const matchingSchool = schools.find((sch) => sch.id === s.schoolId || sch.name === s.schoolName);
+        const rawSchool = (s.schoolName || matchingSchool?.name || matchingUser?.schoolName || defaultSchool).trim();
         map.set(key, {
           ...s,
           schoolName: rawSchool,
@@ -574,13 +498,14 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       .forEach((u) => {
         const key = (u.identifierValue || u.username || u.id || u.name).trim().toLowerCase();
         if (key && !map.has(key)) {
-          const rawSchool = (u.schoolName || defaultSchool).trim();
+          const matchingSchool = schools.find((sch) => sch.id === u.schoolId || sch.name === u.schoolName);
+          const rawSchool = (u.schoolName || matchingSchool?.name || defaultSchool).trim();
           map.set(key, {
             id: u.id,
             nisn: u.identifierValue || u.username,
             name: u.name,
             gender: u.avatar === '👧🏻' ? 'P' : 'L',
-            className: u.className || 'Kelas 7A',
+            className: u.className || '',
             parentName: (u as any).parentName || '-',
             status: 'AKTIF',
             source: 'INPUT_MANUAL',
@@ -591,103 +516,101 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
         }
       });
 
-    // 3. Jika belum ada data murid terisi di browser, muat sampel referensi SMP
-    if (map.size === 0) {
-      FALLBACK_SAMPLE_STUDENTS.forEach((s) => {
-        const rawSchool = (s.schoolName || defaultSchool).trim();
-        map.set(s.nisn.toLowerCase(), {
-          ...s,
-          schoolName: rawSchool,
-        });
-      });
-    }
-
+    // Catatan: FALLBACK_SAMPLE_STUDENTS tidak dimuat agar bila data belum diupdate oleh Admin Sekolah atau Super Admin, jumlah data murni 0
     const list = Array.from(map.values());
     return list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
   }, [students, users, schools]);
 
-  // Daftar sekolah / satuan pendidikan unik yang tersedia untuk filter dropdown
+  // Daftar sekolah / satuan pendidikan unik yang tersedia untuk filter dropdown (Hanya dari data master yang telah diupdate oleh Super Admin)
   const availableSchoolsForLogin = useMemo<string[]>(() => {
     const set = new Set<string>();
 
-    // 1. Dari master data satuan pendidikan
+    // 1. Dari master data satuan pendidikan yang diupdate oleh Super Admin
     schools.forEach((sch) => {
       if (sch.name && sch.name.trim()) set.add(sch.name.trim());
     });
 
-    // 2. Dari data murid
-    allAvailableStudents.forEach((s) => {
-      if (s.schoolName && s.schoolName.trim()) set.add(s.schoolName.trim());
-    });
-
-    // 3. Dari akun pengguna terdaftar (selain superadmin nasional)
-    users.forEach((u) => {
-      if (
-        u.schoolName &&
-        u.schoolName.trim() &&
-        !u.schoolName.toLowerCase().includes('kementerian')
-      ) {
-        set.add(u.schoolName.trim());
-      }
-    });
-
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'id'));
-  }, [schools, allAvailableStudents, users]);
+  }, [schools]);
+
+  // Nilai efektif sekolah: jika belum ada data dari Super Admin, otomatis '0'
+  const effectiveSelectedSchool = availableSchoolsForLogin.length === 0 ? '0' : selectedSchoolForLogin;
 
   // Murid yang berada di bawah satuan pendidikan / sekolah yang sedang dipilih
   const studentsInSelectedSchool = useMemo<Student[]>(() => {
-    if (selectedSchoolForLogin === 'ALL') {
+    if (effectiveSelectedSchool === '0' || availableSchoolsForLogin.length === 0) {
+      return [];
+    }
+    if (effectiveSelectedSchool === 'ALL') {
       return allAvailableStudents;
     }
-    return allAvailableStudents.filter((s) => s.schoolName === selectedSchoolForLogin);
-  }, [allAvailableStudents, selectedSchoolForLogin]);
+    return allAvailableStudents.filter((s) => s.schoolName === effectiveSelectedSchool);
+  }, [allAvailableStudents, effectiveSelectedSchool, availableSchoolsForLogin]);
 
-  // Daftar kelas / rombel unik yang tersedia untuk filter dropdown (tersinkron dengan sekolah terpilih)
+  // Daftar kelas / rombel unik yang tersedia untuk filter dropdown (tersinkron dengan rombel & siswa yang diupdate oleh Admin Sekolah)
   const availableClassesForLogin = useMemo<string[]>(() => {
+    // Jika belum ada satuan pendidikan atau satuan pendidikan di-default ke '0', kelas otomatis 0
+    if (availableSchoolsForLogin.length === 0 || effectiveSelectedSchool === '0') {
+      return [];
+    }
+
     const set = new Set<string>();
 
-    // Tambahkan kelas dari murid di sekolah terpilih
-    studentsInSelectedSchool.forEach((s) => {
-      if (s.className && s.className.trim()) set.add(s.className.trim());
-    });
-
-    // Tambahkan dari rombel master jika relevan dengan sekolah terpilih
+    // 1. Dari master rombel yang diupdate oleh Admin Sekolah
     rombels.forEach((r) => {
       if (!r.name || !r.name.trim()) return;
-      if (selectedSchoolForLogin === 'ALL') {
+      if (effectiveSelectedSchool === 'ALL') {
         set.add(r.name.trim());
       } else {
-        const teacher = users.find(
-          (u) =>
-            u.role === 'TEACHER' &&
-            (u.className === r.name || (r.teacher && u.name.toLowerCase().includes(r.teacher.toLowerCase())))
-        );
-        if (
-          teacher?.schoolName === selectedSchoolForLogin ||
-          studentsInSelectedSchool.some((s) => s.className === r.name)
-        ) {
+        const currentSchoolObj = schools.find((sch) => sch.name.toLowerCase() === effectiveSelectedSchool.toLowerCase());
+        const matchSchool =
+          (r.schoolName && r.schoolName.toLowerCase() === effectiveSelectedSchool.toLowerCase()) ||
+          (currentSchoolObj && r.schoolId && r.schoolId === currentSchoolObj.id) ||
+          studentsInSelectedSchool.some((s) => s.className === r.name);
+        if (matchSchool) {
           set.add(r.name.trim());
         }
       }
     });
 
+    // 2. Dari data murid yang diinput Admin Sekolah di sekolah terpilih
+    studentsInSelectedSchool.forEach((s) => {
+      if (s.className && s.className.trim()) {
+        set.add(s.className.trim());
+      }
+    });
+
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
-  }, [rombels, studentsInSelectedSchool, selectedSchoolForLogin, users]);
+  }, [rombels, studentsInSelectedSchool, effectiveSelectedSchool, availableSchoolsForLogin, schools]);
+
+  // Nilai efektif kelas: jika belum ada data rombel dari Admin Sekolah, otomatis '0'
+  const effectiveSelectedClass =
+    availableSchoolsForLogin.length === 0 || availableClassesForLogin.length === 0
+      ? '0'
+      : selectedClassForLogin;
 
   // Filter murid berdasarkan sekolah dan kelas yang dipilih pada dropdown
   const filteredStudentsForDropdown = useMemo<Student[]>(() => {
+    if (
+      availableSchoolsForLogin.length === 0 ||
+      effectiveSelectedSchool === '0' ||
+      availableClassesForLogin.length === 0 ||
+      effectiveSelectedClass === '0'
+    ) {
+      return [];
+    }
     return allAvailableStudents.filter((s) => {
       // 1. Filter sekolah jika dipilih spesifik
-      if (selectedSchoolForLogin !== 'ALL' && s.schoolName !== selectedSchoolForLogin) {
+      if (effectiveSelectedSchool !== 'ALL' && s.schoolName !== effectiveSelectedSchool) {
         return false;
       }
       // 2. Filter kelas jika dipilih spesifik
-      if (selectedClassForLogin !== 'ALL' && s.className !== selectedClassForLogin) {
+      if (effectiveSelectedClass !== 'ALL' && s.className !== effectiveSelectedClass) {
         return false;
       }
       return true;
     });
-  }, [allAvailableStudents, selectedSchoolForLogin, selectedClassForLogin]);
+  }, [allAvailableStudents, effectiveSelectedSchool, effectiveSelectedClass, availableSchoolsForLogin, availableClassesForLogin]);
 
   // Detail murid yang sedang dipilih
   const selectedStudentDetail = useMemo<Student | undefined>(() => {
@@ -706,7 +629,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
   const handleSchoolChange = (newSchool: string) => {
     setSelectedSchoolForLogin(newSchool);
     try {
-      if (newSchool === 'ALL') {
+      if (newSchool === 'ALL' || newSchool === '0') {
         localStorage.removeItem('si7kaih_remembered_school');
       } else {
         localStorage.setItem('si7kaih_remembered_school', newSchool);
@@ -714,7 +637,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
     } catch (_e) {}
 
     // Periksa apakah kelas saat ini masih valid di sekolah baru
-    if (newSchool !== 'ALL') {
+    if (newSchool !== 'ALL' && newSchool !== '0') {
       const validClasses = new Set<string>();
       allAvailableStudents
         .filter((s) => s.schoolName === newSchool)
@@ -722,8 +645,8 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
           if (s.className) validClasses.add(s.className.trim());
         });
 
-      if (selectedClassForLogin !== 'ALL' && !validClasses.has(selectedClassForLogin)) {
-        setSelectedClassForLogin('ALL');
+      if (selectedClassForLogin !== 'ALL' && selectedClassForLogin !== '0' && !validClasses.has(selectedClassForLogin)) {
+        setSelectedClassForLogin(validClasses.size > 0 ? 'ALL' : '0');
       }
 
       // Periksa apakah murid yang saat ini terpilih ada di sekolah baru
@@ -734,6 +657,10 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
           setInputIdentifier('');
         }
       }
+    } else if (newSchool === '0') {
+      setSelectedClassForLogin('0');
+      setSelectedStudentNisn('');
+      setInputIdentifier('');
     }
   };
 
@@ -746,15 +673,15 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
     const found = allAvailableStudents.find((s) => s.nisn === nisn || s.id === nisn);
     if (found) {
       setInputIdentifier(found.nisn || found.username || found.name);
-      // Sinkronkan sekolah jika saat ini masih 'ALL' dan siswa memiliki data sekolah
-      if (found.schoolName && selectedSchoolForLogin === 'ALL') {
+      // Sinkronkan sekolah jika saat ini masih 'ALL' atau '0' dan siswa memiliki data sekolah
+      if (found.schoolName && (selectedSchoolForLogin === 'ALL' || selectedSchoolForLogin === '0')) {
         setSelectedSchoolForLogin(found.schoolName);
         try {
           localStorage.setItem('si7kaih_remembered_school', found.schoolName);
         } catch (_e) {}
       }
-      // Sinkronkan kelas jika saat ini masih 'ALL' dan siswa memiliki data kelas
-      if (found.className && selectedClassForLogin === 'ALL') {
+      // Sinkronkan kelas jika saat ini masih 'ALL' atau '0' dan siswa memiliki data kelas
+      if (found.className && (selectedClassForLogin === 'ALL' || selectedClassForLogin === '0')) {
         setSelectedClassForLogin(found.className);
       }
       // Pengaturan login murid via dropdown: tidak menampilkan otomatis password
@@ -765,7 +692,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
 
   const handleClassChange = (newClass: string) => {
     setSelectedClassForLogin(newClass);
-    if (newClass !== 'ALL' && selectedStudentNisn) {
+    if (newClass !== 'ALL' && newClass !== '0' && selectedStudentNisn) {
       const found = allAvailableStudents.find((s) => s.nisn === selectedStudentNisn);
       if (found && found.className !== newClass) {
         setSelectedStudentNisn('');
@@ -920,7 +847,9 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
 
           const resolvedSchoolName =
             matchedStudent.schoolName ||
-            (selectedSchoolForLogin !== 'ALL' ? selectedSchoolForLogin : schools[0]?.name || 'Satuan Pendidikan');
+            (effectiveSelectedSchool !== 'ALL' && effectiveSelectedSchool !== '0'
+              ? effectiveSelectedSchool
+              : schools[0]?.name || 'Satuan Pendidikan');
 
           const dynamicParentPersona: UserPersona = {
             id: `parent-${matchedStudent.id}`,
@@ -995,7 +924,9 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
         if (matchedStudent) {
           const resolvedSchoolName =
             matchedStudent.schoolName ||
-            (selectedSchoolForLogin !== 'ALL' ? selectedSchoolForLogin : schools[0]?.name || 'Satuan Pendidikan');
+            (effectiveSelectedSchool !== 'ALL' && effectiveSelectedSchool !== '0'
+              ? effectiveSelectedSchool
+              : schools[0]?.name || 'Satuan Pendidikan');
 
           const dynamicStudentPersona: UserPersona = {
             id: matchedStudent.id,
@@ -1256,201 +1187,214 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           
           {/* ---------------------------------------------------------------- */}
-          {/* COLUMN A: LEFT BANNER (7 Kebiasaan Anak Indonesia Hebat) */}
+          {/* COLUMN A: LEFT BANNER (7 Kebiasaan Anak Indonesia Hebat Format Tanpa Ilustrasi Gambar) */}
           {/* ---------------------------------------------------------------- */}
-          <div className="lg:col-span-6 xl:col-span-6 bg-gradient-to-br from-[#D2E7FA] via-[#E4F1FD] to-[#D9ECFD] rounded-[32px] border border-sky-200/90 p-6 sm:p-8 flex flex-col justify-between shadow-sm relative overflow-hidden">
+          <div className="lg:col-span-6 xl:col-span-6 bg-gradient-to-br from-[#EBF5FE] via-[#F4F9FF] to-[#E2F0FD] rounded-[32px] border border-sky-200/90 shadow-xl shadow-blue-900/5 p-6 sm:p-7 flex flex-col justify-between space-y-5 relative select-none">
             
-            {/* Background doodles: School building sketch & stationery */}
-            <div className="absolute -right-4 -bottom-4 w-60 h-60 bg-blue-400/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute top-2 left-2 text-[60px] text-blue-500/5 font-serif font-black select-none pointer-events-none">
-              7K
-            </div>
-
-            {/* Header of Left Card */}
-            <div className="flex items-start justify-between gap-3 relative z-10">
+            {/* 1. Header: Title + Motivational Note */}
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div className="space-y-1">
-                <h1 className="text-2xl sm:text-3xl lg:text-[32px] font-black text-[#093C75] tracking-tight leading-tight">
-                  7 Kebiasaan
-                  <br />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100/90 border border-blue-200 text-[#0753A5] text-[11px] font-bold shadow-2xs">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Program Pembiasaan Karakter Positif</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight text-[#0B3A6F]">
+                  <span className="block">7 Kebiasaan</span>
                   <span className="text-[#0753A5]">Anak Indonesia Hebat</span>
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-600 font-medium">
-                  Kebiasaan kecil hari ini, masa depan besar esok nanti.
+                </h2>
+                <p className="text-xs sm:text-[13px] text-slate-600 font-medium">
+                  Kebiasaan kecil hari ini, fondasi kesuksesan besar esok nanti.
                 </p>
               </div>
 
-              {/* Speech bubble / sticky doodle note */}
-              <div className="bg-white/95 border border-blue-200/80 rounded-2xl p-2.5 shadow-2xs rotate-1 text-center max-w-[170px] shrink-0">
-                <p className="text-[11px] font-bold text-[#0753A5] leading-snug">
-                  Disiplin Hari Ini, Versi Terbaik Esok Nanti
-                </p>
-                <span className="text-xs">😊 ☀️</span>
+              {/* Motivational Sticky Note */}
+              <div className="relative shrink-0 self-start">
+                <div className="bg-white/95 backdrop-blur-xs border border-sky-200/90 rounded-2xl px-3.5 py-2 shadow-xs rotate-1 text-center max-w-[180px]">
+                  <p className="text-[11px] font-black text-[#0753A5] leading-snug">
+                    Disiplin Hari Ini,<br />
+                    <span className="text-slate-800">Versi Terbaik Esok Nanti</span>
+                  </p>
+                  <div className="flex items-center justify-center gap-1 text-[13px] mt-0.5 text-amber-500 font-bold">
+                    <span>ヅ</span>
+                    <span className="text-xs">☀️</span>
+                  </div>
+                </div>
+                <div className="absolute -top-1.5 -right-1 text-amber-400 text-xs animate-spin-slow">
+                  ✨
+                </div>
               </div>
             </div>
 
-            {/* 7 Circle Habit Badges */}
-            <div className="my-5 relative z-10">
-              <div className="grid grid-cols-4 sm:grid-cols-4 gap-2 sm:gap-3 text-center">
+            {/* 2. Seven Habit Circular Badges (Tujuh Dimensi Kebiasaan) */}
+            <div className="bg-white/85 backdrop-blur-xs rounded-2xl p-3.5 border border-sky-100 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 px-1">
+                <span className="flex items-center gap-1.5 text-[#0753A5]">
+                  <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                  <span>7 Dimensi Kebiasaan Harian Siswa:</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-semibold">SMP Indonesia Hebat</span>
+              </div>
+
+              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 text-center">
                 {/* 1. Bangun Pagi */}
                 <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#F59E0B] text-white flex items-center justify-center shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform">
-                    <Sun className="w-6 h-6" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#F59E0B] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+                    <Sun className="w-5 h-5 stroke-[2.3]" />
                   </div>
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
-                    Bangun<br />Pagi
+                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
+                    Bangun Pagi
                   </span>
                 </div>
 
                 {/* 2. Beribadah */}
                 <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#0D9488] text-white flex items-center justify-center shadow-md shadow-teal-500/20 group-hover:scale-105 transition-transform">
-                    {/* Mosque / crescent SVG */}
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 3v3m0 0a4 4 0 0 1 4 4v10H8V10a4 4 0 0 1 4-4Z" />
-                      <path d="M4 14v6h4m8 0h4v-6" />
-                      <circle cx="12" cy="7" r="1" fill="currentColor" />
-                    </svg>
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#0D9488] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+                    <Heart className="w-5 h-5 stroke-[2.3]" />
                   </div>
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
+                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
                     Beribadah
                   </span>
                 </div>
 
                 {/* 3. Berolahraga */}
                 <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#0284C7] text-white flex items-center justify-center shadow-md shadow-sky-500/20 group-hover:scale-105 transition-transform">
-                    <Activity className="w-6 h-6" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#0284C7] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+                    <Activity className="w-5 h-5 stroke-[2.3]" />
                   </div>
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
+                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
                     Berolahraga
                   </span>
                 </div>
 
                 {/* 4. Makan Sehat */}
                 <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#16A34A] text-white flex items-center justify-center shadow-md shadow-green-500/20 group-hover:scale-105 transition-transform">
-                    <Utensils className="w-6 h-6" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#16A34A] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+                    <Utensils className="w-5 h-5 stroke-[2.3]" />
                   </div>
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
-                    Makan<br />Sehat
+                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
+                    Makan Sehat
                   </span>
                 </div>
-              </div>
 
-              {/* Row 2: Habits 5, 6, 7 */}
-              <div className="flex items-center justify-center gap-6 sm:gap-10 mt-3 text-center">
                 {/* 5. Gemar Belajar */}
                 <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#9333EA] text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-105 transition-transform">
-                    <BookOpen className="w-6 h-6" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#8B5CF6] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+                    <BookOpen className="w-5 h-5 stroke-[2.3]" />
                   </div>
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
-                    Gemar<br />Belajar
+                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
+                    Gemar Belajar
                   </span>
                 </div>
 
                 {/* 6. Bermasyarakat */}
                 <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md shadow-rose-500/20 group-hover:scale-105 transition-transform">
-                    <Users className="w-6 h-6" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#F43F5E] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+                    <Users className="w-5 h-5 stroke-[2.3]" />
                   </div>
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
+                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
                     Bermasyarakat
                   </span>
                 </div>
 
-                {/* 7. Tidur Lebih Awal */}
-                <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#1E3A8A] text-white flex items-center justify-center shadow-md shadow-indigo-900/30 group-hover:scale-105 transition-transform">
-                    <Moon className="w-6 h-6" />
+                {/* 7. Tidur Cepat */}
+                <div className="flex flex-col items-center gap-1 col-span-2 sm:col-span-1 group">
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1E3A8A] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+                    <Moon className="w-5 h-5 stroke-[2.3]" />
                   </div>
-                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
-                    Tidur<br />Lebih Awal
+                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
+                    Tidur Cepat
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Students Illustration Composition (Indonesian SMP Students Character Art) */}
-            <div className="relative mt-2 pt-2 border-t border-blue-200/60 flex flex-col items-center">
-              
-              {/* Badge Stickers */}
-              <div className="absolute -top-3 left-2 bg-white/95 text-[#0753A5] font-black text-[10px] px-2.5 py-1 rounded-full shadow-xs border border-blue-200 rotate-[-6deg] z-10">
-                Siswa Berkarakter ⭐
-              </div>
-              <div className="absolute -top-3 right-2 bg-amber-300 text-slate-900 font-black text-[10px] px-2.5 py-1 rounded-full shadow-xs border border-amber-400 rotate-[5deg] z-10">
-                Masa Depan Hebat!! 🚀
-              </div>
-
-              {/* Vector Characters Scene */}
-              <div className="w-full flex items-end justify-center gap-2 sm:gap-4 pt-4 pb-2">
-                
-                {/* Student 1 (Boy Left) */}
-                <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white border-2 border-blue-300 shadow-md flex items-center justify-center text-3xl sm:text-4xl">
-                    👦🏻
+            {/* 3. Habit Information Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
+                    ☀️
                   </div>
-                  <span className="text-[9px] font-bold text-slate-600 bg-white/80 px-2 py-0.5 rounded-full mt-1">
-                    Mandiri
-                  </span>
+                  <span className="text-xs font-black text-slate-900">Bangun Pagi & Bugar</span>
                 </div>
-
-                {/* Student 2 (Girl in Hijab Center) */}
-                <div className="flex flex-col items-center -mt-2 scale-110">
-                  <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-full bg-white border-2 border-[#0753A5] shadow-lg flex items-center justify-center text-4xl sm:text-5xl">
-                    🧕🏻
-                  </div>
-                  <span className="text-[9px] font-bold text-[#0753A5] bg-blue-50 px-2.5 py-0.5 rounded-full mt-1 border border-blue-200">
-                    Berkarakter
-                  </span>
-                </div>
-
-                {/* Student 3 (Boy Right) */}
-                <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white border-2 border-blue-300 shadow-md flex items-center justify-center text-3xl sm:text-4xl">
-                    🧑🏻
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-600 bg-white/80 px-2 py-0.5 rounded-full mt-1">
-                    Kreatif
-                  </span>
-                </div>
+                <p className="text-[11px] text-slate-600 leading-snug">
+                  Bangun pukul 04:30 - 06:00 dengan ceria, beribadah harian tulus, dan berolahraga 15-30 menit.
+                </p>
               </div>
 
-              {/* Desk with Books Stack, Laptop, Mug */}
-              <div className="w-full bg-white/80 backdrop-blur-xs rounded-2xl p-3 border border-blue-200/80 flex flex-wrap items-center justify-between gap-2 shadow-2xs mt-2">
-                
-                {/* Book Spine Stacks */}
-                <div className="flex items-center gap-1">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-blue-600 text-white shadow-2xs">ILMU</span>
-                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-500 text-white shadow-2xs">AKHLAK</span>
-                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-teal-600 text-white shadow-2xs">PRESTASI</span>
-                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-600 text-white shadow-2xs">MASA DEPAN</span>
+              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                    🥗
                   </div>
+                  <span className="text-xs font-black text-slate-900">Gizi & Literasi Harian</span>
                 </div>
-
-                {/* Laptop Display */}
-                <div className="flex-1 max-w-[180px] bg-slate-900 rounded-lg p-2 text-center text-white border border-slate-700 shadow-xs">
-                  <div className="text-[9px] font-bold text-sky-300">
-                    Belajar Bersama
-                  </div>
-                  <div className="text-[8px] text-emerald-400">
-                    Tumbuh Bersama :)
-                  </div>
-                </div>
-
-                {/* Mug & Campus Slogan */}
-                <div className="text-right">
-                  <div className="text-[9px] font-bold text-slate-700">
-                    SMP Bersama Kita Bisa!
-                  </div>
-                  <div className="text-[8px] text-slate-500 font-medium">
-                    ☕ Brighter Tomorrow
-                  </div>
-                </div>
-
+                <p className="text-[11px] text-slate-600 leading-snug">
+                  Sarapan bernutrisi seimbang, cukup air putih, serta membaca buku/eksplorasi mandiri 15 menit.
+                </p>
               </div>
 
+              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs">
+                    🤝
+                  </div>
+                  <span className="text-xs font-black text-slate-900">Sosial & Berbakti</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-snug">
+                  Membantu orang tua di rumah, santun, gotong royong, dan peduli sesama di lingkungan sekitar.
+                </p>
+              </div>
+
+              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                    🌙
+                  </div>
+                  <span className="text-xs font-black text-slate-900">Istirahat Tepat Waktu</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-snug">
+                  Tidur teratur sebelum 21:30, batasi gawai sebelum tidur untuk pemulihan otak & kebugaran esok.
+                </p>
+              </div>
+            </div>
+
+            {/* 4. Tri-Sentra Educational Value Pillars */}
+            <div className="bg-blue-500/10 rounded-2xl p-3.5 border border-blue-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#0753A5] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Prinsip Pendidikan Karakter SI-7KAIH:
+                </span>
+                <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                  Berbasis AI Reflektif
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-700 font-medium">
+                <div className="flex items-start gap-1.5">
+                  <span className="text-emerald-600 font-bold">✓</span>
+                  <span><strong>Non-Punitive:</strong> Pembiasaan tanpa sanksi atau rasa malu</span>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-blue-600 font-bold">✓</span>
+                  <span><strong>AI Coaching:</strong> Dialog umpan balik yang membangun</span>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-amber-600 font-bold">✓</span>
+                  <span><strong>Sinergi Tri-Sentra:</strong> Siswa, Orang Tua & Pendidik</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 5. Accreditation / Creator Bottom Bar */}
+            <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 border-t border-sky-200/60">
+              <div className="flex items-center gap-1.5">
+                <School className="w-3.5 h-3.5 text-[#0753A5]" />
+                <span className="font-semibold text-slate-700">Kementerian Pendidikan Dasar dan Menengah RI</span>
+              </div>
+              <span className="font-medium text-slate-500 text-[10px]">
+                Inovasi Pengawas SMP Tanah Laut
+              </span>
             </div>
 
           </div>
@@ -1729,87 +1673,169 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                     <div className="space-y-3">
                       {/* 1. Dropdown Pilihan Sekolah / Satuan Pendidikan */}
                       <div className="space-y-1">
-                        <label className="block text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
-                          <School className={`w-3.5 h-3.5 ${selectedRoleScope === 'PARENT' ? 'text-emerald-600' : 'text-[#0753A5]'}`} />
-                          <span>Pilih Satuan Pendidikan / Sekolah:</span>
-                        </label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
+                            <School className={`w-3.5 h-3.5 ${selectedRoleScope === 'PARENT' ? 'text-emerald-600' : 'text-[#0753A5]'}`} />
+                            <span>Pilih Satuan Pendidikan / Sekolah:</span>
+                          </label>
+                          <span
+                            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                              availableSchoolsForLogin.length === 0
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-blue-50 text-[#0753A5] border-blue-200'
+                            }`}
+                          >
+                            {availableSchoolsForLogin.length} Satuan Pendidikan
+                          </span>
+                        </div>
                         <div className="relative">
                           <select
                             id="login-select-school"
-                            value={selectedSchoolForLogin}
+                            value={effectiveSelectedSchool}
                             onChange={(e) => handleSchoolChange(e.target.value)}
-                            className="w-full pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:border-[#0753A5] focus:ring-2 focus:ring-blue-500/20 outline-none cursor-pointer transition-all shadow-2xs"
+                            disabled={availableSchoolsForLogin.length === 0}
+                            className={`w-full pl-3 pr-8 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all shadow-2xs outline-none ${
+                              availableSchoolsForLogin.length === 0
+                                ? 'border-amber-200 bg-amber-50/50 text-amber-900 cursor-not-allowed'
+                                : 'border-slate-200 bg-white text-slate-800 focus:border-[#0753A5] focus:ring-2 focus:ring-blue-500/20 cursor-pointer'
+                            }`}
                           >
-                            <option value="ALL">Semua Satuan Pendidikan ({allAvailableStudents.length} Siswa)</option>
-                            {availableSchoolsForLogin.map((sch) => {
-                              const count = allAvailableStudents.filter((s) => s.schoolName === sch).length;
-                              return (
-                                <option key={sch} value={sch}>
-                                  {sch} ({count} Siswa)
+                            {availableSchoolsForLogin.length === 0 ? (
+                              <option value="0">0 Satuan Pendidikan (Belum diupdate Super Admin)</option>
+                            ) : (
+                              <>
+                                <option value="ALL">
+                                  Semua Satuan Pendidikan ({availableSchoolsForLogin.length} Sekolah, {allAvailableStudents.length} Siswa)
                                 </option>
-                              );
-                            })}
+                                {availableSchoolsForLogin.map((sch) => {
+                                  const count = allAvailableStudents.filter((s) => s.schoolName === sch).length;
+                                  return (
+                                    <option key={sch} value={sch}>
+                                      {sch} ({count} Siswa)
+                                    </option>
+                                  );
+                                })}
+                              </>
+                            )}
                           </select>
                         </div>
+                        {availableSchoolsForLogin.length === 0 && (
+                          <p className="text-[10px] text-amber-700 flex items-center gap-1 mt-1 font-medium">
+                            <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                            <span>Data satuan pendidikan di-default ke 0 (belum diupdate oleh Super Admin).</span>
+                          </p>
+                        )}
                       </div>
 
                       {/* 2. Dropdown Pilihan Kelas */}
                       <div className="space-y-1">
-                        <label className="block text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
-                          <Building2 className={`w-3.5 h-3.5 ${selectedRoleScope === 'PARENT' ? 'text-emerald-600' : 'text-[#0753A5]'}`} />
-                          <span>Pilih Kelas / Rombel:</span>
-                        </label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
+                            <Building2 className={`w-3.5 h-3.5 ${selectedRoleScope === 'PARENT' ? 'text-emerald-600' : 'text-[#0753A5]'}`} />
+                            <span>Pilih Kelas / Rombel:</span>
+                          </label>
+                          <span
+                            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                              availableClassesForLogin.length === 0
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-blue-50 text-[#0753A5] border-blue-200'
+                            }`}
+                          >
+                            {availableClassesForLogin.length} Kelas
+                          </span>
+                        </div>
                         <div className="relative">
                           <select
                             id="login-select-class"
-                            value={selectedClassForLogin}
+                            value={effectiveSelectedClass}
                             onChange={(e) => handleClassChange(e.target.value)}
-                            className="w-full pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:border-[#0753A5] focus:ring-2 focus:ring-blue-500/20 outline-none cursor-pointer transition-all shadow-2xs"
+                            disabled={availableClassesForLogin.length === 0}
+                            className={`w-full pl-3 pr-8 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all shadow-2xs outline-none ${
+                              availableClassesForLogin.length === 0
+                                ? 'border-amber-200 bg-amber-50/50 text-amber-900 cursor-not-allowed'
+                                : 'border-slate-200 bg-white text-slate-800 focus:border-[#0753A5] focus:ring-2 focus:ring-blue-500/20 cursor-pointer'
+                            }`}
                           >
-                            <option value="ALL">
-                              {selectedSchoolForLogin === 'ALL'
-                                ? `Semua Kelas (${studentsInSelectedSchool.length} Siswa)`
-                                : `Semua Kelas di ${selectedSchoolForLogin} (${studentsInSelectedSchool.length} Siswa)`}
-                            </option>
-                            {availableClassesForLogin.map((cls) => {
-                              const count = studentsInSelectedSchool.filter((s) => s.className === cls).length;
-                              return (
-                                <option key={cls} value={cls}>
-                                  {cls} ({count} Siswa)
+                            {availableClassesForLogin.length === 0 ? (
+                              <option value="0">0 Kelas (Belum diupdate Admin Sekolah)</option>
+                            ) : (
+                              <>
+                                <option value="ALL">
+                                  {effectiveSelectedSchool === 'ALL'
+                                    ? `Semua Kelas (${availableClassesForLogin.length} Kelas, ${studentsInSelectedSchool.length} Siswa)`
+                                    : `Semua Kelas di ${effectiveSelectedSchool} (${availableClassesForLogin.length} Kelas, ${studentsInSelectedSchool.length} Siswa)`}
                                 </option>
-                              );
-                            })}
+                                {availableClassesForLogin.map((cls) => {
+                                  const count = studentsInSelectedSchool.filter((s) => s.className === cls).length;
+                                  return (
+                                    <option key={cls} value={cls}>
+                                      {cls} ({count} Siswa)
+                                    </option>
+                                  );
+                                })}
+                              </>
+                            )}
                           </select>
                         </div>
+                        {availableClassesForLogin.length === 0 && (
+                          <p className="text-[10px] text-amber-700 flex items-center gap-1 mt-1 font-medium">
+                            <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                            <span>Data kelas di-default ke 0 (belum diupdate oleh Admin Sekolah).</span>
+                          </p>
+                        )}
                       </div>
 
                       {/* 3. Dropdown Pilihan Nama Murid */}
                       <div className="space-y-1">
-                        <label className="block text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
-                          <User className={`w-3.5 h-3.5 ${selectedRoleScope === 'PARENT' ? 'text-emerald-600' : 'text-[#0753A5]'}`} />
-                          <span>
-                            {selectedRoleScope === 'STUDENT'
-                              ? 'Pilih Nama Murid:'
-                              : 'Pilih Nama Murid (Putra / Putri Ananda):'}
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
+                            <User className={`w-3.5 h-3.5 ${selectedRoleScope === 'PARENT' ? 'text-emerald-600' : 'text-[#0753A5]'}`} />
+                            <span>
+                              {selectedRoleScope === 'STUDENT'
+                                ? 'Pilih Nama Murid:'
+                                : 'Pilih Nama Murid (Putra / Putri Ananda):'}
+                            </span>
+                          </label>
+                          <span
+                            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                              filteredStudentsForDropdown.length === 0
+                                ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}
+                          >
+                            {filteredStudentsForDropdown.length} Siswa
                           </span>
-                        </label>
+                        </div>
                         <div className="relative">
                           <select
                             id="login-select-student"
                             value={selectedStudentNisn}
                             onChange={(e) => handleSelectStudentFromDropdown(e.target.value)}
-                            className="w-full pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:border-[#0753A5] focus:ring-2 focus:ring-blue-500/20 outline-none cursor-pointer transition-all shadow-2xs"
+                            disabled={filteredStudentsForDropdown.length === 0}
+                            className={`w-full pl-3 pr-8 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all shadow-2xs outline-none ${
+                              filteredStudentsForDropdown.length === 0
+                                ? 'border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed'
+                                : 'border-slate-200 bg-white text-slate-800 focus:border-[#0753A5] focus:ring-2 focus:ring-blue-500/20 cursor-pointer'
+                            }`}
                           >
                             <option value="">
-                              -- {selectedRoleScope === 'STUDENT' ? 'Klik untuk memilih nama Anda' : 'Klik untuk memilih nama ananda'} ({filteredStudentsForDropdown.length} Tersedia) --
+                              {filteredStudentsForDropdown.length === 0
+                                ? '-- Belum ada data siswa (0 Murid) --'
+                                : `-- ${selectedRoleScope === 'STUDENT' ? 'Klik untuk memilih nama Anda' : 'Klik untuk memilih nama ananda'} (${filteredStudentsForDropdown.length} Tersedia) --`}
                             </option>
                             {filteredStudentsForDropdown.map((s) => (
                               <option key={s.id || s.nisn} value={s.nisn}>
-                                {s.name} — {s.className}{selectedSchoolForLogin === 'ALL' && s.schoolName ? ` (${s.schoolName})` : ''}
+                                {s.name} — {s.className}{effectiveSelectedSchool === 'ALL' && s.schoolName ? ` (${s.schoolName})` : ''}
                               </option>
                             ))}
                           </select>
                         </div>
+                        {filteredStudentsForDropdown.length === 0 && (
+                          <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-1 font-medium">
+                            <AlertCircle className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>Data siswa masih 0. Admin Sekolah dapat menambahkan siswa melalui Master Siswa.</span>
+                          </p>
+                        )}
                       </div>
 
                       {/* 4. Kartu Konfirmasi Siswa Terpilih */}
@@ -2101,12 +2127,11 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                 </span>
               </div>
 
-              <div className="my-auto py-2">
+              <div className="my-auto py-1">
                 <p className="text-base sm:text-lg font-black leading-snug text-slate-900 tracking-tight">
-                  Anak SMP Bisa Luar Biasa
-                </p>
-                <p className="text-[11px] text-amber-950/80 font-medium mt-1">
-                  Maju bersama 7 Kebiasaan Anak Indonesia Hebat setiap hari!
+                  Anak<br />
+                  SMP Bisa<br />
+                  <span className="underline decoration-amber-500 decoration-2">Luar Biasa</span>
                 </p>
               </div>
 
@@ -2194,17 +2219,17 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       <section className="w-full max-w-7xl mx-auto px-4 pb-3 relative z-20">
         <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4">
           
-          {/* Feature 1: Kebiasaan Baik */}
+          {/* Feature 1: 7 Kebiasaan Anak Indonesia Hebat */}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
               <Trophy className="w-5 h-5" />
             </div>
             <div>
               <h4 className="text-xs font-black text-slate-900">
-                Kebiasaan Baik
+                7 Kebiasaan Anak Indonesia Hebat
               </h4>
               <p className="text-[11px] text-slate-500 font-medium">
-                Membentuk Karakter Hebat
+                Membentuk Karakter Generasi Berakhlak Mulia
               </p>
             </div>
           </div>
@@ -2253,7 +2278,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
             </div>
             <div className="flex items-center gap-1.5 text-xs font-black text-[#0753A5] shrink-0">
               <span>Indonesia Butuh Kamu</span>
-              <span className="text-amber-500">☀️ :)</span>
+              <span className="text-amber-500 font-bold">☀️ ヅ</span>
             </div>
           </div>
 
@@ -2277,7 +2302,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
             Kreasi oleh Ahmad Muzani-Pengawas SMP Disdikbud Tanah Laut
           </span>
           <span className="text-slate-300">•</span>
-          <span>Bersama Membangun Generasi Hebat</span>
+          <span>7 Kebiasaan Anak Indonesia Hebat</span>
         </div>
       </footer>
 

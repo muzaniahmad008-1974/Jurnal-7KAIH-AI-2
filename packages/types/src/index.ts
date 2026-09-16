@@ -154,6 +154,13 @@ export interface DailyJournal {
   entries: Record<HabitCode, DailyHabitEntry>;
   createdAt: string;
   updatedAt: string;
+  savedAt?: string;
+  parentValidated?: boolean;
+  parentValidatedAt?: string;
+  parentValidationNote?: string;
+  className?: string;
+  studentNisn?: string;
+  schoolName?: string;
 }
 
 export interface HabitValidation {

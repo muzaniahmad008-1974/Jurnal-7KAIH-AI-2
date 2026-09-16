@@ -68,8 +68,112 @@ export const USER_PERSONAS: UserPersona[] = [
   },
 ];
 
+// ============================================================================
+// SISTEM TOMBSTONE AKUN TERHAPUS (PERMANENT DELETION PROTECTION)
+// Memastikan akun yang dihapus oleh Super Admin tidak otomatis muncul kembali
+// ============================================================================
+export const DELETED_USERS_TOMBSTONES_KEY = 'si7kaih_deleted_users_tombstones';
+
+export const getDeletedUsersTombstones = (): Record<string, number> => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(DELETED_USERS_TOMBSTONES_KEY);
+      if (raw) {
+        return JSON.parse(raw);
+      }
+    }
+  } catch (_e) {}
+  return {};
+};
+
+export const markUserAsDeleted = (userId?: string, username?: string, deletedBy?: string): void => {
+  try {
+    if (typeof window === 'undefined') return;
+    const tombstones = getDeletedUsersTombstones();
+    const now = Date.now();
+    if (userId) {
+      tombstones[userId] = now;
+      tombstones[userId.toLowerCase()] = now;
+    }
+    if (username) {
+      const cleanUser = username.toLowerCase().trim();
+      tombstones[cleanUser] = now;
+      tombstones[`user_${cleanUser}`] = now;
+    }
+    localStorage.setItem(DELETED_USERS_TOMBSTONES_KEY, JSON.stringify(tombstones));
+  } catch (_e) {}
+};
+
+export const markUsersAsDeleted = (
+  users: Array<{ id: string; username?: string }>,
+  deletedBy?: string
+): void => {
+  try {
+    if (typeof window === 'undefined') return;
+    const tombstones = getDeletedUsersTombstones();
+    const now = Date.now();
+    users.forEach((u) => {
+      if (u.id) {
+        tombstones[u.id] = now;
+        tombstones[u.id.toLowerCase()] = now;
+      }
+      if (u.username) {
+        const cleanUser = u.username.toLowerCase().trim();
+        tombstones[cleanUser] = now;
+        tombstones[`user_${cleanUser}`] = now;
+      }
+    });
+    localStorage.setItem(DELETED_USERS_TOMBSTONES_KEY, JSON.stringify(tombstones));
+  } catch (_e) {}
+};
+
+export const unmarkUserAsDeleted = (userId?: string, username?: string): void => {
+  try {
+    if (typeof window === 'undefined') return;
+    const tombstones = getDeletedUsersTombstones();
+    if (userId) {
+      delete tombstones[userId];
+      delete tombstones[userId.toLowerCase()];
+    }
+    if (username) {
+      const cleanUser = username.toLowerCase().trim();
+      delete tombstones[cleanUser];
+      delete tombstones[`user_${cleanUser}`];
+    }
+    localStorage.setItem(DELETED_USERS_TOMBSTONES_KEY, JSON.stringify(tombstones));
+  } catch (_e) {}
+};
+
+export const isUserDeleted = (userId?: string, username?: string): boolean => {
+  try {
+    const tombstones = getDeletedUsersTombstones();
+    if (userId) {
+      if (tombstones[userId] || tombstones[userId.toLowerCase()]) {
+        return true;
+      }
+    }
+    if (username) {
+      const cleanUser = username.toLowerCase().trim();
+      if (tombstones[cleanUser] || tombstones[`user_${cleanUser}`]) {
+        return true;
+      }
+    }
+  } catch (_e) {}
+  return false;
+};
+
 // Helper to identify legacy dummy or explicitly removed default accounts
 export const isDeprecatedOrDummyUser = (u: UserPersona): boolean => {
+  // Akun Super Admin root utama selalu dilindungi
+  if (u.id === 'usr-superadmin-01' || (u.role === 'SUPER_ADMIN' && (u.username || '').toLowerCase() === 'superadmin')) {
+    return false;
+  }
+
+  // Jika akun telah ditandai dihapus permanen oleh Super Admin (Tombstone), anggap tidak valid
+  if (isUserDeleted(u.id, u.username)) {
+    return true;
+  }
+
   if (u.role === 'SUPER_ADMIN') return false;
 
   // Akun selain Pengawas Pembina dan Super Admin yang tidak memiliki satuan pendidikan dianggap tidak valid
@@ -125,6 +229,29 @@ export const isDeprecatedOrDummyUser = (u: UserPersona): boolean => {
   return legacyDummyIds.has(id) || legacyDummyUsernames.has(username);
 };
 
+// Helper to identify legacy mock/dummy journal records
+export const isDeprecatedOrDummyJournal = (j: any): boolean => {
+  if (!j) return true;
+  const sId = (j.studentId || '').toLowerCase().trim();
+  const sName = (j.studentName || '').toLowerCase().trim();
+  const jId = (j.id || '').toLowerCase().trim();
+
+  // Exclude legacy mock student journals and test data
+  if (
+    sId === 'usr-student-01' ||
+    sId === 'usr-student-02' ||
+    sId.includes('sample-01') ||
+    sId.includes('dummy') ||
+    jId.includes('sample') ||
+    sName.includes('budi pratama') ||
+    sName.includes('siswa contoh') ||
+    sName.includes('ananda dummy')
+  ) {
+    return true;
+  }
+  return false;
+};
+
 // Helper to retrieve and persist dynamically managed users in LocalStorage
 export const getStoredUsers = (): UserPersona[] => {
   try {
@@ -133,7 +260,7 @@ export const getStoredUsers = (): UserPersona[] => {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
         const cleaned = parsed
-          .filter((u: UserPersona) => !isDeprecatedOrDummyUser(u))
+          .filter((u: UserPersona) => !isDeprecatedOrDummyUser(u) && !isUserDeleted(u.id, u.username))
           .map((u: UserPersona) => ({
             ...u,
             dataMode: 'PRODUKSI_AKTIF' as const,
@@ -157,7 +284,7 @@ export const getStoredUsers = (): UserPersona[] => {
 
 export const saveStoredUsers = (users: UserPersona[]): void => {
   try {
-    const sanitized = users.filter((u) => !isDeprecatedOrDummyUser(u));
+    const sanitized = users.filter((u) => !isDeprecatedOrDummyUser(u) && !isUserDeleted(u.id, u.username));
     localStorage.setItem('si7kaih_users_pool_prod', JSON.stringify(sanitized));
     if (typeof window !== 'undefined') {
       setTimeout(() => {
@@ -351,6 +478,8 @@ export interface RolePreferences {
   // Orang Tua
   parentReminderTime: string;
   parentWeeklySummary: boolean;
+  parentValidationRequirement: 'ACCORDING_TO_CHILD_JOURNAL' | 'REQUIRE_ALL_7';
+  parentAllowPartialValidation: boolean;
 
   // Guru / Wali Kelas
   teacherValidationDeadline: string;
@@ -386,6 +515,8 @@ export const DEFAULT_ROLE_PREFERENCES: RolePreferences = {
 
   parentReminderTime: '19:30',
   parentWeeklySummary: true,
+  parentValidationRequirement: 'ACCORDING_TO_CHILD_JOURNAL',
+  parentAllowPartialValidation: true,
 
   teacherValidationDeadline: 'SABTU_1800',
   teacherAlertInactiveDays: 2,

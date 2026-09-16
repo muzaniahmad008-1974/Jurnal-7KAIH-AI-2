@@ -83,7 +83,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Format cetak resmi Portofolio Karakter berstandar dinas pendidikan untuk orang tua & dewan guru.
+              Format cetak resmi Portofolio Karakter berstandar Disdikbud Kabupaten Tanah Laut untuk orang tua & dewan guru.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -107,17 +107,20 @@ export const ReportView: React.FC<ReportViewProps> = ({
         <div className="p-8 sm:p-12 overflow-y-auto space-y-6 text-slate-900 print:p-0 print:space-y-4">
           {/* Official Letterhead */}
           <div className="border-b-2 border-slate-900 pb-4 text-center space-y-1">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-600">
-              PEMERINTAH KOTA • DINAS PENDIDIKAN
+            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-widest text-slate-800">
+              PEMERINTAH KABUPATEN TANAH LAUT
             </h2>
-            <h1 className="text-lg sm:text-xl font-black text-slate-900">
+            <h3 className="text-sm sm:text-base font-black uppercase tracking-wider text-slate-900">
+              DISDIKBUD KABUPATEN TANAH LAUT
+            </h3>
+            <h1 className="text-lg sm:text-xl font-black text-slate-900 pt-0.5">
               {schoolName ? schoolName.toUpperCase() : 'SATUAN PENDIDIKAN'}
             </h1>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-slate-500 font-medium">
               {schoolName ? 'Portofolio Resmi 7 Kebiasaan Anak Indonesia Hebat' : 'Laporan Resmi Pembiasaan Mandiri'}
             </p>
             <div className="pt-2 text-sm font-extrabold uppercase tracking-wide text-[#0753A5]">
-              LAPORAN PERKEMBANGAN 7 KEBIASAAN ANAK INDONESIA HEBAT (SI-7KAIH AI)
+              DOKUMEN RESMI PORTOFOLIO BULANAN 7 KEBIASAAN ANAK INDONESIA HEBAT (SI-7KAIH AI)
             </div>
             <div className="text-xs text-slate-600">
               Periode: <strong>{monthName} {year}</strong>
@@ -157,7 +160,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
             <div className="p-3 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
               <span className="text-slate-500">Lencana Diraih:</span>
               <div className="text-base font-black text-amber-600 mt-1">
-                {badges.filter((b) => b.earnedAt).length} Lencana Karakter
+                {badges.filter((b) => b.earnedAt).length > 0
+                  ? `${badges.filter((b) => b.earnedAt).length} Lencana Karakter`
+                  : '0 Lencana (Default Terkunci)'}
               </div>
             </div>
           </div>

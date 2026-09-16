@@ -926,6 +926,20 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                   className="w-4 h-4 rounded text-teal-600 cursor-pointer"
                 />
               </div>
+
+              {/* Aturan Validasi Harian Orang Tua Info Box */}
+              <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50/60 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-[#0753A5]" />
+                  <span className="text-xs font-bold text-[#0753A5]">Kebijakan Validasi Harian Orang Tua</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-[#0753A5]">
+                    Sesuai Jurnal Anak
+                  </span>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Validasi harian <strong>tidak mengharuskan anak menyelesaikan seluruh 7 kebiasaan</strong>. Orang tua dapat memvalidasi dan memberikan pesan motivasi sesuai data riil yang diisikan ananda pada hari tersebut.
+                </p>
+              </div>
             </div>
           )}
 

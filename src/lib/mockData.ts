@@ -20,7 +20,6 @@ export const DEFAULT_BADGES: Badge[] = [
     title: 'Konsisten 7 Hari',
     description: 'Mencatat jurnal harian 7 hari berturut-turut.',
     iconName: 'Flame',
-    earnedAt: '2025-08-20',
   },
   {
     id: 'badge-02',
@@ -28,7 +27,6 @@ export const DEFAULT_BADGES: Badge[] = [
     title: 'Bangun Pagi Hebat',
     description: 'Bangun pagi segar dan bersemangat selama 14 hari.',
     iconName: 'SunMedium',
-    earnedAt: '2025-08-22',
   },
   {
     id: 'badge-03',
@@ -36,7 +34,6 @@ export const DEFAULT_BADGES: Badge[] = [
     title: 'Sahabat Sehat',
     description: 'Sarapan bernutrisi, makan buah/sayur, dan minum air cukup 14 hari.',
     iconName: 'Apple',
-    earnedAt: '2025-08-25',
   },
   {
     id: 'badge-04',
@@ -44,7 +41,6 @@ export const DEFAULT_BADGES: Badge[] = [
     title: 'Aktif Bergerak',
     description: 'Berolahraga dan aktivitas fisik menyenangkan secara konsisten.',
     iconName: 'Activity',
-    earnedAt: '2025-08-28',
   },
   {
     id: 'badge-05',
@@ -61,6 +57,87 @@ export const DEFAULT_BADGES: Badge[] = [
     iconName: 'Heart',
   },
 ];
+
+/**
+ * Hitung status pembukaan lencana secara dinamis dari data jurnal harian aktual.
+ * Jika belum ada data jurnal atau belum memenuhi kriteria, seluruh lencana berstatus TERKUNCI (earnedAt: undefined).
+ */
+export const calculateBadgesFromJournals = (
+  journals: DailyJournal[] = [],
+  baseBadges: Badge[] = DEFAULT_BADGES
+): Badge[] => {
+  if (!journals || journals.length === 0) {
+    return baseBadges.map((b) => ({
+      ...b,
+      earnedAt: undefined,
+    }));
+  }
+
+  const getJournalDate = (j: DailyJournal): string => j.journalDate || (j as unknown as { date?: string }).date || '';
+
+  // Urutkan tanggal jurnal kronologis menaik
+  const sorted = [...journals].sort((a, b) => getJournalDate(a).localeCompare(getJournalDate(b)));
+
+  // 1. STREAK_7: Minimal 7 entri jurnal tercatat
+  let streak7Date: string | undefined = undefined;
+  if (sorted.length >= 7) {
+    streak7Date = getJournalDate(sorted[6]);
+  }
+
+  // Hitung jumlah ketercapaian per dimensi kebiasaan
+  const countHabit = (habitCode: HabitCode): { count: number; dateOfThreshold?: string } => {
+    let count = 0;
+    let dateOfThreshold: string | undefined = undefined;
+    for (const j of sorted) {
+      if (j.entries && j.entries[habitCode]?.completed) {
+        count++;
+        if (count === 14 && !dateOfThreshold) {
+          dateOfThreshold = getJournalDate(j);
+        }
+      }
+    }
+    return { count, dateOfThreshold };
+  };
+
+  const wakeEarly = countHabit('WAKE_EARLY');
+  const healthyEating = countHabit('HEALTHY_EATING');
+  const exercise = countHabit('EXERCISE');
+  const learning = countHabit('LEARNING');
+  const social = countHabit('SOCIAL');
+
+  return baseBadges.map((badge) => {
+    let earnedAt: string | undefined = undefined;
+    const latestDate = sorted.length > 0 ? getJournalDate(sorted[sorted.length - 1]) : undefined;
+
+    switch (badge.code) {
+      case 'STREAK_7':
+        earnedAt = streak7Date;
+        break;
+      case 'EARLY_BIRD':
+        if (wakeEarly.count >= 14) earnedAt = wakeEarly.dateOfThreshold || latestDate;
+        break;
+      case 'HEALTHY_CHAMP':
+        if (healthyEating.count >= 14) earnedAt = healthyEating.dateOfThreshold || latestDate;
+        break;
+      case 'ACTIVE_MOVER':
+        if (exercise.count >= 14) earnedAt = exercise.dateOfThreshold || latestDate;
+        break;
+      case 'CURIOUS_READER':
+        if (learning.count >= 14) earnedAt = learning.dateOfThreshold || latestDate;
+        break;
+      case 'HELPING_HAND':
+        if (social.count >= 14) earnedAt = social.dateOfThreshold || latestDate;
+        break;
+      default:
+        earnedAt = undefined;
+    }
+
+    return {
+      ...badge,
+      earnedAt,
+    };
+  });
+};
 
 export const DEFAULT_PROGRAMS: SchoolProgram[] = [
   {
@@ -178,14 +255,14 @@ export const DEFAULT_PARENT_REFLECTION: ParentMonthlyReflection = {
   id: '',
   studentId: '',
   parentId: '',
-  month: 8,
-  year: 2025,
+  month: new Date().getMonth() + 1,
+  year: new Date().getFullYear(),
   observedChange: '',
   difficulty: '',
   familySupport: '',
   parentNote: '',
   nextMonthSupport: '',
-  createdAt: '',
+  createdAt: new Date().toISOString(),
 };
 
 // Generate 30 days of synthetic journal history for Budi Pratama

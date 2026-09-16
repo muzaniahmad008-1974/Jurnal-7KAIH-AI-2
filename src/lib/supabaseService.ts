@@ -14,7 +14,18 @@ import {
   HabitCode,
   HabitMaster,
 } from '../../packages/types/src/index';
-import { UserPersona, USER_PERSONAS, getStoredHabitMasters, getStoredUsers, isDeprecatedOrDummyUser } from './constants';
+import {
+  UserPersona,
+  USER_PERSONAS,
+  getStoredHabitMasters,
+  getStoredUsers,
+  saveStoredUsers,
+  isDeprecatedOrDummyUser,
+  getDeletedUsersTombstones,
+  markUserAsDeleted,
+  markUsersAsDeleted,
+  isUserDeleted,
+} from './constants';
 import { SchoolMaster, getStoredSchools } from './schoolMasterData';
 import { Student, Rombel, getStoredStudents, getStoredRombels } from './studentData';
 
@@ -82,8 +93,54 @@ export async function refreshSupabaseStatus(): Promise<SupabaseSyncStatus> {
 }
 
 // ----------------------------------------------------------------------------
-// 1. DAILY JOURNALS REPOSITORY
+// 1. DAILY JOURNALS REPOSITORY & TOMBSTONE RESURRECTION GUARDS
 // ----------------------------------------------------------------------------
+
+const TOMBSTONE_STORAGE_KEY = 'si7kaih_deleted_journals_tombstones';
+
+export function recordDeletedJournalTombstone(studentId: string, date: string): void {
+  try {
+    const raw = localStorage.getItem(TOMBSTONE_STORAGE_KEY);
+    const tombstones: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const key = `${studentId || 'default'}_${date}`;
+    tombstones[key] = Date.now();
+    tombstones[`any_${date}`] = Date.now();
+    localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+  } catch (_e) {}
+}
+
+export function clearJournalTombstone(studentId: string, date: string): void {
+  try {
+    const raw = localStorage.getItem(TOMBSTONE_STORAGE_KEY);
+    if (!raw) return;
+    const tombstones: Record<string, number> = JSON.parse(raw);
+    delete tombstones[`${studentId || 'default'}_${date}`];
+    delete tombstones[`any_${date}`];
+    localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+  } catch (_e) {}
+}
+
+export function isJournalTombstoned(studentId: string, date: string): boolean {
+  try {
+    const raw = localStorage.getItem(TOMBSTONE_STORAGE_KEY);
+    if (!raw) return false;
+    const tombstones: Record<string, number> = JSON.parse(raw);
+    const key = `${studentId || 'default'}_${date}`;
+    const wildcardKey = `any_${date}`;
+    const ts = tombstones[key] || tombstones[wildcardKey];
+    if (!ts) return false;
+    // Expire tombstone after 7 days
+    if (Date.now() - ts > 7 * 24 * 60 * 60 * 1000) {
+      delete tombstones[key];
+      delete tombstones[wildcardKey];
+      localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+      return false;
+    }
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
 
 export async function fetchJournalsFromSupabase(): Promise<DailyJournal[] | null> {
   try {
@@ -102,7 +159,12 @@ export async function fetchJournalsFromSupabase(): Promise<DailyJournal[] | null
       currentStatus.isConnected = true;
       currentStatus.tablesReady = true;
       notifyListeners();
-      return data.map((item: any) => item.data as DailyJournal);
+      return data
+        .map((item: any) => item.data as DailyJournal)
+        .filter((j) => {
+          const date = j.journalDate || (j as any).date;
+          return !isJournalTombstoned(j.studentId, date);
+        });
     }
     return null;
   } catch (err) {
@@ -111,9 +173,72 @@ export async function fetchJournalsFromSupabase(): Promise<DailyJournal[] | null
   }
 }
 
+export async function deleteJournalFromSupabase(
+  studentId: string,
+  journalDate: string
+): Promise<boolean> {
+  try {
+    recordDeletedJournalTombstone(studentId, journalDate);
+
+    // Delete from Supabase matching date and optional student_id
+    let query = supabase.from('si7kaih_journals').delete().eq('date', journalDate);
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+    const { error } = await query;
+    if (error) {
+      console.warn('Supabase deleteJournal warning:', error.message);
+    }
+
+    currentStatus.lastSyncedAt = new Date().toISOString();
+    currentStatus.syncCount++;
+    currentStatus.lastSyncEvent = `Pengosongan jurnal tanggal ${journalDate}`;
+    notifyListeners();
+
+    // Broadcast immediately to all open tabs and windows
+    if (broadcastChannel) {
+      try {
+        broadcastChannel.postMessage({
+          type: 'JOURNAL_DELETED',
+          studentId,
+          date: journalDate,
+          timestamp: Date.now(),
+        });
+      } catch (_e) {}
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('Error deleting journal from Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteAllJournalsFromSupabase(studentId?: string): Promise<boolean> {
+  try {
+    let query = supabase.from('si7kaih_journals').delete();
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    } else {
+      query = query.neq('id', 'non_existent_id');
+    }
+    const { error } = await query;
+    if (error) {
+      console.warn('Supabase deleteAllJournals warning:', error.message);
+    }
+    currentStatus.lastSyncedAt = new Date().toISOString();
+    notifyListeners();
+    return true;
+  } catch (err) {
+    console.warn('Error deleting all journals from Supabase:', err);
+    return false;
+  }
+}
+
 export async function saveJournalToSupabase(journal: DailyJournal): Promise<boolean> {
   try {
     const journalDate = journal.journalDate || (journal as any).date || new Date().toISOString().split('T')[0];
+    clearJournalTombstone(journal.studentId, journalDate);
     const isParentVal =
       (journal as any).parentSignature ??
       Object.values(journal.entries || {}).some((e: any) => e.parentValidated);
@@ -333,9 +458,19 @@ export async function fetchUsersFromSupabase(): Promise<UserPersona[] | null> {
   try {
     const { data, error } = await supabase.from('si7kaih_users').select('id, data');
     if (error || !Array.isArray(data) || data.length === 0) return null;
+
+    // Sinkronkan daftar tombstone dari metadata cloud jika ada
+    const syncRow = data.find((d: any) => d && d.id === 'sys_master_data_sync');
+    if (syncRow?.data?.deletedUserIds && Array.isArray(syncRow.data.deletedUserIds)) {
+      syncRow.data.deletedUserIds.forEach((delId: string) => {
+        markUserAsDeleted(delId);
+      });
+    }
+
     return data
       .filter((d: any) => d && d.id && !d.id.startsWith('sys_'))
-      .map((d: any) => d.data as UserPersona);
+      .map((d: any) => d.data as UserPersona)
+      .filter((u: UserPersona) => u && !isDeprecatedOrDummyUser(u) && !isUserDeleted(u.id, u.username));
   } catch (err) {
     console.warn('Error fetching users from Supabase:', err);
     return null;
@@ -344,8 +479,12 @@ export async function fetchUsersFromSupabase(): Promise<UserPersona[] | null> {
 
 export async function saveUsersToSupabase(users: UserPersona[]): Promise<boolean> {
   if (!users || users.length === 0) return false;
+  // Pastikan akun yang ditombstone tidak pernah di-upsert ulang ke Supabase
+  const filteredUsers = users.filter((u) => !isDeprecatedOrDummyUser(u) && !isUserDeleted(u.id, u.username));
+  if (filteredUsers.length === 0) return false;
+
   try {
-    const rows = users.map((u) => ({
+    const rows = filteredUsers.map((u) => ({
       id: u.id,
       username: u.username,
       name: u.name,
@@ -359,14 +498,14 @@ export async function saveUsersToSupabase(users: UserPersona[]): Promise<boolean
     if (!error) {
       currentStatus.lastSyncedAt = new Date().toISOString();
       currentStatus.syncCount++;
-      currentStatus.lastSyncEvent = `Penyimpanan ${users.length} akun pengguna ke Supabase`;
+      currentStatus.lastSyncEvent = `Penyimpanan ${filteredUsers.length} akun pengguna ke Supabase`;
       notifyListeners();
 
       if (broadcastChannel) {
         try {
           broadcastChannel.postMessage({
             type: 'USERS_SAVED',
-            users,
+            users: filteredUsers,
             timestamp: Date.now(),
           });
         } catch (_e) {}
@@ -380,6 +519,9 @@ export async function saveUsersToSupabase(users: UserPersona[]): Promise<boolean
 }
 
 export async function saveSingleUserToSupabase(user: UserPersona): Promise<boolean> {
+  // Cegah penyimpanan jika akun dalam tombstone
+  if (isUserDeleted(user.id, user.username)) return false;
+
   try {
     const row = {
       id: user.id,
@@ -417,11 +559,47 @@ export async function saveSingleUserToSupabase(user: UserPersona): Promise<boole
 
 /**
  * Menghapus akun pengguna dari tabel Supabase si7kaih_users secara permanen
+ * serta menandai tombstone agar tidak otomatis muncul kembali.
  */
-export async function deleteUserFromSupabase(userId: string): Promise<boolean> {
+export async function deleteUserFromSupabase(userId: string, username?: string): Promise<boolean> {
   if (!userId) return false;
+
+  // 1. Rekam tombstone di penyimpanan lokal secara instan
+  markUserAsDeleted(userId, username);
+
   try {
+    // 2. Hapus baris pengguna dari tabel si7kaih_users berdasarkan ID
     const { error } = await supabase.from('si7kaih_users').delete().eq('id', userId);
+
+    // 3. Jika username disediakan, hapus juga baris yang mungkin memiliki username sama
+    if (username) {
+      await supabase
+        .from('si7kaih_users')
+        .delete()
+        .eq('username', username.toLowerCase().trim());
+    }
+
+    // 4. Perbarui metadata tombstone cloud di sys_master_data_sync
+    try {
+      const tombstones = getDeletedUsersTombstones();
+      await supabase.from('si7kaih_users').upsert(
+        {
+          id: 'sys_master_data_sync',
+          username: 'system_master_sync',
+          name: 'System Master Sync Metadata',
+          role: 'SUPER_ADMIN',
+          school_id: 'SYSTEM',
+          data: {
+            deletedUserIds: Object.keys(tombstones),
+            lastUpdated: new Date().toISOString(),
+            lastAction: `DELETE_USER_${userId}`,
+          },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+    } catch (_tErr) {}
+
     if (!error) {
       currentStatus.lastSyncedAt = new Date().toISOString();
       currentStatus.syncCount++;
@@ -432,6 +610,7 @@ export async function deleteUserFromSupabase(userId: string): Promise<boolean> {
           broadcastChannel.postMessage({
             type: 'USER_DELETED',
             userId,
+            username,
             timestamp: Date.now(),
           });
         } catch (_e) {}
@@ -446,11 +625,47 @@ export async function deleteUserFromSupabase(userId: string): Promise<boolean> {
 
 /**
  * Menghapus banyak akun pengguna dari tabel Supabase si7kaih_users secara massal
+ * serta menandai tombstone seluruh akun agar tidak otomatis muncul kembali.
  */
-export async function deleteUsersFromSupabase(userIds: string[]): Promise<boolean> {
+export async function deleteUsersFromSupabase(userIds: string[], usernames?: string[]): Promise<boolean> {
   if (!userIds || userIds.length === 0) return true;
+
+  // 1. Rekam tombstone massal di lokal
+  userIds.forEach((id, idx) => {
+    markUserAsDeleted(id, usernames?.[idx]);
+  });
+
   try {
+    // 2. Hapus massal dari si7kaih_users berdasarkan id
     const { error } = await supabase.from('si7kaih_users').delete().in('id', userIds);
+
+    // 3. Hapus juga berdasarkan usernames jika ada
+    if (usernames && usernames.length > 0) {
+      const cleanUsernames = usernames.map((u) => u.toLowerCase().trim());
+      await supabase.from('si7kaih_users').delete().in('username', cleanUsernames);
+    }
+
+    // 4. Perbarui metadata tombstone cloud di sys_master_data_sync
+    try {
+      const tombstones = getDeletedUsersTombstones();
+      await supabase.from('si7kaih_users').upsert(
+        {
+          id: 'sys_master_data_sync',
+          username: 'system_master_sync',
+          name: 'System Master Sync Metadata',
+          role: 'SUPER_ADMIN',
+          school_id: 'SYSTEM',
+          data: {
+            deletedUserIds: Object.keys(tombstones),
+            lastUpdated: new Date().toISOString(),
+            lastAction: `BULK_DELETE_USERS_${userIds.length}`,
+          },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+    } catch (_tErr) {}
+
     if (!error) {
       currentStatus.lastSyncedAt = new Date().toISOString();
       currentStatus.syncCount++;
@@ -461,6 +676,7 @@ export async function deleteUsersFromSupabase(userIds: string[]): Promise<boolea
           broadcastChannel.postMessage({
             type: 'USERS_DELETED',
             userIds,
+            usernames,
             timestamp: Date.now(),
           });
         } catch (_e) {}
@@ -698,12 +914,14 @@ export async function saveSuperAdminMasterDataToSupabase(
 
     // 6. Update metadata sinkronisasi global di tabel si7kaih_users
     // (Tabel ini tergabung dalam supabase_realtime sehingga memicu event seketika ke seluruh perangkat!)
+    const tombstones = getDeletedUsersTombstones();
     const syncMetadata: any = {
       type: 'SUPER_ADMIN_MASTER_SYNC',
       actionType: payload.actionType || 'DATA_UPDATE',
       timestamp,
       updatedAt: isoTime,
       lastUpdatedBy: updatedBy,
+      deletedUserIds: Object.keys(tombstones),
       counts: {
         schools: payload.schools ? payload.schools.length : undefined,
         rombels: payload.rombels ? payload.rombels.length : undefined,
@@ -880,11 +1098,16 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
       if (!current || current !== serialized) {
         localStorage.setItem('si7kaih_schools_master_prod', serialized);
         if (typeof window !== 'undefined') {
-          setTimeout(() => {
+          try {
+            window.dispatchEvent(new CustomEvent('si7kaih_schools_updated', { detail: data.schools }));
+          } catch (_e) {}
+          if ('BroadcastChannel' in window) {
             try {
-              window.dispatchEvent(new CustomEvent('si7kaih_schools_updated', { detail: data.schools }));
+              const bc = new BroadcastChannel('si7kaih_sync_channel');
+              bc.postMessage({ type: 'SCHOOLS_UPDATED', schools: data.schools });
+              bc.close();
             } catch (_e) {}
-          }, 0);
+          }
         }
         changed = true;
       }
@@ -897,11 +1120,16 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
       if (!current || current !== serialized) {
         localStorage.setItem('si7kaih_rombels_mandiri', serialized);
         if (typeof window !== 'undefined') {
-          setTimeout(() => {
+          try {
+            window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: finalRombels }));
+          } catch (_e) {}
+          if ('BroadcastChannel' in window) {
             try {
-              window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: finalRombels }));
+              const bc = new BroadcastChannel('si7kaih_sync_channel');
+              bc.postMessage({ type: 'ROMBELS_UPDATED', rombels: finalRombels });
+              bc.close();
             } catch (_e) {}
-          }, 0);
+          }
         }
         changed = true;
       }
@@ -914,11 +1142,16 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
       if (!current || current !== serialized) {
         localStorage.setItem('si7kaih_students_mandiri', serialized);
         if (typeof window !== 'undefined') {
-          setTimeout(() => {
+          try {
+            window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: finalStudents }));
+          } catch (_e) {}
+          if ('BroadcastChannel' in window) {
             try {
-              window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: finalStudents }));
+              const bc = new BroadcastChannel('si7kaih_sync_channel');
+              bc.postMessage({ type: 'STUDENTS_UPDATED', students: finalStudents });
+              bc.close();
             } catch (_e) {}
-          }, 0);
+          }
         }
         changed = true;
       }
@@ -1116,6 +1349,7 @@ export async function syncOnSuperAdminLogin(
 
 export interface AutoSyncCallbacks {
   onJournalUpdate: (journal: DailyJournal, source: 'realtime' | 'poll' | 'broadcast') => void;
+  onJournalDeleted?: (studentId: string, date: string) => void;
   onAllJournalsSync?: (journals: DailyJournal[]) => void;
   onReflectionUpdate?: (
     type: 'STUDENT' | 'PARENT',
@@ -1141,8 +1375,25 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
         { event: '*', schema: 'public', table: 'si7kaih_journals' },
         (payload: any) => {
           if (isCleanedUp) return;
+          if (payload.eventType === 'DELETE' || payload.event === 'DELETE') {
+            const studentId = payload.old?.student_id || '';
+            const date = payload.old?.date || '';
+            if (date) {
+              recordDeletedJournalTombstone(studentId, date);
+              callbacks.onJournalDeleted?.(studentId, date);
+              currentStatus.syncCount++;
+              currentStatus.lastSyncedAt = new Date().toISOString();
+              currentStatus.lastSyncEvent = `Pengosongan realtime jurnal tanggal ${date}`;
+              notifyListeners();
+            }
+            return;
+          }
           if (payload.new && payload.new.data) {
             const updatedJournal = payload.new.data as DailyJournal;
+            const date = updatedJournal.journalDate || (updatedJournal as any).date;
+            if (isJournalTombstoned(updatedJournal.studentId, date)) {
+              return;
+            }
             callbacks.onJournalUpdate(updatedJournal, 'realtime');
             currentStatus.syncCount++;
             currentStatus.lastSyncedAt = new Date().toISOString();
@@ -1320,10 +1571,21 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
   const handleBroadcastMessage = (event: MessageEvent) => {
     if (isCleanedUp || !event.data) return;
     if (event.data.type === 'JOURNAL_SAVED' && event.data.journal) {
-      callbacks.onJournalUpdate(event.data.journal, 'broadcast');
+      const date = event.data.journal.journalDate || (event.data.journal as any).date;
+      if (!isJournalTombstoned(event.data.journal.studentId, date)) {
+        callbacks.onJournalUpdate(event.data.journal, 'broadcast');
+        currentStatus.syncCount++;
+        currentStatus.lastSyncedAt = new Date().toISOString();
+        currentStatus.lastSyncEvent = 'Sinkronisasi instan antar jendela browser';
+        notifyListeners();
+      }
+    }
+    if (event.data.type === 'JOURNAL_DELETED' && event.data.date) {
+      recordDeletedJournalTombstone(event.data.studentId || '', event.data.date);
+      callbacks.onJournalDeleted?.(event.data.studentId, event.data.date);
       currentStatus.syncCount++;
       currentStatus.lastSyncedAt = new Date().toISOString();
-      currentStatus.lastSyncEvent = 'Sinkronisasi instan antar jendela browser';
+      currentStatus.lastSyncEvent = `Pengosongan jurnal tanggal ${event.data.date}`;
       notifyListeners();
     }
     if (event.data.type === 'REFLECTION_SAVED' && event.data.reflection) {
@@ -1367,6 +1629,42 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
       currentStatus.lastSyncedAt = new Date().toISOString();
       notifyListeners();
     }
+    if (event.data.type === 'USER_DELETED') {
+      const delUserId = event.data.userId;
+      const delUsername = event.data.username;
+      if (delUserId || delUsername) {
+        markUserAsDeleted(delUserId, delUsername);
+        try {
+          const stored = getStoredUsers().filter(
+            (u) => (!delUserId || u.id !== delUserId) && (!delUsername || u.username.toLowerCase() !== delUsername.toLowerCase())
+          );
+          saveStoredUsers(stored);
+          callbacks.onAllUsersSync?.(stored, 'broadcast');
+        } catch (_e) {}
+      }
+      currentStatus.syncCount++;
+      currentStatus.lastSyncedAt = new Date().toISOString();
+      currentStatus.lastSyncEvent = `Akun pengguna ${delUsername || delUserId} dihapus permanen`;
+      notifyListeners();
+    }
+    if (event.data.type === 'USERS_DELETED' && Array.isArray(event.data.userIds)) {
+      const idSet = new Set(event.data.userIds as string[]);
+      const nameSet = new Set(((event.data.usernames || []) as string[]).map((n) => n.toLowerCase()));
+      (event.data.userIds as string[]).forEach((id, idx) => {
+        markUserAsDeleted(id, event.data.usernames?.[idx]);
+      });
+      try {
+        const stored = getStoredUsers().filter(
+          (u) => !idSet.has(u.id) && !nameSet.has(u.username.toLowerCase())
+        );
+        saveStoredUsers(stored);
+        callbacks.onAllUsersSync?.(stored, 'broadcast');
+      } catch (_e) {}
+      currentStatus.syncCount++;
+      currentStatus.lastSyncedAt = new Date().toISOString();
+      currentStatus.lastSyncEvent = `${event.data.userIds.length} akun pengguna dihapus permanen`;
+      notifyListeners();
+    }
     if (
       (event.data.type === 'SUPER_ADMIN_MASTER_SYNC' || event.data.type === 'SUPER_ADMIN_LOGIN_SYNC') &&
       event.data.masterData
@@ -1398,7 +1696,7 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
       const remoteUsers = await fetchUsersFromSupabase();
       if (remoteUsers && !isCleanedUp) {
         try {
-          const sanitized = remoteUsers.filter((u) => !isDeprecatedOrDummyUser(u));
+          const sanitized = remoteUsers.filter((u) => !isDeprecatedOrDummyUser(u) && !isUserDeleted(u.id, u.username));
           const hasSuperAdmin = sanitized.some((u) => u.role === 'SUPER_ADMIN');
           const finalUsers = hasSuperAdmin ? sanitized : [USER_PERSONAS[0], ...sanitized];
           const raw = localStorage.getItem('si7kaih_users_pool_prod');

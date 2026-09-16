@@ -13,10 +13,12 @@ interface BadgesViewProps {
 }
 
 export const BadgesView: React.FC<BadgesViewProps> = ({ badges, studentName }) => {
+  const earnedCount = badges.filter((b) => b.earnedAt).length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+      <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <Award className="w-5 h-5 text-amber-500" />
@@ -28,11 +30,34 @@ export const BadgesView: React.FC<BadgesViewProps> = ({ badges, studentName }) =
             Apresiasi atas konsistensi dan ikhtiar baik ananda <span className="font-bold text-slate-700">{studentName}</span>.
           </p>
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200">
-          <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-          <span>{badges.filter((b) => b.earnedAt).length} Lencana Diraih</span>
+        <div
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold border ${
+            earnedCount > 0
+              ? 'bg-amber-50 text-amber-800 border-amber-200'
+              : 'bg-slate-100 text-slate-600 border-slate-200'
+          }`}
+        >
+          <Star className={`w-4 h-4 ${earnedCount > 0 ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
+          <span>
+            {earnedCount > 0
+              ? `${earnedCount} dari ${badges.length} Lencana Diraih`
+              : `0 dari ${badges.length} Diraih (Default Terkunci)`}
+          </span>
         </div>
       </div>
+
+      {/* Default Locked Notice Banner */}
+      {earnedCount === 0 && (
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start sm:items-center gap-3 text-xs text-slate-700">
+          <span className="text-xl shrink-0">🔒</span>
+          <div>
+            <strong className="font-bold text-slate-900 block">Status Awal: Lencana Default Terkunci</strong>
+            <p className="text-slate-600 mt-0.5">
+              Seluruh lencana pencapaian karakter berada dalam status terkunci. Mulai catat pelaksanaan 7 Kebiasaan Anak Indonesia Hebat di jurnal harian untuk membuka lencana apresiasi ini secara bertahap.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Badges Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -79,7 +104,7 @@ export const BadgesView: React.FC<BadgesViewProps> = ({ badges, studentName }) =
 
               <div className="pt-3 mt-4 border-t border-slate-100 flex items-center justify-between text-[11px]">
                 <span className="text-slate-400">
-                  {isEarned ? `Diraih: ${b.earnedAt}` : 'Terus berproses!'}
+                  {isEarned ? `Diraih: ${b.earnedAt}` : 'Terkunci (Belum ada update data)'}
                 </span>
                 {isEarned && (
                   <span className="text-amber-600 font-bold flex items-center gap-1">
