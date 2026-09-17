@@ -397,83 +397,88 @@ export const Header: React.FC<HeaderProps> = ({
                       </button>
                     )}
 
-                    <button
-                      onClick={() => {
-                        setRoleDropdownOpen(false);
-                        setIsSSOModalOpen(true);
-                      }}
-                      className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold transition-colors cursor-pointer border border-slate-200"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-slate-600" />
-                        <span>Daftar Cepat Akun Mandiri</span>
-                      </div>
-                      <span className="text-[10px] bg-slate-700 text-white px-2 py-0.5 rounded-md font-semibold">
-                        Sesi
-                      </span>
-                    </button>
+                    {/* Tombol Daftar Cepat Akun Mandiri (Dihilangkan khusus pada Akun Murid, Orang Tua, Kepala Sekolah & Guru) */}
+                    {currentPersona.role !== 'STUDENT' && currentPersona.role !== 'PARENT' && currentPersona.role !== 'PRINCIPAL' && currentPersona.role !== 'TEACHER' && (
+                      <button
+                        onClick={() => {
+                          setRoleDropdownOpen(false);
+                          setIsSSOModalOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold transition-colors cursor-pointer border border-slate-200"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-slate-600" />
+                          <span>Daftar Cepat Akun Mandiri</span>
+                        </div>
+                        <span className="text-[10px] bg-slate-700 text-white px-2 py-0.5 rounded-md font-semibold">
+                          Sesi
+                        </span>
+                      </button>
+                    )}
                   </div>
 
-                  {/* Quick Select of Frequent Roles */}
-                  <div className="pt-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
-                      Kredensial Pengguna Mandiri (Dikelola Admin)
-                    </p>
-                    <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-                      {userList.map((p) => {
-                        const isSelected = p.id === currentPersona.id;
-                        const isSuper = p.role === 'SUPER_ADMIN';
-                        const isSchoolAdmin = p.role === 'SCHOOL_ADMIN';
-                        return (
-                          <button
-                            key={p.id}
-                            onClick={() => {
-                              onSelectPersona(p);
-                              setRoleDropdownOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition-colors cursor-pointer text-xs ${
-                              isSelected
-                                ? 'bg-blue-50 text-[#0753A5] font-bold border border-blue-200'
-                                : isSuper
-                                ? 'bg-purple-50/60 hover:bg-purple-100/70 text-slate-800'
-                                : isSchoolAdmin
-                                ? 'bg-amber-50/50 hover:bg-amber-100/60 text-slate-800'
-                                : 'hover:bg-slate-50 text-slate-700'
-                            }`}
-                          >
-                            <UserAvatar
-                              avatar={p.avatar}
-                              role={p.role}
-                              name={p.name}
-                              size="sm"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center justify-between">
-                                <p className="truncate text-xs font-semibold">{p.name}</p>
-                                {isSuper ? (
-                                  <span className="text-[8px] px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 font-black border border-purple-300">
-                                    🛡️ SUPER ADMIN
-                                  </span>
-                                ) : isSchoolAdmin ? (
-                                  <span className="text-[8px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300">
-                                    ★ ADMIN SEKOLAH
-                                  </span>
-                                ) : (
-                                  <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
-                                    MANDIRI
-                                  </span>
-                                )}
+                  {/* Quick Select of Frequent Roles (Dihilangkan khusus pada Akun Murid, Orang Tua, Kepala Sekolah & Guru) */}
+                  {currentPersona.role !== 'STUDENT' && currentPersona.role !== 'PARENT' && currentPersona.role !== 'PRINCIPAL' && currentPersona.role !== 'TEACHER' && (
+                    <div className="pt-2">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
+                        Kredensial Pengguna Mandiri (Dikelola Admin)
+                      </p>
+                      <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                        {userList.map((p) => {
+                          const isSelected = p.id === currentPersona.id;
+                          const isSuper = p.role === 'SUPER_ADMIN';
+                          const isSchoolAdmin = p.role === 'SCHOOL_ADMIN';
+                          return (
+                            <button
+                              key={p.id}
+                              onClick={() => {
+                                onSelectPersona(p);
+                                setRoleDropdownOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition-colors cursor-pointer text-xs ${
+                                isSelected
+                                  ? 'bg-blue-50 text-[#0753A5] font-bold border border-blue-200'
+                                  : isSuper
+                                  ? 'bg-purple-50/60 hover:bg-purple-100/70 text-slate-800'
+                                  : isSchoolAdmin
+                                  ? 'bg-amber-50/50 hover:bg-amber-100/60 text-slate-800'
+                                  : 'hover:bg-slate-50 text-slate-700'
+                              }`}
+                            >
+                              <UserAvatar
+                                avatar={p.avatar}
+                                role={p.role}
+                                name={p.name}
+                                size="sm"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between">
+                                  <p className="truncate text-xs font-semibold">{p.name}</p>
+                                  {isSuper ? (
+                                    <span className="text-[8px] px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 font-black border border-purple-300">
+                                      🛡️ SUPER ADMIN
+                                    </span>
+                                  ) : isSchoolAdmin ? (
+                                    <span className="text-[8px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300">
+                                      ★ ADMIN SEKOLAH
+                                    </span>
+                                  ) : (
+                                    <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                                      MANDIRI
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-500 truncate">{p.title}</p>
                               </div>
-                              <p className="text-[10px] text-slate-500 truncate">{p.title}</p>
-                            </div>
-                            {isSelected && (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })}
+                              {isSelected && (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Logout / Switch User Action */}
                   <div className="pt-2">
