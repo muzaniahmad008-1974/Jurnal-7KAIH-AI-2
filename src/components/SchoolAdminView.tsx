@@ -298,53 +298,38 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       const saved = localStorage.getItem('si7kaih_school_programs_prod');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          // Bersihkan data bawaan default prg-01 s.d prg-04
+          const cleaned = parsed.filter(
+            (p: any) =>
+              !p.id?.startsWith('prg-0') &&
+              !p.id?.includes('default') &&
+              !p.id?.includes('sample')
+          );
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem('si7kaih_school_programs_prod', JSON.stringify(cleaned));
+          }
+          return cleaned;
+        }
       }
     } catch (_e) {}
-    return [
-      {
-        id: 'prg-01',
-        title: 'Jumat Berkah Sarapan Bergizi Bersama',
-        habitTarget: 'Makan Sehat & Bergizi',
-        frequency: 'Setiap Jumat Pagi (06:45 - 07:15)',
-        status: 'AKTIF',
-        leadTeacher: 'Drs. H. Mulyono, M.M.',
-        participants: 'Semua Rombel (Kelas 7 s.d. 9)',
-      },
-      {
-        id: 'prg-02',
-        title: 'Sabtu Kebugaran & Senam Remaja Hebat',
-        habitTarget: 'Berolahraga',
-        frequency: 'Setiap Sabtu Pagi (07:00 - 07:45)',
-        status: 'AKTIF',
-        leadTeacher: 'Pak Hendra Wijaya, S.Pd. (Guru Penjas)',
-        participants: 'Semua Siswa SMP & Dewan Guru',
-      },
-      {
-        id: 'prg-03',
-        title: 'Pojok Literasi Digital & Riset Remaja 15 Menit',
-        habitTarget: 'Gemar Belajar',
-        frequency: 'Senin - Kamis (Sebelum Pelajaran Pertama)',
-        status: 'AKTIF',
-        leadTeacher: 'Ibu Siti Aminah, S.Pd. (Pustakawan)',
-        participants: 'Fase D (Kelas 7, 8, 9)',
-      },
-      {
-        id: 'prg-04',
-        title: 'Tantangan 21 Hari Bangun Pagi Mandiri',
-        habitTarget: 'Bangun Pagi',
-        frequency: 'Program Kolaborasi Rumah & Sekolah (Bulan Berjalan)',
-        status: 'AKTIF',
-        leadTeacher: 'Pak Ahmad Fauzi, S.Pd.',
-        participants: 'Kolaborasi Wali Murid Kelas 7-A',
-      },
-    ];
+    return [];
   });
 
   const updateSchoolPrograms = (updated: typeof schoolPrograms) => {
     setSchoolPrograms(updated);
     try {
       localStorage.setItem('si7kaih_school_programs_prod', JSON.stringify(updated));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('si7kaih_programs_updated', { detail: updated }));
+        if ('BroadcastChannel' in window) {
+          try {
+            const bc = new BroadcastChannel('si7kaih_sync_channel');
+            bc.postMessage({ type: 'PROGRAMS_UPDATED', programs: updated });
+            bc.close();
+          } catch (_e) {}
+        }
+      }
     } catch (_e) {}
   };
 

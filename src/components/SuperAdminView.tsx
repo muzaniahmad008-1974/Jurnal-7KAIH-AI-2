@@ -865,6 +865,16 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           };
         }
 
+        if (u.role === 'PRINCIPAL') {
+          return {
+            ...u,
+            name: updatedPrincipal || u.name,
+            schoolId: editingSchool.id,
+            schoolName: updatedSchoolName,
+            title: `Kepala ${updatedSchoolName}`,
+          };
+        }
+
         return {
           ...u,
           schoolId: editingSchool.id,
@@ -978,6 +988,32 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           createdDate: new Date().toISOString().split('T')[0],
         };
         updatedUsersList = [...userAccounts, newAdminPersona];
+        setUserAccounts(updatedUsersList);
+        saveStoredUsers(updatedUsersList);
+      }
+
+      if (schoolFormPrincipal.trim() && schoolFormPrincipal.trim() !== '-') {
+        const principalUsername = `kepsek.${schoolFormNpsn.trim()}`;
+        const newPrincipalPersona: UserPersona = {
+          id: `usr-kepsek-${Date.now()}`,
+          name: schoolFormPrincipal.trim(),
+          role: 'PRINCIPAL',
+          title: `Kepala ${schoolFormName.trim()}`,
+          avatar: '👨‍💼',
+          schoolId: newId,
+          schoolName: schoolFormName.trim(),
+          identifierLabel: 'NIP Kepala Sekolah',
+          identifierValue: `19800101${Date.now().toString().slice(-10)}`,
+          username: principalUsername,
+          email: `${principalUsername}@sekolah.sch.id`,
+          accountStatus: 'MANDIRI_TERVERIFIKASI',
+          authChannel: 'MANDIRI_INTERNAL',
+          authProviderLabel: 'Autentikasi Mandiri SIM Sekolah',
+          securityLevel: 'Kepala Satuan Pendidikan (Akses Eksekutif & Supervisi)',
+          managedBy: 'Super Administrator SI-7KAIH Pusat',
+          createdDate: new Date().toISOString().split('T')[0],
+        };
+        updatedUsersList = [...updatedUsersList, newPrincipalPersona];
         setUserAccounts(updatedUsersList);
         saveStoredUsers(updatedUsersList);
       }

@@ -40,6 +40,8 @@ import {
   MousePointerClick,
   Building2,
   Clock,
+  Wifi,
+  Battery,
 } from 'lucide-react';
 import { UserPersona, getStoredUsers, USER_PERSONAS, isDeprecatedOrDummyJournal } from '../lib/constants';
 import { Student, Rombel, getStoredStudents, getStoredRombels } from '../lib/studentData';
@@ -1034,410 +1036,245 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#D4E8F8] via-[#EAF4FC] to-[#F1F6FA] text-slate-800 flex flex-col justify-between relative overflow-x-hidden select-none">
+    <div className="min-h-screen bg-gradient-to-br from-[#0B0F2A] via-[#1E1B4B] via-[#2D124D] to-[#0D1527] text-slate-800 flex flex-col justify-between items-center px-4 py-4 sm:py-6 relative overflow-x-hidden select-none">
       
-      {/* Background Subtle Campus Sketches / Decorative Elements */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
+      {/* Decorative Radiant Background Glowing Orbs (Gradasi Penuh Warna) */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-cyan-500/20 blur-[110px] pointer-events-none animate-pulse" />
+      <div className="absolute top-1/4 -right-32 w-[450px] h-[450px] rounded-full bg-fuchsia-500/25 blur-[120px] pointer-events-none" />
+      <div className="absolute -bottom-28 left-1/4 w-96 h-96 rounded-full bg-amber-400/20 blur-[100px] pointer-events-none" />
+      <div className="absolute top-2/3 -left-20 w-80 h-80 rounded-full bg-indigo-600/20 blur-[100px] pointer-events-none" />
+
+      {/* Background Subtle Tech/Geometric Mesh Grid */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
         <svg className="absolute w-full h-full" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <pattern id="campus-grid" width="80" height="80" patternUnits="userSpaceOnUse">
-              <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#93C5FD" strokeWidth="0.5" strokeDasharray="3 3" />
+            <pattern id="mobile-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#FFFFFF" strokeWidth="0.5" strokeDasharray="2 4" />
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#campus-grid)" />
+          <rect width="100%" height="100%" fill="url(#mobile-grid)" />
         </svg>
       </div>
 
       {/* ==================================================================== */}
-      {/* 1. TOP FLOATING NAVBAR (Pill Style as in Reference Image) */}
+      {/* 1. TOP FLOATING UTILITY BAR (Glassmorphism Pill with Nav Modals) */}
       {/* ==================================================================== */}
-      <header className="w-full max-w-7xl mx-auto px-4 pt-4 sm:pt-6 relative z-30">
-        <nav className="bg-white/95 backdrop-blur-md rounded-full border border-slate-200/90 shadow-md shadow-blue-900/5 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-2">
-          
-          {/* Brand Logo & Tagline */}
-          <div className="flex items-center gap-3">
-            {/* SI-7KAIH Sprout Logo Icon */}
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#0753A5] to-[#20A5D5] flex items-center justify-center text-white shadow-xs">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 21V12" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-                  <path d="M12 12C9 7 5 7 3 9C2 13 6 15 12 12Z" fill="#41A85F" />
-                  <path d="M12 12C15 6 20 7 21 10C22 14 17 16 12 12Z" fill="#20A5D5" />
-                </svg>
-              </div>
-              <span className="text-base sm:text-lg font-black tracking-tight text-[#0753A5]">
-                SI-7KAIH AI
-              </span>
-            </div>
-
-            {/* Tagline Divider & Text */}
-            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-medium pl-2 border-l border-slate-200">
-              <span>Murid Sehat</span>
-              <span>•</span>
-              <span>Karakter Kuat</span>
-              <span>•</span>
-              <span>Masa Depan Hebat</span>
-            </div>
+      <header className="w-full max-w-[440px] pt-1 pb-3 relative z-30 flex items-center justify-between gap-2 px-1">
+        {/* App Mini Logo & Name */}
+        <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/20 px-3 py-1.5 rounded-full shadow-xs">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-cyan-400 via-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-xs">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
           </div>
+          <span className="text-xs font-black tracking-tight text-white">
+            SI-7KAIH AI
+          </span>
+          <span className="text-[10px] text-blue-200 font-semibold hidden sm:inline">
+            • SMP Hebat
+          </span>
+        </div>
 
-          {/* Navigation Links */}
-          <div className="hidden lg:flex items-center gap-6 text-xs font-bold text-slate-600">
-            <button
-              onClick={() => setNavModal(null)}
-              className="flex items-center gap-1.5 text-[#0753A5] font-extrabold relative py-1 cursor-pointer transition-colors"
-            >
-              <span>🏠 Beranda</span>
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0753A5] rounded-full" />
-            </button>
-            <button
-              onClick={() => setNavModal('TENTANG')}
-              className="flex items-center gap-1.5 hover:text-[#0753A5] py-1 cursor-pointer transition-colors"
-            >
-              <Info className="w-3.5 h-3.5 text-slate-400" />
-              <span>Tentang</span>
-            </button>
-            <button
-              onClick={() => setNavModal('MANFAAT')}
-              className="flex items-center gap-1.5 hover:text-[#0753A5] py-1 cursor-pointer transition-colors"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>Manfaat</span>
-            </button>
-            <button
-              onClick={() => setNavModal('KONTAK')}
-              className="flex items-center gap-1.5 hover:text-[#0753A5] py-1 cursor-pointer transition-colors"
-            >
-              <Mail className="w-3.5 h-3.5 text-slate-400" />
-              <span>Kontak</span>
-            </button>
-          </div>
-
-          {/* Role Dropdown Pill with pointer click hint: "🎓 Untuk Murid SMP ⌵" */}
-          <div className="relative">
-            <button
-              onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-              className="flex items-center gap-1.5 bg-[#EFF6FF] hover:bg-blue-100/90 text-[#0753A5] font-extrabold text-xs px-3.5 py-1.5 sm:py-2 rounded-full border border-blue-200/80 shadow-2xs transition-all cursor-pointer group"
-              title="Klik di sini untuk memilih portal pengguna"
-            >
-              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-200/70 text-blue-800 text-[10px] group-hover:scale-110 transition-transform">
-                <MousePointerClick className="w-3 h-3 animate-pulse" />
-              </span>
-              {selectedRoleScope === 'PARENT' ? (
-                <Users className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <GraduationCap className="w-4 h-4 text-[#0753A5]" />
-              )}
-              <span className="truncate max-w-[140px] sm:max-w-none">{currentRoleInfo.label}</span>
-              <span className="hidden md:inline-flex text-[9px] px-1.5 py-0.2 rounded-md bg-blue-200/60 text-blue-800 font-bold">
-                Pilih Portal
-              </span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isRoleDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* Dropdown Menu */}
-            {isRoleDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
-                <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                  Pilih Lingkup Portal
-                </div>
-                {(Object.keys(roleScopeConfig) as Array<keyof typeof roleScopeConfig>).map((scopeKey) => {
-                  const item = roleScopeConfig[scopeKey];
-                  const isSelected = selectedRoleScope === scopeKey;
-                  return (
-                    <button
-                      key={scopeKey}
-                      onClick={() => handleSelectRoleScope(scopeKey)}
-                      className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between hover:bg-blue-50 transition-colors cursor-pointer ${
-                        isSelected ? 'bg-blue-50/80 text-[#0753A5] font-bold' : 'text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">
-                          {scopeKey === 'STUDENT'
-                            ? '🎓'
-                            : scopeKey === 'PARENT'
-                            ? '👨‍👩‍👧'
-                            : scopeKey === 'TEACHER'
-                            ? '👨‍🏫'
-                            : scopeKey === 'PRINCIPAL'
-                            ? '🏫'
-                            : scopeKey === 'SUPERVISOR'
-                            ? '🔍'
-                            : scopeKey === 'SCHOOL_ADMIN'
-                            ? '⚙️'
-                            : '🏛️'}
-                        </span>
-                        <span>{item.label}</span>
-                      </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-[#0753A5]" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-        </nav>
+        {/* Quick Nav Links Modals (Tentang, Manfaat, Kontak) */}
+        <div className="flex items-center gap-1.5 text-[11px] font-bold">
+          <button
+            type="button"
+            onClick={() => setNavModal('TENTANG')}
+            className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 border border-white/20 backdrop-blur-md transition-all cursor-pointer shadow-2xs"
+            title="Tentang SI-7KAIH AI"
+          >
+            Tentang
+          </button>
+          <button
+            type="button"
+            onClick={() => setNavModal('MANFAAT')}
+            className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 border border-white/20 backdrop-blur-md transition-all cursor-pointer shadow-2xs"
+            title="Manfaat Program"
+          >
+            Manfaat
+          </button>
+          <button
+            type="button"
+            onClick={() => setNavModal('KONTAK')}
+            className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 border border-white/20 backdrop-blur-md transition-all cursor-pointer shadow-2xs"
+            title="Kontak Layanan"
+          >
+            Kontak
+          </button>
+        </div>
       </header>
 
       {/* ==================================================================== */}
-      {/* 2. MAIN HERO SECTION (3 Columns: Left Banner, Center Form, Right Stats) */}
+      {/* 2. MAIN HERO SECTION - SINGLE MOBILE APP CARD (Gradasi Penuh Warna & Gaya Mobile) */}
       {/* ==================================================================== */}
-      <main className="w-full max-w-7xl mx-auto px-4 py-6 sm:py-8 relative z-20 flex-1 flex flex-col justify-center">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          
-          {/* ---------------------------------------------------------------- */}
-          {/* COLUMN A: LEFT BANNER (7 Kebiasaan Anak Indonesia Hebat Format Tanpa Ilustrasi Gambar) */}
-          {/* ---------------------------------------------------------------- */}
-          <div className="lg:col-span-6 xl:col-span-6 bg-gradient-to-br from-[#EBF5FE] via-[#F4F9FF] to-[#E2F0FD] rounded-[32px] border border-sky-200/90 shadow-xl shadow-blue-900/5 p-6 sm:p-7 flex flex-col justify-between space-y-5 relative select-none">
+      <main className="w-full max-w-[430px] mx-auto px-2 sm:px-4 py-4 sm:py-6 relative z-20 flex-1 flex flex-col justify-center items-center">
+        {/* Mobile Device Frame with High-End Depth and Gradient Border */}
+        <div className="w-full rounded-[42px] p-[2.5px] bg-gradient-to-b from-cyan-400 via-indigo-500 to-pink-500 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5),0_0_40px_rgba(99,102,241,0.25)] ring-1 ring-white/30 transition-all duration-300">
+          <div className="w-full rounded-[40px] bg-slate-900 overflow-hidden flex flex-col">
             
-            {/* 1. Header: Title + Motivational Note */}
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-              <div className="space-y-1">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100/90 border border-blue-200 text-[#0753A5] text-[11px] font-bold shadow-2xs">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Program Pembiasaan Karakter Positif</span>
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight text-[#0B3A6F]">
-                  <span className="block">7 Kebiasaan</span>
-                  <span className="text-[#0753A5]">Anak Indonesia Hebat</span>
-                </h2>
-                <p className="text-xs sm:text-[13px] text-slate-600 font-medium">
-                  Kebiasaan kecil hari ini, fondasi kesuksesan besar esok nanti.
-                </p>
+            {/* Mobile Status Bar (iOS / Android Style) */}
+            <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 px-6 pt-3.5 pb-1 flex items-center justify-between text-[11px] font-bold text-white/95 select-none">
+              <span className="tracking-tight font-black">07:00</span>
+              {/* Dynamic Island Notch */}
+              <div className="w-24 h-4 bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center gap-1.5 shadow-inner border border-white/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="w-2.5 h-2.5 rounded-full bg-black/90 border border-slate-700" />
               </div>
-
-              {/* Motivational Sticky Note */}
-              <div className="relative shrink-0 self-start">
-                <div className="bg-white/95 backdrop-blur-xs border border-sky-200/90 rounded-2xl px-3.5 py-2 shadow-xs rotate-1 text-center max-w-[180px]">
-                  <p className="text-[11px] font-black text-[#0753A5] leading-snug">
-                    Disiplin Hari Ini,<br />
-                    <span className="text-slate-800">Versi Terbaik Esok Nanti</span>
-                  </p>
-                  <div className="flex items-center justify-center gap-1 text-[13px] mt-0.5 text-amber-500 font-bold">
-                    <span>ヅ</span>
-                    <span className="text-xs">☀️</span>
-                  </div>
-                </div>
-                <div className="absolute -top-1.5 -right-1 text-amber-400 text-xs animate-spin-slow">
-                  ✨
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Seven Habit Circular Badges (Tujuh Dimensi Kebiasaan) */}
-            <div className="bg-white/85 backdrop-blur-xs rounded-2xl p-3.5 border border-sky-100 shadow-xs space-y-2.5">
-              <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 px-1">
-                <span className="flex items-center gap-1.5 text-[#0753A5]">
-                  <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                  <span>7 Dimensi Kebiasaan Harian Siswa:</span>
-                </span>
-                <span className="text-[10px] text-slate-400 font-semibold">SMP Indonesia Hebat</span>
-              </div>
-
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 text-center">
-                {/* 1. Bangun Pagi */}
-                <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#F59E0B] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
-                    <Sun className="w-5 h-5 stroke-[2.3]" />
-                  </div>
-                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
-                    Bangun Pagi
-                  </span>
-                </div>
-
-                {/* 2. Beribadah */}
-                <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#0D9488] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
-                    <Heart className="w-5 h-5 stroke-[2.3]" />
-                  </div>
-                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
-                    Beribadah
-                  </span>
-                </div>
-
-                {/* 3. Berolahraga */}
-                <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#0284C7] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
-                    <Activity className="w-5 h-5 stroke-[2.3]" />
-                  </div>
-                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
-                    Berolahraga
-                  </span>
-                </div>
-
-                {/* 4. Makan Sehat */}
-                <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#16A34A] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
-                    <Utensils className="w-5 h-5 stroke-[2.3]" />
-                  </div>
-                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
-                    Makan Sehat
-                  </span>
-                </div>
-
-                {/* 5. Gemar Belajar */}
-                <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#8B5CF6] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
-                    <BookOpen className="w-5 h-5 stroke-[2.3]" />
-                  </div>
-                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
-                    Gemar Belajar
-                  </span>
-                </div>
-
-                {/* 6. Bermasyarakat */}
-                <div className="flex flex-col items-center gap-1 group">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#F43F5E] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
-                    <Users className="w-5 h-5 stroke-[2.3]" />
-                  </div>
-                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
-                    Bermasyarakat
-                  </span>
-                </div>
-
-                {/* 7. Tidur Cepat */}
-                <div className="flex flex-col items-center gap-1 col-span-2 sm:col-span-1 group">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1E3A8A] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
-                    <Moon className="w-5 h-5 stroke-[2.3]" />
-                  </div>
-                  <span className="text-[10px] font-extrabold text-slate-800 leading-tight">
-                    Tidur Cepat
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Habit Information Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
-                    ☀️
-                  </div>
-                  <span className="text-xs font-black text-slate-900">Bangun Pagi & Bugar</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-snug">
-                  Bangun pukul 04:30 - 06:00 dengan ceria, beribadah harian tulus, dan berolahraga 15-30 menit.
-                </p>
-              </div>
-
-              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                    🥗
-                  </div>
-                  <span className="text-xs font-black text-slate-900">Gizi & Literasi Harian</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-snug">
-                  Sarapan bernutrisi seimbang, cukup air putih, serta membaca buku/eksplorasi mandiri 15 menit.
-                </p>
-              </div>
-
-              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs">
-                    🤝
-                  </div>
-                  <span className="text-xs font-black text-slate-900">Sosial & Berbakti</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-snug">
-                  Membantu orang tua di rumah, santun, gotong royong, dan peduli sesama di lingkungan sekitar.
-                </p>
-              </div>
-
-              <div className="bg-white/90 rounded-2xl p-3 border border-sky-100 shadow-2xs space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
-                    🌙
-                  </div>
-                  <span className="text-xs font-black text-slate-900">Istirahat Tepat Waktu</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-snug">
-                  Tidur teratur sebelum 21:30, batasi gawai sebelum tidur untuk pemulihan otak & kebugaran esok.
-                </p>
-              </div>
-            </div>
-
-            {/* 4. Tri-Sentra Educational Value Pillars */}
-            <div className="bg-blue-500/10 rounded-2xl p-3.5 border border-blue-200/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-[#0753A5] flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Prinsip Pendidikan Karakter SI-7KAIH:
-                </span>
-                <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                  Berbasis AI Reflektif
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-700 font-medium">
-                <div className="flex items-start gap-1.5">
-                  <span className="text-emerald-600 font-bold">✓</span>
-                  <span><strong>Non-Punitive:</strong> Pembiasaan tanpa sanksi atau rasa malu</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <span className="text-blue-600 font-bold">✓</span>
-                  <span><strong>AI Coaching:</strong> Dialog umpan balik yang membangun</span>
-                </div>
-                <div className="flex items-start gap-1.5">
-                  <span className="text-amber-600 font-bold">✓</span>
-                  <span><strong>Sinergi Tri-Sentra:</strong> Siswa, Orang Tua & Pendidik</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 5. Accreditation / Creator Bottom Bar */}
-            <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 border-t border-sky-200/60">
               <div className="flex items-center gap-1.5">
-                <School className="w-3.5 h-3.5 text-[#0753A5]" />
-                <span className="font-semibold text-slate-700">Kementerian Pendidikan Dasar dan Menengah RI</span>
+                <span className="text-[10px] font-extrabold tracking-wider">5G</span>
+                <Wifi className="w-3.5 h-3.5" />
+                <Battery className="w-4 h-4 text-emerald-300 fill-emerald-300" />
               </div>
-              <span className="font-medium text-slate-500 text-[10px]">
-                Inovasi Pengawas SMP Tanah Laut
-              </span>
             </div>
 
-          </div>
+            {/* Mobile App Header: Full Vibrant Gradient Banner */}
+            <div className="bg-gradient-to-br from-[#2563EB] via-[#4F46E5] via-[#7C3AED] to-[#EC4899] p-5 pt-3 text-white relative overflow-hidden select-none">
+              {/* Decorative radial glows */}
+              <div className="absolute -top-10 -right-10 w-36 h-36 rounded-full bg-white/15 blur-2xl pointer-events-none" />
+              <div className="absolute -bottom-10 -left-10 w-32 h-32 rounded-full bg-amber-400/25 blur-xl pointer-events-none" />
 
-          {/* ---------------------------------------------------------------- */}
-          {/* COLUMN B: CENTER LOGIN CARD (White Box as in Reference Image) */}
-          {/* ---------------------------------------------------------------- */}
-          <div className="lg:col-span-6 xl:col-span-4 bg-white rounded-[32px] border border-slate-200/90 shadow-xl shadow-blue-900/5 p-6 sm:p-8 flex flex-col justify-between space-y-5 relative">
-            
-            {/* Top Logo & AI Badge */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                {/* Sprout emblem logo */}
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200 text-[#0753A5] flex items-center justify-center shadow-xs">
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 21V12" stroke="#0753A5" strokeWidth="2.5" strokeLinecap="round" />
-                      <path d="M12 12C9 7 5 7 3 9C2 13 6 15 12 12Z" fill="#41A85F" />
-                      <path d="M12 12C15 6 20 7 21 10C22 14 17 16 12 12Z" fill="#20A5D5" />
+              {/* App Brand Row */}
+              <div className="flex items-center justify-between relative z-10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md border border-white/40 flex items-center justify-center shadow-lg">
+                    <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 21V12" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" />
+                      <path d="M12 12C9 7 5 7 3 9C2 13 6 15 12 12Z" fill="#34D399" />
+                      <path d="M12 12C15 6 20 7 21 10C22 14 17 16 12 12Z" fill="#38BDF8" />
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-lg font-black tracking-tight text-[#0753A5]">
-                      SI-7KAIH AI
-                    </h2>
-                    <p className="text-[11px] text-slate-400 font-medium">
-                      Jurnal Aktivitas Siswa
+                    <div className="flex items-center gap-1.5">
+                      <h1 className="text-lg font-black tracking-tight leading-tight drop-shadow-xs">
+                        SI-7KAIH AI
+                      </h1>
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-xs border border-white/30 tracking-wider">
+                        App
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-blue-100/90 font-medium">
+                      Jurnal Aktivitas Siswa SMP
                     </p>
                   </div>
                 </div>
 
-                {/* AI / Portal Role Badge */}
+                {/* Role indicator pill (Klik untuk buka daftar peran / Lainnya) */}
                 <div className="text-right">
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 border ${
-                    selectedRoleScope === 'PARENT'
-                      ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                      : 'text-amber-600 bg-amber-50 border border-amber-200'
-                  }`}>
-                    <span>{selectedRoleScope === 'PARENT' ? 'Portal Orang Tua' : selectedRoleScope === 'STUDENT' ? 'AI untuk Siswa' : currentRoleInfo.badge}</span>
-                    <span>{selectedRoleScope === 'PARENT' ? '👨‍👩‍👧' : selectedRoleScope === 'STUDENT' ? '☀️' : '🛡️'}</span>
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsCardRoleDropdownOpen(true)}
+                    className="text-[10px] font-black px-2.5 py-1 rounded-full bg-white/25 hover:bg-white/35 active:scale-95 transition-all backdrop-blur-md border border-white/40 flex items-center gap-1 shadow-sm cursor-pointer"
+                    title="Ganti portal peran pengguna"
+                  >
+                    <span>
+                      {selectedRoleScope === 'PARENT'
+                        ? '👨‍👩‍👧'
+                        : selectedRoleScope === 'STUDENT'
+                        ? '🎓'
+                        : selectedRoleScope === 'TEACHER'
+                        ? '👨‍🏫'
+                        : selectedRoleScope === 'PRINCIPAL'
+                        ? '🏫'
+                        : selectedRoleScope === 'SUPERVISOR'
+                        ? '🔍'
+                        : selectedRoleScope === 'SCHOOL_ADMIN'
+                        ? '⚙️'
+                        : '🏛️'}
+                    </span>
+                    <span>
+                      {selectedRoleScope === 'STUDENT'
+                        ? 'Murid'
+                        : selectedRoleScope === 'PARENT'
+                        ? 'Orang Tua'
+                        : selectedRoleScope === 'TEACHER'
+                        ? 'Guru'
+                        : selectedRoleScope === 'PRINCIPAL'
+                        ? 'Kepsek'
+                        : selectedRoleScope === 'SUPERVISOR'
+                        ? 'Pengawas'
+                        : selectedRoleScope === 'SCHOOL_ADMIN'
+                        ? 'Admin SIM'
+                        : 'Super Admin'}
+                    </span>
+                    <span className="text-[9px] opacity-75">▾</span>
+                  </button>
                 </div>
               </div>
+
+              {/* Welcome text based on role */}
+              <div className="mt-3 relative z-10">
+                <h2 className="text-base sm:text-lg font-black tracking-tight leading-snug">
+                  {selectedRoleScope === 'STUDENT' && 'Selamat Datang, Anak Hebat! ✨'}
+                  {selectedRoleScope === 'PARENT' && 'Selamat Datang, Ayah / Bunda! 👨‍👩‍👧'}
+                  {selectedRoleScope === 'TEACHER' && 'Selamat Datang, Bapak/Ibu Guru! 👨‍🏫'}
+                  {selectedRoleScope === 'PRINCIPAL' && 'Selamat Datang, Kepala Sekolah! 🏫'}
+                  {selectedRoleScope === 'SUPERVISOR' && 'Selamat Datang, Pengawas Pembina! 🔍'}
+                  {selectedRoleScope === 'SCHOOL_ADMIN' && 'Selamat Datang, Administrator! ⚙️'}
+                  {selectedRoleScope === 'SUPER_ADMIN' && 'Selamat Datang, Super Admin! 🏛️'}
+                </h2>
+                <p className="text-xs text-blue-100/90 mt-0.5 leading-snug">
+                  {currentRoleInfo.subgreeting}
+                </p>
+              </div>
+
+              {/* 7 Kebiasaan Story / Icon Ribbon */}
+              <div className="mt-3.5 pt-2.5 border-t border-white/20 relative z-10">
+                <div className="flex items-center justify-between text-[10px] font-extrabold text-blue-100 mb-1.5 px-0.5">
+                  <span className="flex items-center gap-1">
+                    <Trophy className="w-3 h-3 text-amber-300" />
+                    <span>7 Kebiasaan Anak Indonesia Hebat</span>
+                  </span>
+                  <span className="text-[9px] text-pink-200 font-bold">7 Dimensi</span>
+                </div>
+
+                <div className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar py-0.5">
+                  <div className="flex flex-col items-center gap-0.5 shrink-0" title="1. Bangun Pagi">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50">
+                      <Sun className="w-4 h-4 stroke-[2.4]" />
+                    </div>
+                    <span className="text-[8px] font-black text-blue-50 leading-tight">Pagi</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 shrink-0" title="2. Beribadah">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50">
+                      <Heart className="w-4 h-4 stroke-[2.4]" />
+                    </div>
+                    <span className="text-[8px] font-black text-blue-50 leading-tight">Ibadah</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 shrink-0" title="3. Berolahraga">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-sky-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50">
+                      <Activity className="w-4 h-4 stroke-[2.4]" />
+                    </div>
+                    <span className="text-[8px] font-black text-blue-50 leading-tight">Olahraga</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 shrink-0" title="4. Makan Sehat">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-green-600 to-lime-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50">
+                      <Utensils className="w-4 h-4 stroke-[2.4]" />
+                    </div>
+                    <span className="text-[8px] font-black text-blue-50 leading-tight">Makan</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 shrink-0" title="5. Gemar Belajar">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-violet-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50">
+                      <BookOpen className="w-4 h-4 stroke-[2.4]" />
+                    </div>
+                    <span className="text-[8px] font-black text-blue-50 leading-tight">Belajar</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 shrink-0" title="6. Bermasyarakat">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-600 to-pink-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50">
+                      <Users className="w-4 h-4 stroke-[2.4]" />
+                    </div>
+                    <span className="text-[8px] font-black text-blue-50 leading-tight">Sosial</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5 shrink-0" title="7. Tidur Cepat">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-700 to-blue-500 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50">
+                      <Moon className="w-4 h-4 stroke-[2.4]" />
+                    </div>
+                    <span className="text-[8px] font-black text-blue-50 leading-tight">Tidur</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Mobile Form Body */}
+            <div className="bg-white p-5 sm:p-6 flex flex-col justify-between space-y-4 relative">
+              <div className="space-y-3">
 
               {/* Petunjuk Interaktif Klik Portal Pengguna dengan Icon Animasi */}
               <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
@@ -1445,121 +1282,191 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                   <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-400 text-slate-900 shadow-sm ring-4 ring-amber-300/40 animate-bounce shrink-0">
                     <MousePointerClick className="w-3.5 h-3.5" />
                   </span>
-                  <span className="tracking-tight">Klik Portal Pengguna:</span>
+                  <span className="tracking-tight">Portal Pengguna:</span>
                 </div>
-                <div className="flex items-center gap-1 text-[10px] font-bold text-[#0753A5] bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping" />
-                  <span>Pilih Peran Akun ▾</span>
-                </div>
+                {/* Akses Tunggal Pilihan Portal Lainnya / Semua Peran */}
+                <button
+                  type="button"
+                  id="btn-semua-peran-lainnya"
+                  onClick={() => setIsCardRoleDropdownOpen(!isCardRoleDropdownOpen)}
+                  className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full cursor-pointer transition-all shadow-2xs ${
+                    selectedRoleScope !== 'STUDENT' && selectedRoleScope !== 'PARENT' && selectedRoleScope !== 'TEACHER'
+                      ? 'bg-[#0753A5] text-white ring-2 ring-blue-300'
+                      : 'text-[#0753A5] bg-blue-50 hover:bg-blue-100 border border-blue-200/90 active:scale-95'
+                  }`}
+                  title="Buka semua 7 pilihan portal peran pengguna (termasuk Kepala Sekolah, Pengawas, Admin SIM, Super Admin)"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    selectedRoleScope !== 'STUDENT' && selectedRoleScope !== 'PARENT' && selectedRoleScope !== 'TEACHER'
+                      ? 'bg-amber-300 animate-pulse'
+                      : 'bg-blue-600 animate-ping'
+                  }`} />
+                  <span className="whitespace-nowrap">
+                    {selectedRoleScope !== 'STUDENT' && selectedRoleScope !== 'PARENT' && selectedRoleScope !== 'TEACHER'
+                      ? `${currentRoleInfo.badge.replace('Login ', '')} ▾`
+                      : 'Semua Peran / Lainnya ▾'}
+                  </span>
+                </button>
               </div>
 
-              {/* Quick Portal Switcher Tabs */}
+              {/* Quick Portal Switcher Tabs (3 Kolom Luas: Murid, Orang Tua Lengkap, Guru) */}
               <div className="relative">
-                <div className="bg-slate-100/95 p-1 rounded-2xl flex items-center gap-1 overflow-x-auto text-[11px] scrollbar-none ring-1 ring-slate-200/80 shadow-2xs">
+                <div className="bg-slate-100/95 p-1 rounded-2xl grid grid-cols-3 gap-1.5 text-xs ring-1 ring-slate-200/80 shadow-2xs w-full">
+                  {/* Tab 1: Murid */}
                   <button
                     type="button"
                     onClick={() => handleSelectRoleScope('STUDENT')}
-                    className={`flex-1 py-2 px-2 rounded-xl font-bold transition-all text-center whitespace-nowrap cursor-pointer flex items-center justify-center gap-1 ${
+                    className={`py-2 px-2 rounded-xl font-bold transition-all text-center whitespace-nowrap cursor-pointer flex items-center justify-center gap-1.5 ${
                       selectedRoleScope === 'STUDENT'
-                        ? 'bg-white text-[#0753A5] shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white text-[#0753A5] shadow-xs ring-1 ring-blue-200'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
                     }`}
                   >
-                    <span>🎓</span>
-                    <span>Murid</span>
+                    <span className="text-sm">🎓</span>
+                    <span className="whitespace-nowrap">Murid</span>
                   </button>
+
+                  {/* Tab 2: Orang Tua (Lengkap tanpa terpotong) */}
                   <button
                     type="button"
                     onClick={() => handleSelectRoleScope('PARENT')}
-                    className={`flex-1 py-2 px-2 rounded-xl font-bold transition-all text-center whitespace-nowrap cursor-pointer flex items-center justify-center gap-1 ${
+                    className={`py-2 px-2 rounded-xl font-bold transition-all text-center whitespace-nowrap cursor-pointer flex items-center justify-center gap-1.5 ${
                       selectedRoleScope === 'PARENT'
                         ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
                     }`}
                   >
-                    <span>👨‍👩‍👧</span>
-                    <span>Orang Tua</span>
+                    <span className="text-sm">👨‍👩‍👧</span>
+                    <span className="whitespace-nowrap">Orang Tua</span>
                   </button>
+
+                  {/* Tab 3: Guru */}
                   <button
                     type="button"
                     onClick={() => handleSelectRoleScope('TEACHER')}
-                    className={`flex-1 py-2 px-2 rounded-xl font-bold transition-all text-center whitespace-nowrap cursor-pointer flex items-center justify-center gap-1 ${
+                    className={`py-2 px-2 rounded-xl font-bold transition-all text-center whitespace-nowrap cursor-pointer flex items-center justify-center gap-1.5 ${
                       selectedRoleScope === 'TEACHER'
-                        ? 'bg-white text-[#0753A5] shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white text-[#0753A5] shadow-xs ring-1 ring-blue-200'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
                     }`}
                   >
-                    <span>👨‍🏫</span>
-                    <span>Guru</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsCardRoleDropdownOpen(!isCardRoleDropdownOpen)}
-                    className={`py-2 px-2.5 rounded-xl font-bold transition-all text-center whitespace-nowrap cursor-pointer flex items-center gap-1 ${
-                      selectedRoleScope !== 'STUDENT' && selectedRoleScope !== 'PARENT' && selectedRoleScope !== 'TEACHER'
-                        ? 'bg-white text-[#0753A5] shadow-xs ring-1 ring-blue-300'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                    title="Pilih peran lainnya (Kepala Sekolah, Pengawas, Admin SIM, Super Admin)"
-                  >
-                    <span>
-                      {selectedRoleScope !== 'STUDENT' && selectedRoleScope !== 'PARENT' && selectedRoleScope !== 'TEACHER'
-                        ? currentRoleInfo.badge.replace('Login ', '')
-                        : 'Lainnya'}
-                    </span>
-                    <ChevronDown className={`w-3 h-3 transition-transform ${isCardRoleDropdownOpen ? 'rotate-180' : ''}`} />
+                    <span className="text-sm">👨‍🏫</span>
+                    <span className="whitespace-nowrap">Guru</span>
                   </button>
                 </div>
 
+                {/* Status Bar Jika Peran 'Lainnya' Sedang Aktif */}
+                {selectedRoleScope !== 'STUDENT' && selectedRoleScope !== 'PARENT' && selectedRoleScope !== 'TEACHER' && (
+                  <div className="mt-1.5 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between text-xs text-[#0753A5]">
+                    <div className="flex items-center gap-1.5 font-bold truncate">
+                      <span>
+                        {selectedRoleScope === 'PRINCIPAL' ? '🏫' : selectedRoleScope === 'SUPERVISOR' ? '🔍' : selectedRoleScope === 'SCHOOL_ADMIN' ? '⚙️' : '🏛️'}
+                      </span>
+                      <span className="truncate">Peran Aktif: <strong>{currentRoleInfo.badge}</strong></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCardRoleDropdownOpen(true)}
+                      className="text-[10px] font-black text-blue-700 hover:text-blue-900 shrink-0 ml-1 underline cursor-pointer"
+                    >
+                      Ubah ▾
+                    </button>
+                  </div>
+                )}
+
                 {/* Popover Dropdown for Card Quick Switcher */}
                 {isCardRoleDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="px-3.5 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
-                      <span>Pilih Portal Pengguna</span>
-                      <span className="text-[9px] text-[#0753A5] font-bold">7 Peran Tersedia</span>
-                    </div>
-                    <div className="p-1 max-h-60 overflow-y-auto space-y-0.5">
-                      {(Object.keys(roleScopeConfig) as Array<keyof typeof roleScopeConfig>).map((scopeKey) => {
-                        const item = roleScopeConfig[scopeKey];
-                        const isSelected = selectedRoleScope === scopeKey;
-                        return (
-                          <button
-                            key={scopeKey}
-                            type="button"
-                            onClick={() => handleSelectRoleScope(scopeKey)}
-                            className={`w-full text-left px-3 py-2 text-xs rounded-xl flex items-center justify-between transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'bg-blue-50 text-[#0753A5] font-black ring-1 ring-blue-200'
-                                : 'text-slate-700 hover:bg-slate-50 font-semibold'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">
-                                {scopeKey === 'STUDENT'
-                                  ? '🎓'
-                                  : scopeKey === 'PARENT'
-                                  ? '👨‍👩‍👧'
-                                  : scopeKey === 'TEACHER'
-                                  ? '👨‍🏫'
-                                  : scopeKey === 'PRINCIPAL'
-                                  ? '🏫'
-                                  : scopeKey === 'SUPERVISOR'
-                                  ? '🔍'
-                                  : scopeKey === 'SCHOOL_ADMIN'
-                                  ? '⚙️'
-                                  : '🏛️'}
-                              </span>
-                              <div>
-                                <div className="leading-tight">{item.label}</div>
-                                <div className="text-[10px] text-slate-400 font-normal">{item.badge}</div>
+                  <>
+                    <div
+                      className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
+                      onClick={() => setIsCardRoleDropdownOpen(false)}
+                    />
+                    <div className="absolute left-0 right-0 top-full mt-2 w-full bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150 max-h-[75vh] overflow-y-auto">
+                      <div className="px-3.5 py-1.5 text-[10px] font-black text-slate-500 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                          <span>Pilih Portal Pengguna</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsCardRoleDropdownOpen(false)}
+                          className="w-5 h-5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-xs font-bold cursor-pointer"
+                          title="Tutup"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      {/* Kelompok Portal Utama */}
+                      <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                        Portal Utama
+                      </div>
+                      <div className="px-1.5 space-y-0.5">
+                        {(['STUDENT', 'PARENT', 'TEACHER'] as const).map((scopeKey) => {
+                          const item = roleScopeConfig[scopeKey];
+                          const isSelected = selectedRoleScope === scopeKey;
+                          return (
+                            <button
+                              key={scopeKey}
+                              type="button"
+                              onClick={() => handleSelectRoleScope(scopeKey)}
+                              className={`w-full text-left px-3 py-2 text-xs rounded-xl flex items-center justify-between transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-50 text-[#0753A5] font-black ring-1 ring-blue-200'
+                                  : 'text-slate-700 hover:bg-slate-50 font-semibold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">
+                                  {scopeKey === 'STUDENT' ? '🎓' : scopeKey === 'PARENT' ? '👨‍👩‍👧' : '👨‍🏫'}
+                                </span>
+                                <div>
+                                  <div className="leading-tight">{item.label}</div>
+                                  <div className="text-[10px] text-slate-400 font-normal">{item.badge}</div>
+                                </div>
                               </div>
-                            </div>
-                            {isSelected && <Check className="w-4 h-4 text-[#0753A5] shrink-0" />}
-                          </button>
-                        );
-                      })}
+                              {isSelected && <Check className="w-4 h-4 text-[#0753A5] shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Kelompok Portal Lainnya */}
+                      <div className="px-3 pt-2.5 pb-1 text-[10px] font-black text-amber-600 uppercase tracking-wider border-t border-slate-100 mt-1.5 flex items-center justify-between">
+                        <span>Pilihan Portal Pengguna Lainnya</span>
+                        <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">4 Peran</span>
+                      </div>
+                      <div className="px-1.5 pb-1 space-y-0.5">
+                        {(['PRINCIPAL', 'SUPERVISOR', 'SCHOOL_ADMIN', 'SUPER_ADMIN'] as const).map((scopeKey) => {
+                          const item = roleScopeConfig[scopeKey];
+                          const isSelected = selectedRoleScope === scopeKey;
+                          return (
+                            <button
+                              key={scopeKey}
+                              type="button"
+                              onClick={() => handleSelectRoleScope(scopeKey)}
+                              className={`w-full text-left px-3 py-2 text-xs rounded-xl flex items-center justify-between transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-50 text-amber-900 font-black ring-1 ring-amber-300'
+                                  : 'text-slate-700 hover:bg-slate-50 font-semibold'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">
+                                  {scopeKey === 'PRINCIPAL' ? '🏫' : scopeKey === 'SUPERVISOR' ? '🔍' : scopeKey === 'SCHOOL_ADMIN' ? '⚙️' : '🏛️'}
+                                </span>
+                                <div>
+                                  <div className="leading-tight">{item.label}</div>
+                                  <div className="text-[10px] text-slate-400 font-normal">{item.badge}</div>
+                                </div>
+                              </div>
+                              {isSelected && <Check className="w-4 h-4 text-amber-700 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
 
@@ -2109,200 +2016,28 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
 
           </div>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* COLUMN C: RIGHT STATS & STICKY NOTE */}
-          {/* ---------------------------------------------------------------- */}
-          <div className="lg:col-span-12 xl:col-span-2 flex xl:flex-col sm:flex-row flex-col gap-4 justify-between">
-            
-            {/* Tilted Yellow Sticky Note */}
-            <div className="bg-[#FEF08A] text-slate-900 p-5 rounded-3xl shadow-md border border-amber-300/80 -rotate-2 relative overflow-hidden flex flex-col justify-between flex-1 xl:flex-none xl:h-44">
-              
-              {/* Adhesive tape graphic at top */}
-              <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-14 h-5 bg-white/60 backdrop-blur-xs border border-amber-200/80 rounded-sm rotate-1" />
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-2xl">👑</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900">
-                  Motivasi
-                </span>
-              </div>
-
-              <div className="my-auto py-1">
-                <p className="text-base sm:text-lg font-black leading-snug text-slate-900 tracking-tight">
-                  Anak<br />
-                  SMP Bisa<br />
-                  <span className="underline decoration-amber-500 decoration-2">Luar Biasa</span>
-                </p>
-              </div>
-
-              <div className="text-right text-[10px] font-bold text-amber-800">
-                #GenerasiHebat
-              </div>
-            </div>
-
-            {/* Stat Card 1: Total Siswa Bergabung */}
-            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between flex-1 xl:flex-none space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#0753A5] flex items-center justify-center font-bold">
-                  <Users className="w-5 h-5" />
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-0.5">
-                  <span>↗ {studentMetrics.activePercent}% Aktif</span>
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 block">
-                  Total Siswa Bergabung
-                </span>
-                <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                  {studentMetrics.totalStudents.toLocaleString('id-ID')}
-                </div>
-                <span className="text-[11px] font-semibold text-slate-500">
-                  {studentMetrics.activeStudents} Siswa SMP Aktif
-                </span>
-              </div>
-
-              {/* Mini Green Bar Chart SVG */}
-              <div className="flex items-end gap-1 h-5 pt-1" title={`${studentMetrics.totalStudents} siswa terdata di SIM`}>
-                <span className="w-1.5 h-2 bg-emerald-300 rounded-xs" />
-                <span className="w-1.5 h-3 bg-emerald-400 rounded-xs" />
-                <span className="w-1.5 h-2.5 bg-emerald-300 rounded-xs" />
-                <span className="w-1.5 h-4 bg-emerald-500 rounded-xs" />
-                <span className="w-1.5 h-5 bg-emerald-600 rounded-xs" />
-              </div>
-            </div>
-
-            {/* Stat Card 2: Hari Ini Sudah Aktif */}
-            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between flex-1 xl:flex-none space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-                  <CalendarCheck className="w-5 h-5" />
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-0.5">
-                  <span>{studentMetrics.hasActiveToday ? `↗ +${studentMetrics.activeTodayPercent}%` : 'Siap Aktif'}</span>
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 block">
-                  Hari Ini Sudah Aktif
-                </span>
-                <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                  {studentMetrics.activeTodayCount.toLocaleString('id-ID')}
-                </div>
-                <span className="text-[11px] font-semibold text-slate-500">
-                  {studentMetrics.hasActiveToday
-                    ? `${studentMetrics.activeTodayCount} dari ${studentMetrics.totalStudents} Siswa`
-                    : `0 dari ${studentMetrics.totalStudents} Siswa Hari Ini`}
-                </span>
-              </div>
-
-              {/* Mini Green Bar Chart SVG */}
-              <div className="flex items-end gap-1 h-5 pt-1" title={`${studentMetrics.activeTodayCount} siswa aktif mengisi jurnal hari ini`}>
-                <span className={`w-1.5 rounded-xs transition-all ${studentMetrics.hasActiveToday ? 'h-2.5 bg-emerald-400' : 'h-1.5 bg-slate-200'}`} />
-                <span className={`w-1.5 rounded-xs transition-all ${studentMetrics.hasActiveToday ? 'h-3.5 bg-emerald-500' : 'h-1.5 bg-slate-200'}`} />
-                <span className={`w-1.5 rounded-xs transition-all ${studentMetrics.activeTodayCount > 1 ? 'h-4 bg-emerald-500' : 'h-1.5 bg-slate-200'}`} />
-                <span className={`w-1.5 rounded-xs transition-all ${studentMetrics.activeTodayCount > 2 ? 'h-4.5 bg-emerald-600' : 'h-1.5 bg-slate-200'}`} />
-                <span className={`w-1.5 rounded-xs transition-all ${studentMetrics.hasActiveToday ? 'h-5 bg-emerald-600' : 'h-1.5 bg-slate-200'}`} />
-              </div>
-            </div>
-
+          {/* Smartphone Bottom Home Indicator inside Card */}
+          <div className="bg-white/95 pb-3 pt-1 text-center select-none">
+            <div className="w-28 h-1 bg-slate-300 rounded-full mx-auto mb-1.5" />
+            <p className="text-[10px] text-slate-400 font-medium">
+              Kementerian Pendidikan Dasar & Menengah RI • Inovasi Pengawas SMP Tanah Laut
+            </p>
           </div>
 
+          </div>
         </div>
       </main>
 
       {/* ==================================================================== */}
-      {/* 3. BOTTOM FEATURES BANNER (Floating Card as in Reference Image) */}
+      {/* 3. FOOTER COPYRIGHT LINE */}
       {/* ==================================================================== */}
-      <section className="w-full max-w-7xl mx-auto px-4 pb-3 relative z-20">
-        <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 shadow-sm px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-          
-          {/* Feature 1: 7 Kebiasaan Anak Indonesia Hebat */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
-              <Trophy className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-black text-slate-900">
-                7 Kebiasaan Anak Indonesia Hebat
-              </h4>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Membentuk Karakter Generasi Berakhlak Mulia
-              </p>
-            </div>
-          </div>
-
-          <div className="hidden md:block w-px h-8 bg-slate-200" />
-
-          {/* Feature 2: Siswa Bahagia */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
-              <Heart className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-black text-slate-900">
-                Siswa Bahagia
-              </h4>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Sekolah Lebih Bermakna
-              </p>
-            </div>
-          </div>
-
-          <div className="hidden md:block w-px h-8 bg-slate-200" />
-
-          {/* Feature 3: Generasi Sehat, Cerdas, Berakhlak */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-black text-slate-900">
-                Generasi Sehat, Cerdas, Berakhlak
-              </h4>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Untuk Indonesia yang Lebih Baik
-              </p>
-            </div>
-          </div>
-
-          {/* Creator Attribution & Indonesian Callout */}
-          <div className="ml-auto flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50/90 border border-blue-200 text-slate-700 text-xs shadow-2xs">
-              <GraduationCap className="w-3.5 h-3.5 text-[#0753A5] shrink-0" />
-              <span className="text-[11px] font-medium text-slate-600">
-                Kreasi oleh <strong className="text-[#0753A5] font-black">Ahmad Muzani</strong> — Pengawas SMP Disdikbud Tanah Laut
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs font-black text-[#0753A5] shrink-0">
-              <span>Indonesia Butuh Kamu</span>
-              <span className="text-amber-500 font-bold">☀️ ヅ</span>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      {/* ==================================================================== */}
-      {/* 4. FOOTER COPYRIGHT LINE */}
-      {/* ==================================================================== */}
-      <footer className="w-full text-center text-slate-500 text-[11px] font-medium py-3.5 px-4 relative z-10 border-t border-slate-200/60 bg-white/50">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1">
+      <footer className="w-full text-center text-slate-400 text-[11px] font-medium py-2.5 px-4 relative z-10">
+        <div className="max-w-md mx-auto flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
           <span>SI-7KAIH AI</span>
-          <span className="text-slate-300">•</span>
-          <span>Jurnal Aktivitas Siswa</span>
-          <span className="text-slate-300">•</span>
-          <span>Untuk Murid SMP</span>
-          <span className="text-slate-300">•</span>
-          <span>© 2024</span>
-          <span className="text-slate-300">•</span>
-          <span className="font-bold text-slate-700">
-            Kreasi oleh Ahmad Muzani-Pengawas SMP Disdikbud Tanah Laut
-          </span>
-          <span className="text-slate-300">•</span>
+          <span className="text-slate-600">•</span>
           <span>7 Kebiasaan Anak Indonesia Hebat</span>
+          <span className="text-slate-600">•</span>
+          <span className="font-semibold text-slate-300">Kreasi Ahmad Muzani</span>
         </div>
       </footer>
 
