@@ -1225,63 +1225,63 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                   <span className="text-[9px] text-pink-200 font-bold">7 Dimensi</span>
                 </div>
 
-                <div className="flex items-start justify-between gap-1 overflow-x-auto no-scrollbar py-0.5">
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-[38px]" title="1. Bangun Pagi">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
-                      <Sun className="w-4 h-4 stroke-[2.4]" />
+                <div className="flex items-start justify-between gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar py-0.5">
+                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="1. Bangun Pagi">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
+                      <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[22px] flex flex-col items-center justify-start text-[8px] font-black text-blue-50 leading-[1.1] text-center tracking-tight">
+                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
                       <span>Bangun</span>
                       <span>Pagi</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-[38px]" title="2. Beribadah">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
-                      <Heart className="w-4 h-4 stroke-[2.4]" />
+                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="2. Beribadah">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
+                      <Heart className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[22px] flex flex-col items-center justify-start text-[8px] font-black text-blue-50 leading-[1.1] text-center tracking-tight">
+                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
                       <span>Beribadah</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-[38px]" title="3. Berolahraga">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-sky-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
-                      <Activity className="w-4 h-4 stroke-[2.4]" />
+                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="3. Berolahraga">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-sky-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
+                      <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[22px] flex flex-col items-center justify-start text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
                       <span>Berolahraga</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-[38px]" title="4. Makan Bergizi">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-green-600 to-lime-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
-                      <Utensils className="w-4 h-4 stroke-[2.4]" />
+                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="4. Makan Bergizi">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-green-600 to-lime-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
+                      <Utensils className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[22px] flex flex-col items-center justify-start text-[8px] font-black text-blue-50 leading-[1.1] text-center tracking-tight">
+                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
                       <span>Makan</span>
                       <span>Bergizi</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-[38px]" title="5. Gemar Belajar">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-violet-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
-                      <BookOpen className="w-4 h-4 stroke-[2.4]" />
+                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="5. Gemar Belajar">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-purple-600 to-violet-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
+                      <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[22px] flex flex-col items-center justify-start text-[8px] font-black text-blue-50 leading-[1.1] text-center tracking-tight">
+                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
                       <span>Gemar</span>
                       <span>Belajar</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-[38px]" title="6. Bermasyarakat">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-600 to-pink-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
-                      <Users className="w-4 h-4 stroke-[2.4]" />
+                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="6. Bermasyarakat">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-rose-600 to-pink-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
+                      <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[22px] flex flex-col items-center justify-start text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
                       <span>Bermasyarakat</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-[38px]" title="7. Tidur Cepat">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-700 to-blue-500 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
-                      <Moon className="w-4 h-4 stroke-[2.4]" />
+                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="7. Tidur Cepat">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-indigo-700 to-blue-500 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
+                      <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[22px] flex flex-col items-center justify-start text-[8px] font-black text-blue-50 leading-[1.1] text-center tracking-tight">
+                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
                       <span>Tidur</span>
                       <span>Cepat</span>
                     </div>
