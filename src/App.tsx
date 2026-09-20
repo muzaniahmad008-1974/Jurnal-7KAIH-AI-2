@@ -827,25 +827,40 @@ export default function App() {
     } catch (_e) {}
   };
 
-  // Handle parent or teacher journal validation
+  // Handle parent or teacher journal validation (syncs across student & parent dashboards)
   const handleValidateJournal = (
     journalId: string,
     habitCode?: HabitCode,
-    note?: string
+    note?: string,
+    validationMeta?: {
+      signature?: string;
+      validatorName?: string;
+      validationType?: 'SIGNATURE' | 'INITIALS';
+      source?: 'STUDENT_DASHBOARD' | 'PARENT_DASHBOARD';
+      asParent?: boolean;
+    }
   ) => {
     let updatedJournalToPersist: DailyJournal | null = null;
-    setJournals((prev) =>
-      prev.map((j) => {
-        const isMatch = j.id === journalId || (j.journalDate && (journalId === j.journalDate || journalId.includes(j.journalDate)));
+    setJournals((prev) => {
+      const nextJournals = prev.map((j) => {
+        const isMatch =
+          j.id === journalId ||
+          (j.journalDate && (journalId === j.journalDate || journalId.includes(j.journalDate)));
         if (isMatch) {
+          const isParent =
+            currentPersona.role === 'PARENT' ||
+            !!validationMeta?.asParent ||
+            !!validationMeta?.signature ||
+            validationMeta?.source === 'STUDENT_DASHBOARD';
+          const isTeacher = currentPersona.role === 'TEACHER';
           const updatedEntries = { ...j.entries };
           if (habitCode) {
             if (updatedEntries[habitCode]) {
               updatedEntries[habitCode] = {
                 ...updatedEntries[habitCode],
                 validationStatus: 'VALIDATED',
-                parentValidated: currentPersona.role === 'PARENT' ? true : updatedEntries[habitCode].parentValidated,
-                teacherValidated: currentPersona.role === 'TEACHER' ? true : updatedEntries[habitCode].teacherValidated,
+                parentValidated: isParent ? true : updatedEntries[habitCode].parentValidated,
+                teacherValidated: isTeacher ? true : updatedEntries[habitCode].teacherValidated,
               };
             }
           } else {
@@ -855,25 +870,41 @@ export default function App() {
               updatedEntries[code] = {
                 ...updatedEntries[code],
                 validationStatus: 'VALIDATED',
-                parentValidated: currentPersona.role === 'PARENT' ? true : updatedEntries[code].parentValidated,
-                teacherValidated: currentPersona.role === 'TEACHER' ? true : updatedEntries[code].teacherValidated,
+                parentValidated: isParent ? true : updatedEntries[code].parentValidated,
+                teacherValidated: isTeacher ? true : updatedEntries[code].teacherValidated,
               };
             });
           }
-          const isParent = currentPersona.role === 'PARENT';
           const updatedJournal: DailyJournal = {
             ...j,
             entries: updatedEntries,
             parentValidated: isParent ? true : j.parentValidated,
             parentValidatedAt: isParent ? new Date().toISOString() : j.parentValidatedAt,
-            parentValidationNote: isParent ? (note || j.parentValidationNote) : j.parentValidationNote,
+            parentValidationNote: isParent ? (note !== undefined ? note : j.parentValidationNote) : j.parentValidationNote,
+            parentSignature: validationMeta?.signature || j.parentSignature,
+            parentValidatorName:
+              validationMeta?.validatorName ||
+              j.parentValidatorName ||
+              (isParent ? (currentPersona.name || 'Orang Tua / Wali') : undefined),
+            parentValidationType: validationMeta?.validationType || j.parentValidationType || 'SIGNATURE',
+            parentValidationSource:
+              validationMeta?.source ||
+              (currentPersona.role === 'PARENT' ? 'PARENT_DASHBOARD' : 'STUDENT_DASHBOARD'),
           };
           updatedJournalToPersist = updatedJournal;
           return updatedJournal;
         }
         return j;
-      })
-    );
+      });
+
+      // Synchronize to localStorage immediately for cross-tab and instant reactive listeners
+      try {
+        localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextJournals));
+        window.dispatchEvent(new CustomEvent('si7kaih_journals_updated'));
+      } catch (_e) {}
+
+      return nextJournals;
+    });
 
     // Save validated state to Supabase
     if (updatedJournalToPersist) {
@@ -1214,6 +1245,7 @@ export default function App() {
               studentName={activeStudentName}
               className={activeStudentClass}
               badges={badges}
+              onValidateJournal={handleValidateJournal}
             />
           );
       }

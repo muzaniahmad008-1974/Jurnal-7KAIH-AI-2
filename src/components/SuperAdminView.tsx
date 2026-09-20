@@ -2623,17 +2623,30 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                             <td className="p-3 font-bold text-slate-900">{r.name}</td>
                             <td className="p-3">{r.phase} (Kelas {r.grade})</td>
                             <td className="p-3 font-medium text-slate-700">{r.teacher}</td>
-                            <td className="p-3 font-mono">{r.capacity} Siswa</td>
+                            <td className="p-3 font-mono text-slate-700">{r.capacity} Kuota</td>
                             <td className="p-3 font-mono">
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                                  enrolledCount > 0
-                                    ? 'bg-blue-50 text-[#0753A5] border border-blue-200'
-                                    : 'bg-slate-100 text-slate-500 border border-slate-200'
-                                }`}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStudentSearchQuery(r.name);
+                                  setMasterSubTab('STUDENTS');
+                                }}
+                                className="group flex items-center gap-1.5 cursor-pointer text-left hover:underline"
+                                title={`Lihat ${enrolledCount} siswa terdaftar untuk rombel ${r.name}`}
                               >
-                                {enrolledCount} Siswa
-                              </span>
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black ${
+                                    enrolledCount > 0
+                                      ? 'bg-blue-50 text-[#0753A5] border border-blue-200 shadow-2xs'
+                                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                  }`}
+                                >
+                                  {enrolledCount} Siswa
+                                </span>
+                                {enrolledCount > 0 && (
+                                  <span className="text-[10px] text-slate-400 group-hover:text-[#0753A5]">→</span>
+                                )}
+                              </button>
                             </td>
                             <td className="p-3">{r.academicYear}</td>
                             <td className="p-3">

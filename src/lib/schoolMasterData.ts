@@ -27,8 +27,32 @@ export interface SchoolMaster {
   createdAt: string;
 }
 
-// Master satuan pendidikan default dikosongkan agar pengguna/admin dapat mendaftarkan secara mandiri
-export const DEFAULT_SCHOOLS: SchoolMaster[] = [];
+// Master satuan pendidikan default: UPTD SMPN 1 Jorong
+export const DEFAULT_SCHOOLS: SchoolMaster[] = [
+  {
+    id: 'sch-smpn1-jorong',
+    npsn: '30301725',
+    name: 'UPTD SMPN 1 Jorong',
+    jenjang: 'SMP',
+    status: 'NEGERI',
+    akreditasi: 'A',
+    district: 'Jorong',
+    city: 'Kab. Tanah Laut',
+    province: 'Kalimantan Selatan',
+    address: 'Jl. A. Yani KM. 88, Jorong, Kec. Jorong, Kab. Tanah Laut, Kalimantan Selatan',
+    principalName: 'H. Akhmad Fauzi, M.Pd.',
+    principalNip: '197105121998021004',
+    adminName: 'Operator SIM UPTD SMPN 1 Jorong',
+    adminUsername: 'admin.smpn1jorong',
+    totalStudents: 32,
+    totalClasses: 1,
+    totalTeachers: 12,
+    habitCompletenessRate: 94,
+    habitConsistencyRate: 91,
+    activeStatus: 'AKTIF',
+    createdAt: '2026-06-01',
+  },
+];
 
 export const getStoredSchools = (): SchoolMaster[] => {
   try {

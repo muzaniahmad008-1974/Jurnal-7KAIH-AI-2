@@ -158,6 +158,10 @@ export interface DailyJournal {
   parentValidated?: boolean;
   parentValidatedAt?: string;
   parentValidationNote?: string;
+  parentSignature?: string; // Base64 PNG data URL of parent signature/paraf
+  parentValidatorName?: string; // Name of the parent/guardian validator
+  parentValidationType?: 'SIGNATURE' | 'INITIALS'; // Format validasi: Tanda Tangan atau Paraf
+  parentValidationSource?: 'STUDENT_DASHBOARD' | 'PARENT_DASHBOARD'; // Sumber validasi
   className?: string;
   studentNisn?: string;
   schoolName?: string;
@@ -172,6 +176,8 @@ export interface HabitValidation {
   validatorName: string;
   status: ValidationStatus;
   note?: string;
+  signature?: string;
+  validationType?: 'SIGNATURE' | 'INITIALS';
   validatedAt: string;
 }
 

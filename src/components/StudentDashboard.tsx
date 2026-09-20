@@ -3,10 +3,11 @@
 // Friendly, motivational, card-based, accessible, low cognitive load
 // ============================================================================
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   DailyJournal,
   Badge,
+  HabitCode,
 } from '../../packages/types/src/index';
 import { HABIT_LIST } from '../lib/constants';
 import {
@@ -29,8 +30,17 @@ import {
   Clock,
   ShieldCheck,
   RotateCcw,
+  PenTool,
+  Feather,
+  Heart,
+  Sliders,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
 } from 'lucide-react';
 import { formatRealtimeSaveTime } from '../lib/dateUtils';
+import { ParentSignatureModal } from './ParentSignatureModal';
 
 interface StudentDashboardProps {
   todayJournal: DailyJournal;
@@ -43,6 +53,18 @@ interface StudentDashboardProps {
   studentName: string;
   className: string;
   badges: Badge[];
+  onValidateJournal?: (
+    journalId: string,
+    habitCode?: HabitCode,
+    note?: string,
+    validationMeta?: {
+      signature?: string;
+      validatorName?: string;
+      validationType?: 'SIGNATURE' | 'INITIALS';
+      source?: 'STUDENT_DASHBOARD' | 'PARENT_DASHBOARD';
+      asParent?: boolean;
+    }
+  ) => void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -56,7 +78,69 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   studentName,
   className,
   badges,
+  onValidateJournal,
 }) => {
+  const [isSignatureModalOpen, setIsSignatureModalOpen] = useState<boolean>(false);
+  const [selectedJournalToSign, setSelectedJournalToSign] = useState<DailyJournal | null>(null);
+  const [showValidationSettings, setShowValidationSettings] = useState<boolean>(false);
+  const [showPastJournals, setShowPastJournals] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() =>
+    new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
+
+  // Parent validation mode preference:
+  // 'BOTH' (default): Bisa divalidasi di Dashboard Murid maupun Dashboard Orang Tua
+  // 'PARENT_ONLY': Hanya melalui login Dashboard Orang Tua
+  const [validationLocationMode, setValidationLocationMode] = useState<'BOTH' | 'PARENT_ONLY'>(() => {
+    try {
+      const saved = localStorage.getItem('si7kaih_parent_val_mode');
+      return saved === 'PARENT_ONLY' ? 'PARENT_ONLY' : 'BOTH';
+    } catch {
+      return 'BOTH';
+    }
+  });
+
+  const handleToggleValidationMode = (mode: 'BOTH' | 'PARENT_ONLY') => {
+    setValidationLocationMode(mode);
+    try {
+      localStorage.setItem('si7kaih_parent_val_mode', mode);
+      window.dispatchEvent(new CustomEvent('si7kaih_parent_val_mode_changed', { detail: mode }));
+    } catch (_e) {}
+  };
+
+  // Real-time synchronization listeners for journal updates from Parent Dashboard or other tabs
+  useEffect(() => {
+    const handleSync = () => {
+      setLastSyncTime(
+        new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+    };
+
+    window.addEventListener('si7kaih_journals_updated', handleSync);
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'si7kaih_journals_prod' || e.key === 'si7kaih_parent_val_mode') {
+        handleSync();
+      }
+    });
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = (msg) => {
+          if (msg.data?.type === 'JOURNALS_UPDATED') {
+            handleSync();
+          }
+        };
+      } catch (_e) {}
+    }
+
+    return () => {
+      window.removeEventListener('si7kaih_journals_updated', handleSync);
+      if (bc) bc.close();
+    };
+  }, []);
+
   const habitsIconMap = {
     WAKE_EARLY: Sun,
     WORSHIP: HeartHandshake,
@@ -276,6 +360,392 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         </div>
       </div>
 
+      {/* ============================================================================ */}
+      {/* KARTU VALIDASI & PENDAMPINGAN ORANG TUA / WALI (Sinkronisasi 2-Arah Realtime) */}
+      {/* ============================================================================ */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden transition-all">
+        {/* Card Header & Sync Banner */}
+        <div className="px-6 py-4 bg-gradient-to-r from-slate-50 via-blue-50/40 to-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 text-[#0753A5] flex items-center justify-center shrink-0 shadow-2xs">
+              <ShieldCheck className="w-5 h-5 text-[#0753A5]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-slate-900">
+                  Validasi &amp; Pendampingan Orang Tua / Wali
+                </h3>
+                <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Sinkron Realtime</span>
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Orang tua dapat memvalidasi langsung di Dashboard Murid ini atau melalui Dashboard Orang Tua (data tersinkron otomatis).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Toggle Settings Button */}
+            <button
+              type="button"
+              onClick={() => setShowValidationSettings(!showValidationSettings)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                showValidationSettings
+                  ? 'bg-blue-50 text-[#0753A5] border-blue-200 shadow-xs'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Pengaturan Mode Lokasi Validasi Orang Tua"
+            >
+              <Sliders className="w-3.5 h-3.5 text-[#0753A5]" />
+              <span>Pengaturan Validasi</span>
+              {showValidationSettings ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Settings Panel */}
+        {showValidationSettings && (
+          <div className="px-6 py-4 bg-blue-50/50 border-b border-blue-100 text-xs space-y-3 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                <Sliders className="w-4 h-4 text-[#0753A5]" />
+                <span>Pengaturan Lokasi Validasi Jurnal Harian:</span>
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Pembaruan terakhir: {lastSyncTime}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div
+                onClick={() => handleToggleValidationMode('BOTH')}
+                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
+                  validationLocationMode === 'BOTH'
+                    ? 'bg-white border-[#0753A5] shadow-xs'
+                    : 'bg-white/70 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-slate-900 text-xs">
+                    Mode Fleksibel (Direkomendasikan)
+                  </span>
+                  {validationLocationMode === 'BOTH' && (
+                    <span className="w-4 h-4 rounded-full bg-[#0753A5] text-white text-[10px] flex items-center justify-center font-bold">
+                      ✓
+                    </span>
+                  )}
+                </div>
+                <p className="text-slate-600 text-[11px] mt-1 leading-relaxed">
+                  Orang tua dapat memvalidasi dan membubuhkan tanda tangan/paraf <strong>langsung di Dashboard Murid</strong> saat mendampingi anak, <strong>maupun di Dashboard Orang Tua</strong> secara mandiri.
+                </p>
+              </div>
+
+              <div
+                onClick={() => handleToggleValidationMode('PARENT_ONLY')}
+                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
+                  validationLocationMode === 'PARENT_ONLY'
+                    ? 'bg-white border-[#0753A5] shadow-xs'
+                    : 'bg-white/70 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-slate-900 text-xs">
+                    Khusus di Dashboard Orang Tua
+                  </span>
+                  {validationLocationMode === 'PARENT_ONLY' && (
+                    <span className="w-4 h-4 rounded-full bg-[#0753A5] text-white text-[10px] flex items-center justify-center font-bold">
+                      ✓
+                    </span>
+                  )}
+                </div>
+                <p className="text-slate-600 text-[11px] mt-1 leading-relaxed">
+                  Orang tua wajib masuk melalui akun orang tua terlebih dahulu untuk memvalidasi jurnal harian ananda.
+                </p>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-blue-900 flex items-center gap-2 bg-blue-100/50 p-2.5 rounded-xl">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <span>
+                Data validasi, tanda tangan digital, paraf, serta catatan apresiasi secara otomatis tersinkronisasi 2-arah ke Supabase dan localStorage secara realtime.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Validation Body for Today's Journal */}
+        <div className="p-6">
+          {todayJournal?.parentValidated ? (
+            /* SUDAH DIVALIDASI */
+            <div className="bg-gradient-to-br from-emerald-50/80 via-white to-emerald-50/40 p-5 sm:p-6 rounded-2xl border border-emerald-200 shadow-2xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <h4 className="text-sm sm:text-base font-extrabold text-emerald-950">
+                      Jurnal Hari Ini Telah Divalidasi Orang Tua / Wali
+                    </h4>
+                    <p className="text-xs text-emerald-700">
+                      Terverifikasi resmi dalam portofolio 7 Kebiasaan Anak Indonesia Hebat
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedJournalToSign(todayJournal);
+                    setIsSignatureModalOpen(true);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl border border-emerald-300 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Perbarui Tanda Tangan atau Catatan Validasi"
+                >
+                  <PenTool className="w-3.5 h-3.5" />
+                  <span>Perbarui Tanda Tangan / Catatan</span>
+                </button>
+              </div>
+
+              {/* Grid: Validator Metadata & Signature Box */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                {/* Info Kolom 1 & 2 */}
+                <div className="md:col-span-2 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="bg-white p-3 rounded-xl border border-emerald-100">
+                      <span className="text-slate-400 block text-[11px]">Nama Orang Tua / Wali:</span>
+                      <strong className="text-slate-900 font-bold text-sm block mt-0.5">
+                        {todayJournal.parentValidatorName || 'Orang Tua / Wali Siswa'}
+                      </strong>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-xl border border-emerald-100">
+                      <span className="text-slate-400 block text-[11px]">Format &amp; Lokasi Validasi:</span>
+                      <strong className="text-slate-900 font-bold text-sm block mt-0.5">
+                        {todayJournal.parentValidationType === 'INITIALS' ? 'Paraf Resmi' : 'Tanda Tangan Digital'}
+                      </strong>
+                      <span className="text-[10px] text-emerald-700 mt-0.5 block">
+                        {todayJournal.parentValidationSource === 'PARENT_DASHBOARD'
+                          ? '• Dari Dashboard Orang Tua'
+                          : '• Dari Dashboard Murid'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {todayJournal.parentValidatedAt && (
+                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>
+                        Waktu Validasi:{' '}
+                        <strong className="text-slate-700">
+                          {new Date(todayJournal.parentValidatedAt).toLocaleDateString('id-ID', {
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          })}{' '}
+                          pukul{' '}
+                          {new Date(todayJournal.parentValidatedAt).toLocaleTimeString('id-ID', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}{' '}
+                          WITA
+                        </strong>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Pesan Apresiasi Orang Tua */}
+                  {todayJournal.parentValidationNote && (
+                    <div className="bg-white p-3.5 rounded-xl border border-emerald-200/80 space-y-1">
+                      <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
+                        <Heart className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Pesan Apresiasi &amp; Kasih Sayang Orang Tua:</span>
+                      </span>
+                      <p className="text-xs text-slate-800 italic leading-relaxed">
+                        "{todayJournal.parentValidationNote}"
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Kolom 3: Pratinjau Tanda Tangan / Paraf */}
+                <div className="bg-white p-3.5 rounded-2xl border-2 border-dashed border-emerald-300 flex flex-col items-center justify-between text-center min-h-[140px]">
+                  <span className="text-[10px] font-bold tracking-wider uppercase text-emerald-800">
+                    {todayJournal.parentValidationType === 'INITIALS' ? 'Pratinjau Paraf' : 'Pratinjau Tanda Tangan'}
+                  </span>
+
+                  {todayJournal.parentSignature ? (
+                    <div className="my-2 p-1 bg-blue-50/30 rounded-xl w-full flex items-center justify-center">
+                      <img
+                        src={todayJournal.parentSignature}
+                        alt="Tanda Tangan / Paraf Orang Tua"
+                        className="max-h-20 max-w-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="my-3 py-2 px-4 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-semibold">
+                      ✓ Tervalidasi Resmi
+                    </div>
+                  )}
+
+                  <div className="w-full pt-1 border-t border-slate-100">
+                    <p className="text-[11px] font-extrabold text-slate-800 truncate">
+                      {todayJournal.parentValidatorName || 'Orang Tua / Wali'}
+                    </p>
+                    <span className="text-[9px] text-emerald-600 block">Digital Verified</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* BELUM DIVALIDASI */
+            <div className="bg-gradient-to-br from-blue-50/50 via-slate-50 to-amber-50/30 p-5 sm:p-6 rounded-2xl border border-blue-200/80 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-bold border border-amber-200">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Menunggu Validasi Orang Tua Hari Ini</span>
+                    </span>
+                    <span className="text-xs font-bold text-slate-600">
+                      ({completedCount} dari 7 Selesai)
+                    </span>
+                  </div>
+
+                  <p className="text-xs sm:text-sm text-slate-700 leading-relaxed pt-1">
+                    {completedCount > 0
+                      ? 'Ananda sudah mencatatkan jurnal hari ini. Ayah / Ibu / Wali dipersilakan memeriksa dan membubuhkan tanda tangan atau paraf digital pendampingan.'
+                      : 'Ananda belum mengisi jurnal 7 kebiasaan hari ini. Silakan isi terlebih dahulu, lalu mintalah orang tua untuk memvalidasi dan membubuhkan tanda tangan.'}
+                  </p>
+                </div>
+
+                <div className="shrink-0 flex items-center gap-2">
+                  <button
+                    type="button"
+                    id="student-dashboard-validate-parent-btn"
+                    onClick={() => {
+                      setSelectedJournalToSign(todayJournal);
+                      setIsSignatureModalOpen(true);
+                    }}
+                    className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#0753A5] hover:bg-blue-700 text-white font-extrabold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <PenTool className="w-4 h-4 text-emerald-300" />
+                    <span>Validasi Orang Tua (Tanda Tangan / Paraf)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Informative footer note */}
+              <div className="pt-2 border-t border-slate-200/70 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#0753A5]" />
+                  <span>
+                    Validasi di sini akan otomatis tercatat di <strong>Dashboard Orang Tua</strong> &amp; <strong>Laporan Resmi</strong>.
+                  </span>
+                </div>
+                {validationLocationMode === 'PARENT_ONLY' && (
+                  <span className="text-amber-700 font-semibold">
+                    *Mode Khusus Dashboard Orang Tua aktif (opsi validasi pendampingan langsung tetap tersedia jika orang tua hadir).
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Collapsible: Riwayat Jurnal Sebelumnya untuk Divalidasi */}
+          {allJournals.length > 1 && (
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowPastJournals(!showPastJournals)}
+                className="text-xs font-bold text-[#0753A5] hover:underline flex items-center gap-1.5 cursor-pointer"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>
+                  {showPastJournals
+                    ? 'Sembunyikan Riwayat Validasi Tanggal Sebelumnya'
+                    : 'Periksa / Validasi Jurnal Tanggal Sebelumnya'}
+                </span>
+                {showPastJournals ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+
+              {showPastJournals && (
+                <div className="mt-3 space-y-2 animate-fade-in">
+                  <p className="text-[11px] text-slate-500">
+                    Daftar jurnal hari sebelumnya. Orang tua dapat memeriksa dan membubuhkan tanda tangan untuk hari yang belum divalidasi:
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                    {allJournals
+                      .filter((j) => j.journalDate !== todayJournal?.journalDate)
+                      .sort((a, b) => b.journalDate.localeCompare(a.journalDate))
+                      .slice(0, 6)
+                      .map((pastJ) => {
+                        const isPastValidated = !!pastJ.parentValidated;
+                        const pastDate = new Date(pastJ.journalDate + 'T00:00:00').toLocaleDateString(
+                          'id-ID',
+                          { weekday: 'short', day: 'numeric', month: 'short' }
+                        );
+
+                        return (
+                          <div
+                            key={pastJ.id}
+                            className={`p-3 rounded-xl border flex items-center justify-between gap-2 text-xs ${
+                              isPastValidated
+                                ? 'bg-emerald-50/50 border-emerald-200'
+                                : 'bg-slate-50 border-slate-200'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <span className="font-bold text-slate-800 block truncate">
+                                {pastDate}
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                {pastJ.completedCount || 0}/7 Selesai •{' '}
+                                {isPastValidated ? (
+                                  <strong className="text-emerald-700">✓ Tervalidasi</strong>
+                                ) : (
+                                  <span className="text-amber-700">Belum divalidasi</span>
+                                )}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedJournalToSign(pastJ);
+                                setIsSignatureModalOpen(true);
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                                isPastValidated
+                                  ? 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-50'
+                                  : 'bg-[#0753A5] text-white hover:bg-blue-700'
+                              }`}
+                            >
+                              {isPastValidated ? 'Lihat TTD' : 'Validasi'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Monthly Statistics & Habitual Threshold Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Card 1: Pembiasaan Bulan Ini (Threshold 2/3: 21 hari target) */}
@@ -420,6 +890,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal Tanda Tangan / Paraf Validasi Orang Tua (Dashboard Murid) */}
+      {isSignatureModalOpen && selectedJournalToSign && (
+        <ParentSignatureModal
+          isOpen={isSignatureModalOpen}
+          onClose={() => {
+            setIsSignatureModalOpen(false);
+            setSelectedJournalToSign(null);
+          }}
+          journal={selectedJournalToSign}
+          studentName={studentName}
+          className={className}
+          defaultValidatorName={selectedJournalToSign.parentValidatorName}
+          source="STUDENT_DASHBOARD"
+          onSaveValidation={({ journalId, parentName, note, validationType, signatureDataUrl, source }) => {
+            if (onValidateJournal) {
+              onValidateJournal(journalId, undefined, note, {
+                signature: signatureDataUrl,
+                validatorName: parentName,
+                validationType,
+                source,
+                asParent: true,
+              });
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

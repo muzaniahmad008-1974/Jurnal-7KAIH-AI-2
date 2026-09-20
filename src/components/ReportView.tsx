@@ -182,10 +182,32 @@ export const ReportView: React.FC<ReportViewProps> = ({
     window.addEventListener('si7kaih_academic_year_updated', handleRombelUpdate);
     window.addEventListener('storage', handleRombelUpdate);
 
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = (event) => {
+          if (
+            event.data?.type === 'ROMBEL_UPDATED' ||
+            event.data?.type === 'STUDENT_UPDATED' ||
+            event.data?.type === 'ACADEMIC_YEAR_UPDATED' ||
+            event.data?.type === 'MASTER_DATA_SYNC'
+          ) {
+            handleRombelUpdate();
+          }
+        };
+      }
+    } catch (_e) {}
+
     return () => {
       window.removeEventListener('si7kaih_rombels_updated', handleRombelUpdate);
       window.removeEventListener('si7kaih_academic_year_updated', handleRombelUpdate);
       window.removeEventListener('storage', handleRombelUpdate);
+      if (bc) {
+        try {
+          bc.close();
+        } catch (_e) {}
+      }
     };
   }, [syncAcademicYearFromData, isCustomMode]);
 
@@ -197,6 +219,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
     setIsCustomMode(false);
     try {
       localStorage.setItem('si7kaih_print_academic_year', synced.year);
+      window.dispatchEvent(new CustomEvent('si7kaih_academic_year_updated', { detail: synced.year }));
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.postMessage({ type: 'ACADEMIC_YEAR_UPDATED', academicYear: synced.year });
+        bc.close();
+      }
     } catch (_e) {}
     setTimeout(() => setIsSyncing(false), 450);
   };
@@ -213,6 +241,11 @@ export const ReportView: React.FC<ReportViewProps> = ({
     try {
       localStorage.setItem('si7kaih_print_academic_year', val);
       window.dispatchEvent(new CustomEvent('si7kaih_academic_year_updated', { detail: val }));
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.postMessage({ type: 'ACADEMIC_YEAR_UPDATED', academicYear: val });
+        bc.close();
+      }
     } catch (_e) {}
   };
 
@@ -222,6 +255,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
     setSyncSource('Kustom Manual');
     try {
       localStorage.setItem('si7kaih_print_academic_year', val);
+      window.dispatchEvent(new CustomEvent('si7kaih_academic_year_updated', { detail: val }));
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.postMessage({ type: 'ACADEMIC_YEAR_UPDATED', academicYear: val });
+        bc.close();
+      }
     } catch (_e) {}
   };
 
