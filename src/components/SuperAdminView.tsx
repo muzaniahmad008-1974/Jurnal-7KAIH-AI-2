@@ -98,6 +98,8 @@ import {
   resetStoredRombels,
   downloadStudentTemplateCsv,
   downloadRombelTemplateCsv,
+  isSameClass,
+  isSameSchool,
 } from '../lib/studentData';
 import { DataImportModal } from './DataImportModal';
 import { SuperAdminProfile } from './SuperAdminProfile';
@@ -2592,6 +2594,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                       <th className="p-3">Tingkat & Fase</th>
                       <th className="p-3">Wali Kelas</th>
                       <th className="p-3">Kapasitas</th>
+                      <th className="p-3">Jumlah Siswa</th>
                       <th className="p-3">Tahun Ajaran</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-right">Aksi</th>
@@ -2600,35 +2603,56 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {rombels.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-slate-400 font-medium">
+                        <td colSpan={9} className="p-8 text-center text-slate-400 font-medium">
                           Belum ada data rombongan belajar mandiri. Silakan gunakan Template CSV atau fitur impor rombel sekolah.
                         </td>
                       </tr>
                     ) : (
-                      rombels.map((r) => (
-                        <tr key={r.id} className="hover:bg-slate-50/60">
-                          <td className="p-3 font-mono font-bold text-slate-700">{r.code}</td>
-                          <td className="p-3 font-bold text-slate-900">{r.name}</td>
-                          <td className="p-3">{r.phase} (Kelas {r.grade})</td>
-                          <td className="p-3 font-medium text-slate-700">{r.teacher}</td>
-                          <td className="p-3 font-mono">{r.capacity} Siswa</td>
-                          <td className="p-3">{r.academicYear}</td>
-                          <td className="p-3">
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              {r.status}
-                            </span>
-                          </td>
-                          <td className="p-3 text-right">
-                            <button
-                              onClick={() => handleDeleteRombel(r)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Hapus Rombel dari Master Global"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      rombels.map((r) => {
+                        const enrolledCount = students.filter((s) => {
+                          const matchClass = isSameClass(s.className, r.name);
+                          if (!matchClass) return false;
+                          if (r.schoolId && s.schoolId) return r.schoolId === s.schoolId;
+                          if (r.schoolName && s.schoolName) return isSameSchool(s.schoolName, r.schoolName);
+                          return true;
+                        }).length;
+
+                        return (
+                          <tr key={r.id} className="hover:bg-slate-50/60">
+                            <td className="p-3 font-mono font-bold text-slate-700">{r.code}</td>
+                            <td className="p-3 font-bold text-slate-900">{r.name}</td>
+                            <td className="p-3">{r.phase} (Kelas {r.grade})</td>
+                            <td className="p-3 font-medium text-slate-700">{r.teacher}</td>
+                            <td className="p-3 font-mono">{r.capacity} Siswa</td>
+                            <td className="p-3 font-mono">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                                  enrolledCount > 0
+                                    ? 'bg-blue-50 text-[#0753A5] border border-blue-200'
+                                    : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                }`}
+                              >
+                                {enrolledCount} Siswa
+                              </span>
+                            </td>
+                            <td className="p-3">{r.academicYear}</td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {r.status}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => handleDeleteRombel(r)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Hapus Rombel dari Master Global"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

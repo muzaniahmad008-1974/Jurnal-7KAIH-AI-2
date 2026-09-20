@@ -4,7 +4,7 @@
 // AI disclaimer label
 // ============================================================================
 
-import React from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   DailyJournal,
   Badge,
@@ -13,7 +13,25 @@ import {
 } from '../../packages/types/src/index';
 import { HABIT_LIST } from '../lib/constants';
 import { calculateHabitualThreshold } from '../../packages/analytics/src/index';
-import { Printer, X, ShieldCheck } from 'lucide-react';
+import { Printer, X, ShieldCheck, Sliders, RefreshCw, CheckCircle2, Calendar } from 'lucide-react';
+import { getStoredRombels, isSameClass, isSameSchool, Rombel } from '../lib/studentData';
+
+export const formatAcademicYearDisplay = (raw?: string): string => {
+  if (!raw || !raw.trim()) return '2026/2027 - Semester Ganjil';
+  const trimmed = raw.trim();
+  if (trimmed.toLowerCase().includes('semester')) {
+    return trimmed;
+  }
+  if (/ganjil/i.test(trimmed)) {
+    const yearPart = trimmed.replace(/ganjil/i, '').trim();
+    return `${yearPart} - Semester Ganjil`;
+  }
+  if (/genap/i.test(trimmed)) {
+    const yearPart = trimmed.replace(/genap/i, '').trim();
+    return `${yearPart} - Semester Genap`;
+  }
+  return `${trimmed} - Semester Ganjil`;
+};
 
 interface ReportViewProps {
   isOpen: boolean;
@@ -28,6 +46,7 @@ interface ReportViewProps {
   studentReflection: StudentMonthlyReflection;
   parentReflection: ParentMonthlyReflection;
   badges: Badge[];
+  academicYear?: string;
 }
 
 export const ReportView: React.FC<ReportViewProps> = ({
@@ -43,8 +62,170 @@ export const ReportView: React.FC<ReportViewProps> = ({
   studentReflection,
   parentReflection,
   badges,
+  academicYear: propAcademicYear,
 }) => {
   if (!isOpen) return null;
+
+  // Sinkronisasi data Tahun Pelajaran dari Master Rombel & Satuan Pendidikan
+  const syncAcademicYearFromData = useCallback(() => {
+    const rombels = getStoredRombels();
+
+    // 1. Prioritaskan pencocokan dengan rombel siswa aktif
+    let matchedRombel: Rombel | undefined;
+    if (className) {
+      matchedRombel = rombels.find(
+        (r) =>
+          (!schoolName || !r.schoolName || isSameSchool(r.schoolName, schoolName)) &&
+          isSameClass(r.name, className)
+      );
+      if (!matchedRombel) {
+        matchedRombel = rombels.find((r) => isSameClass(r.name, className));
+      }
+    }
+
+    // 2. Jika tidak ada kelas spesifik, cari rombel aktif di sekolah yang sama
+    if (!matchedRombel && schoolName) {
+      matchedRombel = rombels.find(
+        (r) => isSameSchool(r.schoolName, schoolName) && r.academicYear
+      );
+    }
+
+    // 3. Fallback ke rombel aktif pertama yang memiliki data tahun ajaran
+    if (!matchedRombel) {
+      matchedRombel = rombels.find((r) => r.academicYear);
+    }
+
+    if (matchedRombel && matchedRombel.academicYear) {
+      const formatted = formatAcademicYearDisplay(matchedRombel.academicYear);
+      return {
+        year: formatted,
+        source: `Rombel ${matchedRombel.name} (${matchedRombel.academicYear})`,
+      };
+    }
+
+    // 4. Periksa apakah tersimpan preferensi tahun ajaran di localStorage
+    const savedCustom =
+      localStorage.getItem('si7kaih_print_academic_year') ||
+      localStorage.getItem('si7kaih_academic_year');
+    if (savedCustom) {
+      return {
+        year: formatAcademicYearDisplay(savedCustom),
+        source: 'Pengaturan Cetak Tersimpan',
+      };
+    }
+
+    return {
+      year: '2026/2027 - Semester Ganjil',
+      source: 'Data Bawaan Tahun Berjalan',
+    };
+  }, [className, schoolName]);
+
+  const [selectedYear, setSelectedYear] = useState<string>(() => {
+    if (propAcademicYear) return formatAcademicYearDisplay(propAcademicYear);
+    const initialSync = syncAcademicYearFromData();
+    return initialSync.year;
+  });
+  const [syncSource, setSyncSource] = useState<string>(() => {
+    if (propAcademicYear) return 'Properti Dokumen';
+    const initialSync = syncAcademicYearFromData();
+    return initialSync.source;
+  });
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
+  const [customYearInput, setCustomYearInput] = useState<string>('');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // Daftar opsi Tahun Pelajaran yang diambil secara dinamis dari update data rombels
+  const academicYearOptions = useMemo(() => {
+    const rombels = getStoredRombels();
+    const yearsSet = new Set<string>();
+
+    // Tambahkan tahun dari data rombel terupdate
+    rombels.forEach((r) => {
+      if (r.academicYear && r.academicYear.trim()) {
+        yearsSet.add(formatAcademicYearDisplay(r.academicYear));
+      }
+    });
+
+    // Tambahkan opsi standar kurikulum & tahun pelajaran berjalan
+    yearsSet.add('2026/2027 - Semester Ganjil');
+    yearsSet.add('2026/2027 - Semester Genap');
+    yearsSet.add('2025/2026 - Semester Genap');
+    yearsSet.add('2025/2026 - Semester Ganjil');
+
+    return Array.from(yearsSet);
+  }, [isOpen, isSyncing]);
+
+  // Sinkronisasi otomatis saat modal dibuka atau kelas/sekolah berubah
+  useEffect(() => {
+    if (!isOpen) return;
+    if (propAcademicYear) {
+      setSelectedYear(formatAcademicYearDisplay(propAcademicYear));
+      setSyncSource('Properti Dokumen');
+      return;
+    }
+    const synced = syncAcademicYearFromData();
+    setSelectedYear(synced.year);
+    setSyncSource(synced.source);
+    setIsCustomMode(false);
+  }, [isOpen, syncAcademicYearFromData, propAcademicYear]);
+
+  // Listener event pembaruan data master rombel secara real-time
+  useEffect(() => {
+    const handleRombelUpdate = () => {
+      if (isCustomMode) return;
+      const synced = syncAcademicYearFromData();
+      setSelectedYear(synced.year);
+      setSyncSource(synced.source);
+    };
+
+    window.addEventListener('si7kaih_rombels_updated', handleRombelUpdate);
+    window.addEventListener('si7kaih_academic_year_updated', handleRombelUpdate);
+    window.addEventListener('storage', handleRombelUpdate);
+
+    return () => {
+      window.removeEventListener('si7kaih_rombels_updated', handleRombelUpdate);
+      window.removeEventListener('si7kaih_academic_year_updated', handleRombelUpdate);
+      window.removeEventListener('storage', handleRombelUpdate);
+    };
+  }, [syncAcademicYearFromData, isCustomMode]);
+
+  const handleManualSync = () => {
+    setIsSyncing(true);
+    const synced = syncAcademicYearFromData();
+    setSelectedYear(synced.year);
+    setSyncSource(synced.source);
+    setIsCustomMode(false);
+    try {
+      localStorage.setItem('si7kaih_print_academic_year', synced.year);
+    } catch (_e) {}
+    setTimeout(() => setIsSyncing(false), 450);
+  };
+
+  const handleSelectYearChange = (val: string) => {
+    if (val === 'CUSTOM') {
+      setIsCustomMode(true);
+      setCustomYearInput(selectedYear);
+      return;
+    }
+    setIsCustomMode(false);
+    setSelectedYear(val);
+    setSyncSource('Pilihan Pengaturan Cetak');
+    try {
+      localStorage.setItem('si7kaih_print_academic_year', val);
+      window.dispatchEvent(new CustomEvent('si7kaih_academic_year_updated', { detail: val }));
+    } catch (_e) {}
+  };
+
+  const handleCustomYearChange = (val: string) => {
+    setCustomYearInput(val);
+    setSelectedYear(val);
+    setSyncSource('Kustom Manual');
+    try {
+      localStorage.setItem('si7kaih_print_academic_year', val);
+    } catch (_e) {}
+  };
+
+  const displayAcademicYear = selectedYear || '2026/2027 - Semester Ganjil';
 
   const daysInMonth = 31;
   const targetThreshold = calculateHabitualThreshold(daysInMonth); // 21
@@ -103,6 +284,61 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </div>
         </div>
 
+        {/* Pengaturan Cetak Dokumen Resmi (hidden on print) */}
+        <div className="px-6 py-3 bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-slate-50 border-b border-blue-100 flex flex-wrap items-center justify-between gap-3 text-xs no-print">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 font-bold text-slate-800">
+              <Sliders className="w-4 h-4 text-[#0753A5]" />
+              <span>Pengaturan Cetak Dokumen Resmi:</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-600 font-medium text-xs">
+                Tahun Pelajaran:
+              </span>
+              <select
+                value={isCustomMode ? 'CUSTOM' : selectedYear}
+                onChange={(e) => handleSelectYearChange(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-blue-200 bg-white font-bold text-slate-800 text-xs shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#0753A5]/30 cursor-pointer"
+                title="Pilih Tahun Pelajaran yang disinkronkan dengan update data rombel"
+              >
+                {academicYearOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+                <option value="CUSTOM">Input Manual / Kustom...</option>
+              </select>
+
+              {isCustomMode && (
+                <input
+                  type="text"
+                  value={customYearInput}
+                  onChange={(e) => handleCustomYearChange(e.target.value)}
+                  placeholder="Contoh: 2026/2027 - Semester Ganjil"
+                  className="px-2.5 py-1.5 rounded-xl border border-blue-200 bg-white text-xs font-semibold text-slate-800 w-52 focus:outline-none focus:ring-2 focus:ring-[#0753A5]/30"
+                />
+              )}
+
+              <button
+                type="button"
+                onClick={handleManualSync}
+                className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-blue-50 text-[#0753A5] font-bold border border-blue-200 text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Singkronkan ulang info Tahun Pelajaran dari pembaruan data master rombel dan sekolah"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#0753A5] ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>Sinkronkan Data Rombel</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Disinkronkan: <strong>{syncSource}</strong></span>
+            </span>
+          </div>
+        </div>
+
         {/* Printable Document Body */}
         <div className="p-8 sm:p-12 overflow-y-auto space-y-6 text-slate-900 print:p-0 print:space-y-4">
           {/* Official Letterhead */}
@@ -139,7 +375,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               <span className="text-slate-500">Rombel / Fase:</span>
               <strong className="block text-slate-900 text-sm mt-0.5">{className ? (className.includes('Fase') ? className : `${className} (Fase D)`) : '-'}</strong>
               <span className="text-slate-500 mt-2 block">Tahun Pelajaran:</span>
-              <strong className="block text-slate-900 mt-0.5">2025/2026 - Semester Ganjil</strong>
+              <strong className="block text-slate-900 mt-0.5">{displayAcademicYear}</strong>
             </div>
           </div>
 
