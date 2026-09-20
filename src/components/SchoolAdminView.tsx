@@ -37,7 +37,14 @@ import {
   Heart,
 } from 'lucide-react';
 import { AuditLog, UserRole } from '../../packages/types/src/index';
-import { UserPersona, getStoredUsers, saveStoredUsers } from '../lib/constants';
+import {
+  UserPersona,
+  getStoredUsers,
+  saveStoredUsers,
+  setUserPassword,
+  getUserPassword,
+  verifyUserPassword,
+} from '../lib/constants';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import {
   Student,
@@ -48,6 +55,10 @@ import {
   saveStoredRombels,
   downloadStudentTemplateCsv,
   downloadRombelTemplateCsv,
+  isSameClass,
+  isSameSchool,
+  normalizeClassName,
+  synchronizeSchoolRombelsAndStudents,
 } from '../lib/studentData';
 import { DataImportModal } from './DataImportModal';
 import { ConfirmDeleteModal, DeleteModalState } from './ConfirmDeleteModal';
@@ -90,12 +101,13 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const isStudentOfSchool = (s: Student, schId?: string, schName?: string): boolean => {
     if (!s) return false;
     const targetId = (schId ?? currentSchoolId).trim();
-    const targetName = (schName ?? currentSchoolName).trim().toLowerCase();
+    const targetName = (schName ?? currentSchoolName).trim();
     if (targetId && s.schoolId) {
       if (s.schoolId.toLowerCase() === targetId.toLowerCase()) return true;
     }
     if (targetName && s.schoolName) {
-      if (s.schoolName.trim().toLowerCase() === targetName) return true;
+      if (s.schoolName.trim().toLowerCase() === targetName.toLowerCase()) return true;
+      if (isSameSchool(s.schoolName, targetName)) return true;
     }
     return false;
   };
@@ -104,12 +116,13 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const isRombelOfSchool = (r: Rombel, schId?: string, schName?: string): boolean => {
     if (!r) return false;
     const targetId = (schId ?? currentSchoolId).trim();
-    const targetName = (schName ?? currentSchoolName).trim().toLowerCase();
+    const targetName = (schName ?? currentSchoolName).trim();
     if (targetId && r.schoolId) {
       if (r.schoolId.toLowerCase() === targetId.toLowerCase()) return true;
     }
     if (targetName && r.schoolName) {
-      if (r.schoolName.trim().toLowerCase() === targetName) return true;
+      if (r.schoolName.trim().toLowerCase() === targetName.toLowerCase()) return true;
+      if (isSameSchool(r.schoolName, targetName)) return true;
     }
     return false;
   };
@@ -188,6 +201,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [editUserIdentifierValue, setEditUserIdentifierValue] = useState('');
   const [editUserStatus, setEditUserStatus] = useState<'MANDIRI_AKTIF' | 'MANDIRI_NONAKTIF'>('MANDIRI_AKTIF');
+  const [editUserPassword, setEditUserPassword] = useState('123456');
 
   // Parent specific edit states
   const [editUserChildName, setEditUserChildName] = useState('');
@@ -416,13 +430,106 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     }).catch((err) => console.warn('Supabase sync rombels notice:', err));
   };
 
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Sinkronisasi menyeluruh Rombongan Belajar dengan Data Peserta Didik (100% Cocok, termasuk Kelas 8-C)
+  const handleSynchronizeMasterData = (notify = true) => {
+    const allS = getStoredStudents();
+    const allR = getStoredRombels();
+    const { updatedStudents, updatedRombels, changedCount, addedRombelsCount } =
+      synchronizeSchoolRombelsAndStudents({
+        schoolId: currentSchoolId,
+        schoolName: currentSchoolName,
+        currentStudents: allS,
+        currentRombels: allR,
+      });
+
+    saveStoredStudents(updatedStudents);
+    saveStoredRombels(updatedRombels);
+
+    const freshStudents = updatedStudents.filter((s) =>
+      isStudentOfSchool(s, currentSchoolId, currentSchoolName)
+    );
+    const freshRombels = updatedRombels.filter((r) =>
+      isRombelOfSchool(r, currentSchoolId, currentSchoolName)
+    );
+    setStudents(freshStudents);
+    setRombels(freshRombels);
+
+    saveSuperAdminMasterDataToSupabase({
+      students: updatedStudents,
+      rombels: updatedRombels,
+      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
+      actionType: 'SYNC_STUDENTS_ROMBELS_BY_SCHOOL_ADMIN',
+    }).catch((err) => console.warn('Supabase sync notice:', err));
+
+    if (notify) {
+      showToast(
+        `Sinkronisasi berhasil! Data Rombel dan Data Peserta Didik (termasuk Kelas 8-C) telah tersinkronisasi 100%. (${changedCount} penyesuaian kelas siswa, ${addedRombelsCount} rombel baru diverifikasi).`
+      );
+    }
+  };
+
+  // Rekonsiliasi otomatis saat mount atau saat sekolah berubah
+  useEffect(() => {
+    const allS = getStoredStudents();
+    const allR = getStoredRombels();
+    const scopedS = allS.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName));
+    const scopedR = allR.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName));
+
+    const needsReconciliation =
+      scopedS.some((s) => {
+        if (!s.className) return false;
+        const matched = scopedR.find((r) => isSameClass(r.name, s.className));
+        return (matched && matched.name !== s.className) || !matched;
+      });
+
+    if (needsReconciliation) {
+      handleSynchronizeMasterData(false);
+    }
+  }, [currentSchoolId, currentSchoolName]);
+
+  // Daftar opsi rombel/kelas untuk dropdown filter dengan kalkulasi jumlah siswa yang akurat
+  const availableClassFilterOptions = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    rombels.forEach((r) => {
+      if (r.name && r.name.trim()) {
+        const canonical = r.name.trim();
+        const count = students.filter((s) => isSameClass(s.className, canonical)).length;
+        map.set(canonical.toLowerCase(), { name: canonical, count });
+      }
+    });
+    students.forEach((s) => {
+      if (s.className && s.className.trim()) {
+        const rawClass = s.className.trim();
+        const existingKey = Array.from(map.keys()).find((k) => isSameClass(k, rawClass));
+        if (!existingKey) {
+          const count = students.filter((other) => isSameClass(other.className, rawClass)).length;
+          map.set(rawClass.toLowerCase(), { name: rawClass, count });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'id', { numeric: true }));
+  }, [rombels, students]);
+
   // Import Handlers
   const handleImportStudents = (imported: Student[], mode: 'APPEND' | 'REPLACE') => {
-    const stamped = imported.map((s) => ({
-      ...s,
-      schoolId: s.schoolId || currentSchoolId,
-      schoolName: s.schoolName || currentSchoolName,
-    }));
+    const stamped = imported.map((s) => {
+      let finalClass = s.className;
+      const matchedRombel = rombels.find((r) => isSameClass(r.name, s.className));
+      if (matchedRombel) {
+        finalClass = matchedRombel.name;
+      }
+      return {
+        ...s,
+        className: finalClass,
+        schoolId: s.schoolId || currentSchoolId,
+        schoolName: s.schoolName || currentSchoolName,
+      };
+    });
     let updated: Student[];
     if (mode === 'REPLACE') {
       updated = stamped;
@@ -433,6 +540,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       updated = Array.from(map.values());
     }
     updateStudents(updated);
+    setTimeout(() => handleSynchronizeMasterData(false), 80);
     showToast(`Berhasil mengimpor ${imported.length} data peserta didik secara mandiri!`);
   };
 
@@ -452,6 +560,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       updated = Array.from(map.values());
     }
     updateRombels(updated);
+    setTimeout(() => handleSynchronizeMasterData(false), 80);
     showToast(`Berhasil mengimpor ${imported.length} rombongan belajar secara mandiri!`);
   };
 
@@ -655,6 +764,10 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       };
     });
 
+    newAccounts.forEach((acc) => {
+      setUserPassword(acc.id, '123456', [acc.username, acc.identifierValue, acc.email, acc.childNisn]);
+    });
+
     updateSchoolUsers([...schoolScopedUsers, ...newAccounts]);
     setIsBatchParentModalOpen(false);
     showToast(
@@ -684,7 +797,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     setStudentFormName(s.name);
     setStudentFormGender(s.gender);
     setStudentFormClass(s.className);
-    setIsCustomClassInput(!rombels.some((r) => r.name === s.className));
+    setIsCustomClassInput(!rombels.some((r) => isSameClass(r.name, s.className)));
     setStudentFormBirthDate(s.birthDate || '');
     setStudentFormParentName(s.parentName);
     setStudentFormParentPhone(s.parentPhone || '');
@@ -701,31 +814,36 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
 
     const trimmedNisn = studentFormNisn.trim();
     const trimmedName = studentFormName.trim();
-    const targetClass = studentFormClass.trim() || (rombels.length > 0 ? rombels[0].name : 'Kelas 7-A');
+    const rawClass = studentFormClass.trim() || (rombels.length > 0 ? rombels[0].name : 'Kelas 7-A');
+    const existingRombel = rombels.find((r) => isSameClass(r.name, rawClass));
+    let targetClass = existingRombel ? existingRombel.name : rawClass;
 
     // Auto-create rombel if it doesn't exist yet in the school
-    if (targetClass) {
-      const existingRombel = rombels.find(
-        (r) => r.name.toLowerCase() === targetClass.toLowerCase()
-      );
-      if (!existingRombel) {
-        const autoRombel: Rombel = {
-          id: `rombel-man-${Date.now()}`,
-          code: `ROMBEL-${targetClass.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || Date.now().toString().slice(-4)}`,
-          name: targetClass,
-          phase: targetClass.includes('8') || targetClass.includes('9') ? 'Fase D' : 'Fase D',
-          grade: targetClass.includes('8') ? 8 : targetClass.includes('9') ? 9 : 7,
-          teacher: 'Wali Kelas',
-          teacherNip: '-',
-          capacity: 32,
-          academicYear: '2026/2027 Ganjil',
-          status: 'AKTIF',
-          source: 'INPUT_MANUAL',
-          schoolId: currentSchoolId,
-          schoolName: currentSchoolName,
-        };
-        updateRombels([...rombels, autoRombel]);
+    if (!existingRombel && targetClass) {
+      if (!targetClass.toLowerCase().startsWith('kelas')) {
+        targetClass = `Kelas ${targetClass}`;
       }
+      const norm = normalizeClassName(targetClass);
+      const gradeMatch = norm.match(/^(\d+)/);
+      const grade = gradeMatch ? parseInt(gradeMatch[1], 10) : 8;
+      const phase = grade >= 7 && grade <= 9 ? 'Fase D' : grade <= 2 ? 'Fase A' : grade <= 4 ? 'Fase B' : grade <= 6 ? 'Fase C' : 'Fase D';
+
+      const autoRombel: Rombel = {
+        id: `rombel-man-${Date.now()}`,
+        code: `ROMBEL-${targetClass.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || Date.now().toString().slice(-4)}`,
+        name: targetClass,
+        phase,
+        grade,
+        teacher: 'Wali Kelas',
+        teacherNip: '-',
+        capacity: 32,
+        academicYear: '2026/2027 Ganjil',
+        status: 'AKTIF',
+        source: 'INPUT_MANUAL',
+        schoolId: currentSchoolId,
+        schoolName: currentSchoolName,
+      };
+      updateRombels([...rombels, autoRombel]);
     }
 
     if (editingStudent) {
@@ -893,6 +1011,20 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       const rombel = data as Rombel;
       const updated = rombels.filter((r) => r.id !== rombel.id);
       updateRombels(updated);
+      // Sinkronkan data siswa: bersihkan penugasan kelas yang telah dihapus
+      const updatedStudents = students.map((s) =>
+        isSameClass(s.className, rombel.name) ? { ...s, className: '' } : s
+      );
+      if (JSON.stringify(updatedStudents) !== JSON.stringify(students)) {
+        updateStudents(updatedStudents);
+      }
+      // Sinkronkan akun pengguna di sekolah terkait
+      const updatedUsers = schoolScopedUsers.map((u) =>
+        isSameClass(u.className, rombel.name) ? { ...u, className: '' } : u
+      );
+      if (JSON.stringify(updatedUsers) !== JSON.stringify(schoolScopedUsers)) {
+        updateSchoolUsers(updatedUsers);
+      }
       showToast(`Rombongan belajar "${rombel.name}" berhasil dihapus.`);
     } else if (type === 'USER' && data) {
       const user = data as UserPersona;
@@ -975,6 +1107,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     const teacherNip = rombelFormTeacherNip.trim() || '-';
 
     if (editingRombel) {
+      const oldName = editingRombel.name;
       const updated = rombels.map((r) =>
         r.id === editingRombel.id
           ? {
@@ -994,12 +1127,27 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
           : r
       );
       updateRombels(updated);
+
+      // Jika nama rombel berubah, perbarui juga penugasan kelas pada data siswa & akun pengguna
+      if (oldName && oldName !== trimmedName) {
+        const updatedStudents = students.map((s) =>
+          isSameClass(s.className, oldName) ? { ...s, className: trimmedName } : s
+        );
+        if (JSON.stringify(updatedStudents) !== JSON.stringify(students)) {
+          updateStudents(updatedStudents);
+        }
+        const updatedUsers = schoolScopedUsers.map((u) =>
+          isSameClass(u.className, oldName) ? { ...u, className: trimmedName } : u
+        );
+        if (JSON.stringify(updatedUsers) !== JSON.stringify(schoolScopedUsers)) {
+          updateSchoolUsers(updatedUsers);
+        }
+      }
+
       showToast('Rombongan Belajar berhasil diperbarui!');
     } else {
       // Check duplicate name in this school
-      const isDuplicate = rombels.some(
-        (r) => r.name.toLowerCase() === trimmedName.toLowerCase()
-      );
+      const isDuplicate = rombels.some((r) => isSameClass(r.name, trimmedName));
       if (isDuplicate) {
         showToast(`Rombongan Belajar "${trimmedName}" sudah ada dalam daftar!`);
         return;
@@ -1033,11 +1181,6 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     rlsEnforcement: true,
     parentalConsentEnforced: true,
   });
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
 
   const handleToggleProgramStatus = (id: string) => {
     const updated = schoolPrograms.map((p) =>
@@ -1361,6 +1504,14 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                 {dataSubView === 'STUDENTS' ? (
                   <>
                     <button
+                      onClick={() => handleSynchronizeMasterData(true)}
+                      className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0753A5] border border-blue-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      title="Sinkronkan data rombel dan peserta didik secara otomatis (termasuk Kelas 8-C)"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-[#0753A5]" />
+                      <span>Sinkronkan Rombel & Siswa</span>
+                    </button>
+                    <button
                       onClick={() => {
                         setImportModalTab('STUDENTS');
                         setIsImportModalOpen(true);
@@ -1408,6 +1559,14 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                   </>
                 ) : (
                   <>
+                    <button
+                      onClick={() => handleSynchronizeMasterData(true)}
+                      className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0753A5] border border-blue-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      title="Sinkronkan data rombel dan peserta didik secara otomatis (termasuk Kelas 8-C)"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-[#0753A5]" />
+                      <span>Sinkronkan Rombel & Siswa</span>
+                    </button>
                     <button
                       onClick={() => {
                         setImportModalTab('ROMBELS');
@@ -1458,9 +1617,9 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                       className="px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-700 font-semibold bg-white focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20"
                     >
                       <option value="ALL">Semua Rombel ({students.length})</option>
-                      {rombels.map((r) => (
-                        <option key={r.id} value={r.name}>
-                          {r.name}
+                      {availableClassFilterOptions.map((opt) => (
+                        <option key={opt.name} value={opt.name}>
+                          {opt.name} ({opt.count} Siswa)
                         </option>
                       ))}
                     </select>
@@ -1494,7 +1653,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                                     s.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
                                     s.nisn.includes(studentSearchQuery) ||
                                     s.parentName.toLowerCase().includes(studentSearchQuery.toLowerCase());
-                                  const matchClass = studentClassFilter === 'ALL' || s.className === studentClassFilter;
+                                  const matchClass = studentClassFilter === 'ALL' || isSameClass(s.className, studentClassFilter);
                                   const matchStatus = studentStatusFilter === 'ALL' || s.status === studentStatusFilter;
                                   return matchSearch && matchClass && matchStatus;
                                 })
@@ -1506,7 +1665,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                                   s.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
                                   s.nisn.includes(studentSearchQuery) ||
                                   s.parentName.toLowerCase().includes(studentSearchQuery.toLowerCase());
-                                const matchClass = studentClassFilter === 'ALL' || s.className === studentClassFilter;
+                                const matchClass = studentClassFilter === 'ALL' || isSameClass(s.className, studentClassFilter);
                                 const matchStatus = studentStatusFilter === 'ALL' || s.status === studentStatusFilter;
                                 return matchSearch && matchClass && matchStatus;
                               });
@@ -1536,7 +1695,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                             s.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
                             s.nisn.includes(studentSearchQuery) ||
                             s.parentName.toLowerCase().includes(studentSearchQuery.toLowerCase());
-                          const matchClass = studentClassFilter === 'ALL' || s.className === studentClassFilter;
+                          const matchClass = studentClassFilter === 'ALL' || isSameClass(s.className, studentClassFilter);
                           const matchStatus = studentStatusFilter === 'ALL' || s.status === studentStatusFilter;
                           return matchSearch && matchClass && matchStatus;
                         })
@@ -1674,7 +1833,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                           s.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
                           s.nisn.includes(studentSearchQuery) ||
                           s.parentName.toLowerCase().includes(studentSearchQuery.toLowerCase());
-                        const matchClass = studentClassFilter === 'ALL' || s.className === studentClassFilter;
+                        const matchClass = studentClassFilter === 'ALL' || isSameClass(s.className, studentClassFilter);
                         const matchStatus = studentStatusFilter === 'ALL' || s.status === studentStatusFilter;
                         return matchSearch && matchClass && matchStatus;
                       }).length === 0 && (
@@ -1755,7 +1914,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                           return matchSearch && matchPhase;
                         })
                         .map((r) => {
-                          const enrolledCount = students.filter((s) => s.className === r.name).length;
+                          const enrolledCount = students.filter((s) => isSameClass(s.className, r.name)).length;
                           return (
                             <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
                               <td className="py-3 px-4">
@@ -2456,6 +2615,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                                   setEditUserName(user.name);
                                   setEditUserClassName(user.className || '');
                                   setEditUserIdentifierValue(user.identifierValue || '');
+                                  setEditUserPassword(user.passwordHash || getUserPassword(user) || '123456');
                                   setEditUserStatus(
                                     user.accountStatus === 'MANDIRI_NONAKTIF'
                                       ? 'MANDIRI_NONAKTIF'
@@ -2476,6 +2636,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                               {/* Reset Password Button */}
                               <button
                                 onClick={() => {
+                                  setUserPassword(user.id, '123456', [user.username, user.identifierValue, user.email, user.childNisn]);
                                   const updated = schoolScopedUsers.map((u) => {
                                     if (u.id === user.id) {
                                       return {
@@ -2488,7 +2649,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                                   });
                                   updateSchoolUsers(updated);
                                   showToast(
-                                    `Kata sandi untuk ${user.name} (${currentSchoolName}) berhasil direset ke default: 123456`
+                                    `Kata sandi untuk ${user.name} (${currentSchoolName}) berhasil direset ke default: 123456 dan disinkronkan ke sistem login!`
                                   );
                                 }}
                                 title="Reset Kata Sandi ke Default (123456)"
@@ -2925,7 +3086,15 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                         childNisn: newUserRole === 'PARENT' ? newUserChildNisn.trim() || undefined : undefined,
                         childId: newUserRole === 'PARENT' ? newUserChildId.trim() || undefined : undefined,
                         phone: newUserRole === 'PARENT' ? newUserPhone.trim() || undefined : undefined,
+                        passwordHash: newUserPassword.trim() || '123456',
                       } as any;
+
+                      setUserPassword(newPersona.id, newPersona.passwordHash || '123456', [
+                        newPersona.username,
+                        newPersona.identifierValue,
+                        newPersona.email,
+                        newPersona.childNisn,
+                      ]);
 
                       updateSchoolUsers([...schoolScopedUsers, newPersona]);
                       setIsAddUserModalOpen(false);
@@ -3098,6 +3267,22 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
 
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">
+                      Kata Sandi Pengguna (Password Login Mandiri)
+                    </label>
+                    <input
+                      type="text"
+                      value={editUserPassword}
+                      onChange={(e) => setEditUserPassword(e.target.value)}
+                      placeholder="Masukkan kata sandi baru..."
+                      className="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20 focus:border-[#0753A5]"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Perubahan kata sandi di sini langsung disinkronkan ke sistem login mandiri pengguna.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
                       Status Akun Kredensial
                     </label>
                     <select
@@ -3130,6 +3315,14 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                         return;
                       }
 
+                      const cleanPass = editUserPassword.trim() || editingUser.passwordHash || '123456';
+                      setUserPassword(editingUser.id, cleanPass, [
+                        editingUser.username,
+                        editingUser.identifierValue,
+                        editingUser.email,
+                        editingUser.childNisn,
+                      ]);
+
                       const updated = schoolScopedUsers.map((u) => {
                         if (u.id === editingUser.id) {
                           return {
@@ -3137,6 +3330,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                             name: editUserName.trim(),
                             className: editUserClassName.trim() || undefined,
                             identifierValue: editUserIdentifierValue.trim() || '-',
+                            passwordHash: cleanPass,
                             accountStatus: editUserStatus,
                             lastUpdated: new Date().toISOString().slice(0, 10),
                             childName:
@@ -3159,7 +3353,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                       updateSchoolUsers(updated);
                       setIsEditUserModalOpen(false);
                       setEditingUser(null);
-                      showToast(`Perubahan data akun ${editUserName} berhasil disimpan.`);
+                      showToast(`Perubahan data akun ${editUserName} dan kata sandi berhasil disinkronkan.`);
                     }}
                     className="px-4 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-xs font-bold text-white transition-colors cursor-pointer shadow-xs"
                   >

@@ -43,14 +43,28 @@ import {
   Wifi,
   Battery,
 } from 'lucide-react';
-import { UserPersona, getStoredUsers, USER_PERSONAS, isDeprecatedOrDummyJournal } from '../lib/constants';
-import { Student, Rombel, getStoredStudents, getStoredRombels } from '../lib/studentData';
+import {
+  UserPersona,
+  getStoredUsers,
+  USER_PERSONAS,
+  isDeprecatedOrDummyJournal,
+  verifyUserPassword,
+} from '../lib/constants';
+import {
+  Student,
+  Rombel,
+  getStoredStudents,
+  getStoredRombels,
+  isSameClass,
+  isSameSchool,
+} from '../lib/studentData';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { DailyJournal } from '../../packages/types/src/index';
 import {
   fetchUsersFromSupabase,
   fetchJournalsFromSupabase,
   fetchSchoolsFromSupabase,
+  fetchSuperAdminMasterDataFromSupabase,
   applySuperAdminMasterDataToStorage,
 } from '../lib/supabaseService';
 
@@ -179,7 +193,27 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
   useEffect(() => {
     syncLocalDataOnly();
 
-    // Pull latest authoritative users, schools & journals from Supabase once on mount
+    // 1. Pull latest authoritative users, schools, rombels & students from Supabase once on mount
+    fetchSuperAdminMasterDataFromSupabase()
+      .then((masterData) => {
+        if (masterData) {
+          applySuperAdminMasterDataToStorage(masterData);
+          if (masterData.schools && Array.isArray(masterData.schools) && masterData.schools.length > 0) {
+            setSchools((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.schools) ? prev : masterData.schools!));
+          }
+          if (masterData.rombels && Array.isArray(masterData.rombels)) {
+            setRombels((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.rombels) ? prev : masterData.rombels!));
+          }
+          if (masterData.students && Array.isArray(masterData.students)) {
+            setStudents((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.students) ? prev : masterData.students!));
+          }
+          if (masterData.users && Array.isArray(masterData.users) && masterData.users.length > 0) {
+            setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.users) ? prev : masterData.users!));
+          }
+        }
+      })
+      .catch(() => {});
+
     fetchSchoolsFromSupabase()
       .then((remoteSchools) => {
         if (remoteSchools && remoteSchools.length > 0) {
@@ -220,6 +254,26 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       }
     } catch (_e) {}
 
+    // 2. Real-time Multi-tab BroadcastChannel listener
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = (event) => {
+          if (
+            event.data?.type === 'ROMBELS_UPDATED' ||
+            event.data?.type === 'STUDENTS_UPDATED' ||
+            event.data?.type === 'SCHOOLS_UPDATED' ||
+            event.data?.type === 'USERS_UPDATED' ||
+            event.data?.type === 'MASTER_DATA_UPDATED'
+          ) {
+            syncLocalDataOnly();
+          }
+        };
+      } catch (_e) {}
+    }
+
+    // 3. Window event listeners
     window.addEventListener('storage', syncLocalDataOnly);
     window.addEventListener('si7kaih_students_updated', syncLocalDataOnly);
     window.addEventListener('si7kaih_rombels_updated', syncLocalDataOnly);
@@ -228,6 +282,11 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
     window.addEventListener('focus', syncLocalDataOnly);
 
     return () => {
+      if (bc) {
+        try {
+          bc.close();
+        } catch (_e) {}
+      }
       window.removeEventListener('storage', syncLocalDataOnly);
       window.removeEventListener('si7kaih_students_updated', syncLocalDataOnly);
       window.removeEventListener('si7kaih_rombels_updated', syncLocalDataOnly);
@@ -262,12 +321,12 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       const matchingUser = users.find(
         (u) =>
           u.role === 'TEACHER' &&
-          (u.className === r.name ||
+          (isSameClass(u.className, r.name) ||
             (r.teacher && u.name.toLowerCase().includes(r.teacher.toLowerCase())) ||
             (u.name && r.teacher && r.teacher.toLowerCase().includes(u.name.toLowerCase())))
       );
 
-      const studentCount = students.filter((s) => s.className === r.name).length;
+      const studentCount = students.filter((s) => isSameClass(s.className, r.name)).length;
       const isFemale =
         r.teacher?.toLowerCase().includes('ibu') ||
         r.teacher?.toLowerCase().includes('dewi') ||
@@ -291,7 +350,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
         phase: r.phase || 'Fase D',
         teacherName: r.teacher || 'Guru Wali Kelas',
         teacherNip: r.teacherNip || matchingUser?.identifierValue || '-',
-        schoolName: matchingUser?.schoolName || defaultSchool,
+        schoolName: matchingUser?.schoolName || r.schoolName || defaultSchool,
         email,
         phone: rawPhone,
         cleanPhone,
@@ -326,7 +385,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
             email: u.email || `guru.${uIdx}@sekolah.sch.id`,
             phone: rawPhone,
             cleanPhone,
-            studentCount: students.filter((s) => s.className === className).length,
+            studentCount: students.filter((s) => isSameClass(s.className, className)).length,
             avatar: u.avatar || '👨‍🏫',
             status: 'AKTIF',
           });
@@ -549,36 +608,62 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
     return allAvailableStudents.filter((s) => s.schoolName === effectiveSelectedSchool);
   }, [allAvailableStudents, effectiveSelectedSchool, availableSchoolsForLogin]);
 
-  // Daftar kelas / rombel unik yang tersedia untuk filter dropdown (tersinkron dengan rombel & siswa yang diupdate oleh Admin Sekolah)
+  // Daftar kelas / rombel unik yang tersedia untuk filter dropdown (tersinkron presisi dengan rombel & siswa yang diupdate oleh Admin Sekolah)
   const availableClassesForLogin = useMemo<string[]>(() => {
     // Jika belum ada satuan pendidikan atau satuan pendidikan di-default ke '0', kelas otomatis 0
     if (availableSchoolsForLogin.length === 0 || effectiveSelectedSchool === '0') {
       return [];
     }
 
-    const set = new Set<string>();
+    const isSameSchool = (name1?: string, name2?: string) => {
+      if (!name1 || !name2) return false;
+      return name1.trim().toLowerCase() === name2.trim().toLowerCase();
+    };
 
-    // 1. Dari master rombel yang diupdate oleh Admin Sekolah
-    rombels.forEach((r) => {
-      if (!r.name || !r.name.trim()) return;
-      if (effectiveSelectedSchool === 'ALL') {
-        set.add(r.name.trim());
-      } else {
-        const currentSchoolObj = schools.find((sch) => sch.name.toLowerCase() === effectiveSelectedSchool.toLowerCase());
-        const matchSchool =
-          (r.schoolName && r.schoolName.toLowerCase() === effectiveSelectedSchool.toLowerCase()) ||
-          (currentSchoolObj && r.schoolId && r.schoolId === currentSchoolObj.id) ||
-          studentsInSelectedSchool.some((s) => s.className === r.name);
-        if (matchSchool) {
+    if (effectiveSelectedSchool === 'ALL') {
+      const set = new Set<string>();
+      // 1. Ambil seluruh rombel aktif yang telah dikonfigurasi admin sekolah
+      rombels.forEach((r) => {
+        if (r.name && r.name.trim() && r.status !== 'NONAKTIF') {
           set.add(r.name.trim());
         }
-      }
+      });
+      // 2. Sertakan juga kelas dari siswa jika ada sekolah yang belum menginput rombel terpisah
+      studentsInSelectedSchool.forEach((s) => {
+        if (s.className && s.className.trim()) {
+          const hasMatch = Array.from(set).some((cls) => isSameClass(cls, s.className));
+          if (!hasMatch) {
+            set.add(s.className.trim());
+          }
+        }
+      });
+      return Array.from(set).sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
+    }
+
+    // Kasus memilih spesifik satuan pendidikan (Sekolah tertentu):
+    const currentSchoolObj = schools.find((sch) => isSameSchool(sch.name, effectiveSelectedSchool));
+    const schoolRombels = rombels.filter((r) => {
+      if (!r.name || !r.name.trim()) return false;
+      if (r.status === 'NONAKTIF') return false;
+      return (
+        isSameSchool(r.schoolName, effectiveSelectedSchool) ||
+        (currentSchoolObj && r.schoolId && r.schoolId === currentSchoolObj.id)
+      );
     });
 
-    // 2. Dari data murid yang diinput Admin Sekolah di sekolah terpilih
+    const set = new Set<string>();
+    // Tambahkan dari Rombel resmi
+    schoolRombels.forEach((r) => {
+      set.add(r.name.trim());
+    });
+
+    // Sertakan juga kelas pada data siswa di sekolah ini jika belum ada rombelnya
     studentsInSelectedSchool.forEach((s) => {
       if (s.className && s.className.trim()) {
-        set.add(s.className.trim());
+        const hasMatch = Array.from(set).some((cls) => isSameClass(cls, s.className));
+        if (!hasMatch) {
+          set.add(s.className.trim());
+        }
       }
     });
 
@@ -603,11 +688,11 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
     }
     return allAvailableStudents.filter((s) => {
       // 1. Filter sekolah jika dipilih spesifik
-      if (effectiveSelectedSchool !== 'ALL' && s.schoolName !== effectiveSelectedSchool) {
+      if (effectiveSelectedSchool !== 'ALL' && !isSameSchool(s.schoolName, effectiveSelectedSchool)) {
         return false;
       }
       // 2. Filter kelas jika dipilih spesifik
-      if (effectiveSelectedClass !== 'ALL' && s.className !== effectiveSelectedClass) {
+      if (effectiveSelectedClass !== 'ALL' && !isSameClass(s.className, effectiveSelectedClass)) {
         return false;
       }
       return true;
@@ -641,14 +726,30 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
     // Periksa apakah kelas saat ini masih valid di sekolah baru
     if (newSchool !== 'ALL' && newSchool !== '0') {
       const validClasses = new Set<string>();
+      const currentSchoolObj = schools.find((sch) => sch.name.trim().toLowerCase() === newSchool.trim().toLowerCase());
+      
+      // Ambil dari rombel sekolah baru
+      rombels
+        .filter((r) => {
+          if (!r.name || !r.name.trim() || r.status === 'NONAKTIF') return false;
+          return (
+            (r.schoolName && r.schoolName.trim().toLowerCase() === newSchool.trim().toLowerCase()) ||
+            (currentSchoolObj && r.schoolId && r.schoolId === currentSchoolObj.id)
+          );
+        })
+        .forEach((r) => validClasses.add(r.name.trim()));
+
+      // Ambil juga dari siswa sekolah baru
       allAvailableStudents
-        .filter((s) => s.schoolName === newSchool)
+        .filter((s) => s.schoolName && s.schoolName.trim().toLowerCase() === newSchool.trim().toLowerCase())
         .forEach((s) => {
           if (s.className) validClasses.add(s.className.trim());
         });
 
       if (selectedClassForLogin !== 'ALL' && selectedClassForLogin !== '0' && !validClasses.has(selectedClassForLogin)) {
         setSelectedClassForLogin(validClasses.size > 0 ? 'ALL' : '0');
+      } else if (selectedClassForLogin === '0' && validClasses.size > 0) {
+        setSelectedClassForLogin('ALL');
       }
 
       // Periksa apakah murid yang saat ini terpilih ada di sekolah baru
@@ -794,6 +895,11 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       if (cleanId === 'superadmin' || cleanId === 'superadmin.kemdikbud' || cleanId === 'pusdatin-adm-8801') {
         const sa = freshUsers.find((u) => u.role === 'SUPER_ADMIN') || USER_PERSONAS.find((u) => u.role === 'SUPER_ADMIN');
         if (sa) {
+          if (!verifyUserPassword(sa, activePassword)) {
+            setIsSubmitting(false);
+            setErrorMessage('Password yang Anda masukkan salah. Pastikan password Super Admin sesuai.');
+            return;
+          }
           saveBrowserRememberState('SUPER_ADMIN', cleanId);
           setIsSubmitting(false);
           setSuccessMessage(`Autentikasi Berhasil! Mengalihkan ke dashboard ${sa.name}...`);
@@ -821,6 +927,11 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
           if (matchedParent.accountStatus === 'MANDIRI_NONAKTIF') {
             setIsSubmitting(false);
             setErrorMessage('Akun orang tua ini sedang dinonaktifkan oleh Administrator SIM Sekolah.');
+            return;
+          }
+          if (!verifyUserPassword(matchedParent, activePassword)) {
+            setIsSubmitting(false);
+            setErrorMessage('Password akun orang tua yang Anda masukkan salah. Silakan coba lagi.');
             return;
           }
           saveBrowserRememberState(matchedParent.role, cleanId);
@@ -875,6 +986,12 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
             childNisn: matchedStudent.nisn,
           };
 
+          if (!verifyUserPassword(dynamicParentPersona, activePassword)) {
+            setIsSubmitting(false);
+            setErrorMessage('Password akun orang tua / pendamping yang Anda masukkan salah.');
+            return;
+          }
+
           saveBrowserRememberState('PARENT', cleanId);
           setIsSubmitting(false);
           setSuccessMessage(`Autentikasi Wali Murid Berhasil! Mengalihkan ke pendampingan ${matchedStudent.name}...`);
@@ -905,6 +1022,11 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
           if (matchedStudentUser.accountStatus === 'MANDIRI_NONAKTIF') {
             setIsSubmitting(false);
             setErrorMessage('Akun murid dinonaktifkan oleh Administrator SIM Sekolah.');
+            return;
+          }
+          if (!verifyUserPassword(matchedStudentUser, activePassword)) {
+            setIsSubmitting(false);
+            setErrorMessage('Password akun murid yang Anda masukkan salah. Pastikan password sesuai atau tanyakan wali kelas.');
             return;
           }
           saveBrowserRememberState(matchedStudentUser.role, cleanId);
@@ -948,6 +1070,11 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
             securityLevel: 'Peserta Didik (Pengisian Jurnal & Refleksi Harian)',
             managedBy: 'Wali Kelas & Admin Satuan Pendidikan',
           };
+          if (!verifyUserPassword(dynamicStudentPersona, activePassword)) {
+            setIsSubmitting(false);
+            setErrorMessage('Password akun murid yang Anda masukkan salah. Pastikan password sesuai atau tanyakan wali kelas.');
+            return;
+          }
           saveBrowserRememberState('STUDENT', cleanId);
           setIsSubmitting(false);
           setSuccessMessage(`Autentikasi Berhasil! Selamat datang, ${matchedStudent.name}...`);
@@ -978,6 +1105,12 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       if (matched.accountStatus === 'MANDIRI_NONAKTIF') {
         setIsSubmitting(false);
         setErrorMessage('Akun Anda dinonaktifkan oleh Administrator Satuan Pendidikan.');
+        return;
+      }
+
+      if (!verifyUserPassword(matched, activePassword)) {
+        setIsSubmitting(false);
+        setErrorMessage('Password yang Anda masukkan salah. Silakan periksa kembali password akun Anda.');
         return;
       }
 
@@ -1225,65 +1358,65 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                   <span className="text-[9px] text-pink-200 font-bold">7 Dimensi</span>
                 </div>
 
-                <div className="flex items-start justify-between gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar py-0.5">
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="1. Bangun Pagi">
+                <div className="grid grid-cols-7 gap-1 sm:gap-1.5 py-0.5">
+                  <div className="flex flex-col items-center gap-1 min-w-0" title="1. Bangun Pagi">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
                       <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
-                      <span>Bangun</span>
-                      <span>Pagi</span>
+                    <div className="min-h-[19px] sm:min-h-[22px] flex flex-col items-center justify-start text-[5.5px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                      <span className="whitespace-nowrap">Bangun</span>
+                      <span className="whitespace-nowrap">Pagi</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="2. Beribadah">
+                  <div className="flex flex-col items-center gap-1 min-w-0" title="2. Beribadah">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
                       <Heart className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
-                      <span>Beribadah</span>
+                    <div className="min-h-[19px] sm:min-h-[22px] flex flex-col items-center justify-start text-[5.5px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                      <span className="whitespace-nowrap">Beribadah</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="3. Berolahraga">
+                  <div className="flex flex-col items-center gap-1 min-w-0" title="3. Berolahraga">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-sky-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
                       <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
-                      <span>Berolahraga</span>
+                    <div className="min-h-[19px] sm:min-h-[22px] flex flex-col items-center justify-start text-[5px] sm:text-[6.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                      <span className="whitespace-nowrap">Berolahraga</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="4. Makan Bergizi">
+                  <div className="flex flex-col items-center gap-1 min-w-0" title="4. Makan Bergizi">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-green-600 to-lime-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
                       <Utensils className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
-                      <span>Makan</span>
-                      <span>Bergizi</span>
+                    <div className="min-h-[19px] sm:min-h-[22px] flex flex-col items-center justify-start text-[5.5px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                      <span className="whitespace-nowrap">Makan</span>
+                      <span className="whitespace-nowrap">Bergizi</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="5. Gemar Belajar">
+                  <div className="flex flex-col items-center gap-1 min-w-0" title="5. Gemar Belajar">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-purple-600 to-violet-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
                       <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
-                      <span>Gemar</span>
-                      <span>Belajar</span>
+                    <div className="min-h-[19px] sm:min-h-[22px] flex flex-col items-center justify-start text-[5.5px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                      <span className="whitespace-nowrap">Gemar</span>
+                      <span className="whitespace-nowrap">Belajar</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="6. Bermasyarakat">
+                  <div className="flex flex-col items-center gap-1 min-w-0" title="6. Bermasyarakat">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-rose-600 to-pink-400 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
                       <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
-                      <span>Bermasyarakat</span>
+                    <div className="min-h-[19px] sm:min-h-[22px] flex flex-col items-center justify-start text-[4.8px] sm:text-[6.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                      <span className="whitespace-nowrap">Bermasyarakat</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-1 shrink-0 flex-1 min-w-0" title="7. Tidur Cepat">
+                  <div className="flex flex-col items-center gap-1 min-w-0" title="7. Tidur Cepat">
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-indigo-700 to-blue-500 text-white flex items-center justify-center shadow-xs ring-2 ring-white/50 shrink-0">
                       <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.4]" />
                     </div>
-                    <div className="min-h-[20px] flex flex-col items-center justify-start text-[6.5px] sm:text-[7.5px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter sm:tracking-tight">
-                      <span>Tidur</span>
-                      <span>Cepat</span>
+                    <div className="min-h-[19px] sm:min-h-[22px] flex flex-col items-center justify-start text-[5.5px] sm:text-[7px] font-black text-blue-50 leading-[1.1] text-center tracking-tighter">
+                      <span className="whitespace-nowrap">Tidur</span>
+                      <span className="whitespace-nowrap">Cepat</span>
                     </div>
                   </div>
                 </div>
@@ -1691,7 +1824,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                                     : `Semua Kelas di ${effectiveSelectedSchool} (${availableClassesForLogin.length} Kelas, ${studentsInSelectedSchool.length} Siswa)`}
                                 </option>
                                 {availableClassesForLogin.map((cls) => {
-                                  const count = studentsInSelectedSchool.filter((s) => s.className === cls).length;
+                                  const count = studentsInSelectedSchool.filter((s) => isSameClass(s.className, cls)).length;
                                   return (
                                     <option key={cls} value={cls}>
                                       {cls} ({count} Siswa)

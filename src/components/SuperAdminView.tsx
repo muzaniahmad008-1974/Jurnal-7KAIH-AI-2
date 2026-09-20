@@ -77,6 +77,9 @@ import {
   markUsersAsDeleted,
   unmarkUserAsDeleted,
   isUserDeleted,
+  setUserPassword,
+  getUserPassword,
+  verifyUserPassword,
 } from '../lib/constants';
 import {
   SchoolMaster,
@@ -986,7 +989,13 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           securityLevel: 'Operator Satuan Pendidikan (Pengelola Akun Mandiri)',
           managedBy: 'Super Administrator SI-7KAIH Pusat',
           createdDate: new Date().toISOString().split('T')[0],
+          passwordHash: '123456',
         };
+        setUserPassword(newAdminPersona.id, '123456', [
+          newAdminPersona.username,
+          newAdminPersona.identifierValue,
+          newAdminPersona.email,
+        ]);
         updatedUsersList = [...userAccounts, newAdminPersona];
         setUserAccounts(updatedUsersList);
         saveStoredUsers(updatedUsersList);
@@ -1012,7 +1021,13 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           securityLevel: 'Kepala Satuan Pendidikan (Akses Eksekutif & Supervisi)',
           managedBy: 'Super Administrator SI-7KAIH Pusat',
           createdDate: new Date().toISOString().split('T')[0],
+          passwordHash: '123456',
         };
+        setUserPassword(newPrincipalPersona.id, '123456', [
+          newPrincipalPersona.username,
+          newPrincipalPersona.identifierValue,
+          newPrincipalPersona.email,
+        ]);
         updatedUsersList = [...updatedUsersList, newPrincipalPersona];
         setUserAccounts(updatedUsersList);
         saveStoredUsers(updatedUsersList);
@@ -1202,7 +1217,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
     setAdminFormEmail(u.email || '');
     setAdminFormNip(u.identifierValue || u.nip || '');
     setAdminFormClassName(u.className || '');
-    setAdminFormPassword('123456');
+    setAdminFormPassword(u.passwordHash || getUserPassword(u) || '123456');
     setIsAddAdminModalOpen(true);
   };
 
@@ -1499,6 +1514,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
 
     if (editingUser) {
       // EDIT MODE: Update existing persona
+      const finalPass = adminFormPassword.trim() || editingUser.passwordHash || '123456';
       const updatedUser: UserPersona = {
         ...editingUser,
         name: cleanName,
@@ -1519,7 +1535,15 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         identifierValue: adminFormNip.trim() || editingUser.identifierValue,
         username: cleanUsername,
         email: cleanEmail,
+        passwordHash: finalPass,
       };
+
+      setUserPassword(updatedUser.id, finalPass, [
+        updatedUser.username,
+        updatedUser.identifierValue,
+        updatedUser.email,
+        updatedUser.childNisn,
+      ]);
 
       unmarkUserAsDeleted(updatedUser.id, updatedUser.username);
       const updatedUsersList = userAccounts.map((u) => (u.id === editingUser.id ? updatedUser : u));
@@ -1622,7 +1646,16 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             : 'Pengguna Satuan Pendidikan',
         managedBy: 'Super Administrator SI-7KAIH Pusat',
         createdDate: new Date().toISOString().split('T')[0],
+        passwordHash: adminFormPassword.trim() || '123456',
       };
+
+      const finalNewPass = newAccount.passwordHash || '123456';
+      setUserPassword(newAccount.id, finalNewPass, [
+        newAccount.username,
+        newAccount.identifierValue,
+        newAccount.email,
+        newAccount.childNisn,
+      ]);
 
       unmarkUserAsDeleted(newAccount.id, newAccount.username);
       updateUsers([...userAccounts, newAccount]);
@@ -2975,6 +3008,23 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                               <span>Edit</span>
                             </button>
                             <button
+                              onClick={() => {
+                                setUserPassword(u.id, '123456', [u.username, u.identifierValue, u.email, u.childNisn]);
+                                const updatedUsers = userAccounts.map((acc) =>
+                                  acc.id === u.id
+                                    ? { ...acc, passwordHash: '123456', lastUpdated: new Date().toISOString().slice(0, 10) }
+                                    : acc
+                                );
+                                updateUsers(updatedUsers);
+                                showToast(`Kata sandi akun ${u.name} (${u.username}) berhasil direset ke 123456 dan disinkronkan ke login.`);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-amber-50/80 text-amber-800 hover:bg-amber-100 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 border border-amber-200"
+                              title="Reset Kata Sandi ke Default (123456) & Sinkronkan ke Sistem Login"
+                            >
+                              <KeyRound className="w-3 h-3 text-amber-600" />
+                              <span>Reset Sandi</span>
+                            </button>
+                            <button
                               onClick={() => onSelectPersona(u)}
                               className="px-2 py-1 rounded-lg bg-blue-50 text-[#0753A5] hover:bg-blue-100 text-[11px] font-bold cursor-pointer"
                               title="Beralih dan Masuk sebagai Pengguna Ini"
@@ -3570,6 +3620,23 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                           >
                             <Edit3 className="w-3 h-3 text-amber-700" />
                             <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setUserPassword(u.id, '123456', [u.username, u.identifierValue, u.email, u.childNisn]);
+                              const updatedUsers = userAccounts.map((acc) =>
+                                acc.id === u.id
+                                  ? { ...acc, passwordHash: '123456', lastUpdated: new Date().toISOString().slice(0, 10) }
+                                  : acc
+                              );
+                              updateUsers(updatedUsers);
+                              showToast(`Kata sandi akun ${u.name} (${u.username}) berhasil direset ke 123456 dan disinkronkan ke login.`);
+                            }}
+                            className="px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100 text-[11px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1"
+                            title="Reset Kata Sandi ke Default (123456) & Sinkronkan ke Sistem Login"
+                          >
+                            <KeyRound className="w-3 h-3 text-amber-600" />
+                            <span>Reset Sandi</span>
                           </button>
                           <button
                             onClick={() => onSelectPersona(u)}

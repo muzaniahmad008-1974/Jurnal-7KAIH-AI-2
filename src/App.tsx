@@ -19,6 +19,7 @@ import {
   getStoredLogoutSettings,
   isDeprecatedOrDummyUser,
   isDeprecatedOrDummyJournal,
+  setUserPassword,
 } from './lib/constants';
 import {
   DailyJournal,
@@ -921,6 +922,14 @@ export default function App() {
     setCurrentPersona(updated);
     try {
       localStorage.setItem('si7kaih_persona_prod', JSON.stringify(updated));
+      if (updated.passwordHash) {
+        setUserPassword(updated.id, updated.passwordHash, [
+          updated.username,
+          updated.identifierValue,
+          updated.email,
+          updated.childNisn,
+        ]);
+      }
       const pool = getStoredUsers();
       const idx = pool.findIndex((u) => u.id === updated.id);
       if (idx !== -1) {

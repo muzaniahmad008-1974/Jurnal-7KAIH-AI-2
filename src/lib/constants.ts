@@ -221,7 +221,6 @@ export const isDeprecatedOrDummyUser = (u: UserPersona): boolean => {
     '198506202010011009',
     '0134567',
     'wali.0134567',
-    'admin.jorong1',
     'kepsek.adi',
     'fauzi',
   ]);
@@ -305,6 +304,177 @@ export const saveStoredUsers = (users: UserPersona[]): void => {
       }
     }
   } catch (_e) {}
+};
+
+// ============================================================================
+// SISTEM SINKRONISASI KATA SANDI / PASSWORD TERPUSAT
+// Menjamin sinkronisasi password saat pembuatan akun baru & pembaruan password
+// ============================================================================
+export const USER_PASSWORDS_STORAGE_KEY = 'si7kaih_user_passwords_prod';
+
+export const getStoredPasswords = (): Record<string, string> => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(USER_PASSWORDS_STORAGE_KEY);
+      if (raw) {
+        return JSON.parse(raw);
+      }
+    }
+  } catch (_e) {}
+  return {};
+};
+
+export const setUserPassword = (
+  primaryIdentifier: string,
+  newPassword: string,
+  additionalAliases: (string | undefined | null)[] = []
+): void => {
+  try {
+    if (typeof window === 'undefined') return;
+    const passwords = getStoredPasswords();
+    const cleanPass = (newPassword || '').trim();
+    if (!cleanPass) return;
+
+    const keysToUpdate: string[] = [primaryIdentifier, ...additionalAliases]
+      .filter((k): k is string => Boolean(k && k.trim()))
+      .map((k) => k.toLowerCase().trim());
+
+    keysToUpdate.forEach((k) => {
+      passwords[k] = cleanPass;
+    });
+
+    localStorage.setItem(USER_PASSWORDS_STORAGE_KEY, JSON.stringify(passwords));
+
+    // Sinkronkan juga langsung ke master pool akun (si7kaih_users_pool_prod)
+    const users = getStoredUsers();
+    let poolChanged = false;
+    const updatedUsers = users.map((u) => {
+      const matchKey = keysToUpdate.some(
+        (k) =>
+          (u.id && u.id.toLowerCase() === k) ||
+          (u.username && u.username.toLowerCase() === k) ||
+          (u.identifierValue && u.identifierValue.toLowerCase() === k) ||
+          (u.email && u.email.toLowerCase() === k) ||
+          (u.childNisn && u.childNisn.toLowerCase() === k)
+      );
+      if (matchKey) {
+        poolChanged = true;
+        return {
+          ...u,
+          passwordHash: cleanPass,
+          lastUpdated: new Date().toISOString(),
+        };
+      }
+      return u;
+    });
+
+    if (poolChanged) {
+      saveStoredUsers(updatedUsers);
+    }
+
+    // Update sesi aktif persona jika id cocok
+    try {
+      const currentRaw = localStorage.getItem('si7kaih_persona_prod');
+      if (currentRaw) {
+        const cur = JSON.parse(currentRaw);
+        if (
+          keysToUpdate.some(
+            (k) =>
+              (cur.id && cur.id.toLowerCase() === k) ||
+              (cur.username && cur.username.toLowerCase() === k) ||
+              (cur.identifierValue && cur.identifierValue.toLowerCase() === k)
+          )
+        ) {
+          cur.passwordHash = cleanPass;
+          localStorage.setItem('si7kaih_persona_prod', JSON.stringify(cur));
+        }
+      }
+    } catch (_e) {}
+
+    // Siarkan pembaruan kata sandi antar tab/jendela
+    if ('BroadcastChannel' in window) {
+      try {
+        const bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.postMessage({
+          type: 'PASSWORD_UPDATED',
+          keys: keysToUpdate,
+          timestamp: Date.now(),
+        });
+        bc.close();
+      } catch (_e) {}
+    }
+  } catch (_e) {}
+};
+
+export const getUserPassword = (userOrIdentifier: UserPersona | string | null | undefined): string | null => {
+  try {
+    if (!userOrIdentifier) return null;
+    const passwords = getStoredPasswords();
+    if (typeof userOrIdentifier === 'string') {
+      const cleanKey = userOrIdentifier.toLowerCase().trim();
+      if (passwords[cleanKey]) {
+        return passwords[cleanKey];
+      }
+      // Cek di master pool
+      const users = getStoredUsers();
+      const matched = users.find(
+        (u) =>
+          u.username.toLowerCase() === cleanKey ||
+          u.identifierValue.toLowerCase() === cleanKey ||
+          u.id.toLowerCase() === cleanKey ||
+          (u.childNisn && u.childNisn.toLowerCase() === cleanKey)
+      );
+      if (matched && matched.passwordHash && matched.passwordHash.trim()) {
+        return matched.passwordHash.trim();
+      }
+      return null;
+    } else if (typeof userOrIdentifier === 'object') {
+      const u = userOrIdentifier;
+      const keys = [u.id, u.username, u.identifierValue, u.childNisn, u.email]
+        .filter((k): k is string => Boolean(k && k.trim()))
+        .map((k) => k.toLowerCase().trim());
+      for (const k of keys) {
+        if (passwords[k]) {
+          return passwords[k];
+        }
+      }
+      if (u.passwordHash && u.passwordHash.trim()) {
+        return u.passwordHash.trim();
+      }
+    }
+  } catch (_e) {}
+  return null;
+};
+
+export const verifyUserPassword = (
+  userOrIdentifier: UserPersona | string | null | undefined,
+  inputPassword: string
+): boolean => {
+  const cleanInput = (inputPassword || '').trim();
+  if (!cleanInput) return false;
+
+  const stored = getUserPassword(userOrIdentifier);
+  if (stored) {
+    return cleanInput === stored.trim();
+  }
+
+  // Jika belum ada password kustom yang disimpan, terapkan password bawaan standar
+  if (typeof userOrIdentifier === 'object' && userOrIdentifier !== null) {
+    if (userOrIdentifier.role === 'SUPER_ADMIN') {
+      return cleanInput === '123456' || cleanInput === 'superadmin';
+    }
+    return cleanInput === '123456';
+  }
+
+  if (typeof userOrIdentifier === 'string') {
+    const cleanId = userOrIdentifier.toLowerCase().trim();
+    if (cleanId === 'superadmin' || cleanId === 'superadmin.kemdikbud' || cleanId === 'pusdatin-adm-8801') {
+      return cleanInput === '123456' || cleanInput === 'superadmin';
+    }
+    return cleanInput === '123456';
+  }
+
+  return cleanInput === '123456';
 };
 
 export const HABIT_MASTERS: Record<HabitCode, HabitMaster> = {

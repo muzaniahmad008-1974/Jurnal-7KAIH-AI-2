@@ -48,6 +48,8 @@ import {
   saveStoredLogoutSettings,
   getStoredRolePreferences,
   saveStoredRolePreferences,
+  setUserPassword,
+  verifyUserPassword,
 } from '../lib/constants';
 import { UserRole } from '../../packages/types/src/index';
 import { UserAvatar, ROLE_DEFAULT_AVATARS } from './UserAvatar';
@@ -324,6 +326,11 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
     setErrorMessage('');
     setPasswordSuccess(false);
 
+    if (currentPassword && !verifyUserPassword(currentPersona, currentPassword)) {
+      setErrorMessage('Kata sandi saat ini yang Anda masukkan tidak sesuai.');
+      return;
+    }
+
     if (!newPassword) {
       setErrorMessage('Kata sandi baru tidak boleh kosong.');
       return;
@@ -338,6 +345,42 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
       setErrorMessage('Konfirmasi kata sandi baru tidak cocok.');
       return;
     }
+
+    const cleanNewPass = newPassword.trim();
+
+    // 1. Simpan ke sistem kata sandi terpusat (USER_PASSWORDS)
+    setUserPassword(
+      currentPersona.id,
+      cleanNewPass,
+      [currentPersona.username, currentPersona.identifierValue, currentPersona.email, currentPersona.childNisn]
+    );
+
+    // 2. Perbarui objek persona aktif
+    const updatedUser: UserPersona = {
+      ...currentPersona,
+      passwordHash: cleanNewPass,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    // 3. Simpan dan sinkronkan ke master pool akun pengguna
+    try {
+      const pool = getStoredUsers();
+      const idx = pool.findIndex(
+        (u) =>
+          u.id === currentPersona.id ||
+          (u.username && u.username.toLowerCase() === currentPersona.username.toLowerCase())
+      );
+      if (idx !== -1) {
+        pool[idx] = { ...pool[idx], passwordHash: cleanNewPass, lastUpdated: new Date().toISOString() };
+        saveStoredUsers(pool);
+      } else {
+        pool.push(updatedUser);
+        saveStoredUsers(pool);
+      }
+    } catch (_e) {}
+
+    // 4. Update state di parent (App.tsx)
+    onUpdatePersona(updatedUser);
 
     // Simpan pembaruan kata sandi akun produksi aktif
     setPasswordSuccess(true);

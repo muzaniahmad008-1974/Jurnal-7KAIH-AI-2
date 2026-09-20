@@ -3,6 +3,8 @@ import {
   UserPersona,
   getStoredUsers,
   saveStoredUsers,
+  setUserPassword,
+  verifyUserPassword,
 } from '../lib/constants';
 import {
   UserCheck,
@@ -187,6 +189,10 @@ export const SuperAdminProfile: React.FC<SuperAdminProfileProps> = ({
 
   const handlePasswordChange = (e: React.FormEvent) => {
     e.preventDefault();
+    if (oldPassword && !verifyUserPassword(currentPersona, oldPassword)) {
+      showToast('⚠️ Kata sandi lama yang Anda masukkan tidak sesuai.');
+      return;
+    }
     if (!newPassword || newPassword.length < 6) {
       showToast('⚠️ Kata sandi baru minimal harus 6 karakter.');
       return;
@@ -196,11 +202,38 @@ export const SuperAdminProfile: React.FC<SuperAdminProfileProps> = ({
       return;
     }
 
+    const cleanNewPass = newPassword.trim();
+    setUserPassword(
+      currentPersona.id,
+      cleanNewPass,
+      [currentPersona.username, currentPersona.identifierValue, 'superadmin', currentPersona.email]
+    );
+
+    const updated: UserPersona = {
+      ...currentPersona,
+      passwordHash: cleanNewPass,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    try {
+      const pool = getStoredUsers();
+      const idx = pool.findIndex((u) => u.id === currentPersona.id || u.role === 'SUPER_ADMIN');
+      if (idx !== -1) {
+        pool[idx] = { ...pool[idx], passwordHash: cleanNewPass, lastUpdated: new Date().toISOString() };
+        saveStoredUsers(pool);
+      } else {
+        pool.push(updated);
+        saveStoredUsers(pool);
+      }
+    } catch (_e) {}
+
+    onUpdatePersona(updated);
+
     setPasswordSuccess(true);
     setOldPassword('');
     setNewPassword('');
     setConfirmPassword('');
-    showToast('✅ Kata sandi Super Admin mandiri berhasil diperbarui!');
+    showToast('✅ Kata sandi Super Admin mandiri berhasil diperbarui & disinkronkan ke sistem login!');
     setTimeout(() => setPasswordSuccess(false), 5000);
   };
 

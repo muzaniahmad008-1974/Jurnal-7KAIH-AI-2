@@ -18,7 +18,7 @@ import {
   Search,
   Sparkles,
 } from 'lucide-react';
-import { UserPersona, getStoredUsers } from '../lib/constants';
+import { UserPersona, getStoredUsers, verifyUserPassword } from '../lib/constants';
 import { UserAvatar } from './UserAvatar';
 
 interface LoginModalProps {
@@ -77,6 +77,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
     if (matched.accountStatus === 'MANDIRI_NONAKTIF') {
       setErrorMessage('Akun ini sedang dinonaktifkan oleh Administrator. Hubungi Admin SIM Sekolah.');
+      return;
+    }
+
+    if (inputPassword.trim() && !verifyUserPassword(matched, inputPassword.trim())) {
+      setErrorMessage('Kata sandi yang Anda masukkan salah.');
       return;
     }
 
