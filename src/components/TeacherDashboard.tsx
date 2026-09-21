@@ -49,6 +49,12 @@ interface TeacherDashboardProps {
   onOpenReportModal: () => void;
   activeNavTab?: string;
   currentPersona?: UserPersona;
+  onValidateJournal?: (
+    journalId: string,
+    habitCode?: HabitCode,
+    note?: string,
+    validationMeta?: any
+  ) => void;
 }
 
 interface StudentClassRow {
@@ -58,6 +64,8 @@ interface StudentClassRow {
   completedTodayCount: number;
   monthlyConsistency: number; // %
   completenessRate: number; // %
+  avgHabitsCompleted?: number; // average completed habits out of 7 (e.g. 6.2)
+  totalJournalsCount?: number;
   category: EarlyWarningCategory | 'BELUM_ADA_DATA';
   lastJournalDate: string;
   validatedByTeacher: boolean;
@@ -146,6 +154,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onOpenReportModal,
   activeNavTab,
   currentPersona,
+  onValidateJournal,
 }) => {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'STUDENTS' | 'MONITORING' | 'PROGRAMS' | 'RTL' | 'AI_INSIGHT'>('OVERVIEW');
   const [searchTerm, setSearchTerm] = useState('');
@@ -162,15 +171,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [schools, setSchools] = useState<SchoolMaster[]>(() => getStoredSchools());
   const [users, setUsers] = useState<UserPersona[]>(() => getStoredUsers());
   const [teacherValidations, setTeacherValidations] = useState<Record<string, boolean>>(() => getStoredValidations());
-  const [lastSyncTime, setLastSyncTime] = useState<string>(() => new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() => new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Synchronized journals state reflecting real-time updates from students
-  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(journals);
+  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
+    try {
+      const raw = localStorage.getItem('si7kaih_journals_prod');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_e) {}
+    return journals || [];
+  });
   const [liveSyncToast, setLiveSyncToast] = useState<{ studentName: string; time: string; count: number; className?: string } | null>(null);
 
   useEffect(() => {
-    setSyncedJournals((prev) => (JSON.stringify(prev) === JSON.stringify(journals) ? prev : journals));
+    if (Array.isArray(journals) && journals.length > 0) {
+      setSyncedJournals(journals);
+    }
   }, [journals]);
 
   // Select active rombel based on persona or default to first rombel
@@ -198,26 +218,54 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setTeacherValidations(getStoredValidations());
       setLocalFollowUps(getStoredTeacherFollowUps());
       setLocalPrograms(getStoredTeacherPrograms());
-      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     };
 
-    const handleJournalUpdate = (e: any) => {
-      const updatedList = e.detail || [];
+    const handleJournalUpdate = (e?: any) => {
+      let updatedList = e?.detail;
+      if (!Array.isArray(updatedList) || updatedList.length === 0) {
+        try {
+          const raw = localStorage.getItem('si7kaih_journals_prod');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) updatedList = parsed;
+          }
+        } catch (_e) {}
+      }
       if (Array.isArray(updatedList)) {
-        setSyncedJournals((prev) => (JSON.stringify(prev) === JSON.stringify(updatedList) ? prev : updatedList));
-        setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+        setSyncedJournals(updatedList);
+        setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
         const latest = updatedList[0];
         if (latest) {
           const sName = latest.studentName || 'Peserta Didik';
+          const completedCount = typeof latest.completedCount === 'number'
+            ? latest.completedCount
+            : latest.entries
+            ? Object.values(latest.entries).filter((h: any) => h?.completed).length
+            : 0;
           setLiveSyncToast({
             studentName: sName,
             time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
-            count: latest.completedCount || 0,
+            count: completedCount,
             className: latest.className,
           });
-          setTimeout(() => setLiveSyncToast(null), 7000);
+          setTimeout(() => setLiveSyncToast(null), 8000);
         }
+      }
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'si7kaih_journals_prod') {
+        handleJournalUpdate();
+      } else if (
+        e.key === 'si7kaih_students_prod' ||
+        e.key === 'si7kaih_rombels_prod' ||
+        e.key === 'si7kaih_schools_prod' ||
+        e.key === 'si7kaih_users_prod' ||
+        e.key === VALIDATIONS_STORAGE_KEY
+      ) {
+        handleUpdate();
       }
     };
 
@@ -229,24 +277,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         bc.onmessage = (ev) => {
           if (!ev.data) return;
           if (ev.data.type === 'JOURNALS_UPDATED' || ev.data.type === 'JOURNAL_SUBMITTED') {
-            if (Array.isArray(ev.data.journals)) {
-              setSyncedJournals(ev.data.journals);
-            } else {
+            let updatedList = ev.data.journals;
+            if (!Array.isArray(updatedList) || updatedList.length === 0) {
               try {
                 const raw = localStorage.getItem('si7kaih_journals_prod');
-                if (raw) setSyncedJournals(JSON.parse(raw));
+                if (raw) updatedList = JSON.parse(raw);
               } catch (_e) {}
             }
-            setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+            if (Array.isArray(updatedList)) {
+              setSyncedJournals(updatedList);
+            }
+            setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
             if (ev.data.latestJournal) {
               const latest = ev.data.latestJournal;
+              const count = typeof latest.completedCount === 'number'
+                ? latest.completedCount
+                : latest.entries
+                ? Object.values(latest.entries).filter((h: any) => h?.completed).length
+                : 0;
               setLiveSyncToast({
                 studentName: latest.studentName || 'Peserta Didik',
                 time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
-                count: latest.completedCount || 0,
+                count,
                 className: latest.className,
               });
-              setTimeout(() => setLiveSyncToast(null), 7000);
+              setTimeout(() => setLiveSyncToast(null), 8000);
             }
           } else if (
             ev.data.type === 'STUDENTS_UPDATED' ||
@@ -267,7 +322,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     window.addEventListener('si7kaih_schools_updated', handleUpdate);
     window.addEventListener('si7kaih_users_updated', handleUpdate);
     window.addEventListener('si7kaih_journals_updated', handleJournalUpdate);
-    window.addEventListener('storage', handleUpdate);
+    window.addEventListener('storage', handleStorageEvent);
 
     return () => {
       if (bc) bc.close();
@@ -276,7 +331,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       window.removeEventListener('si7kaih_schools_updated', handleUpdate);
       window.removeEventListener('si7kaih_users_updated', handleUpdate);
       window.removeEventListener('si7kaih_journals_updated', handleJournalUpdate);
-      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('storage', handleStorageEvent);
     };
   }, []);
 
@@ -485,42 +540,66 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       }
     });
 
-    // 2. Fallback ONLY if master data for this school is completely empty
-    if (schoolMasterStudents.length === 0) {
-      users.forEach((u) => {
-        if (u.role === 'STUDENT' && isClassMatch(u.className) && isSchoolMatch(u.schoolId, u.schoolName)) {
-          const sid = u.identifierValue || u.username;
-          if (!studentMap.has(u.id) && !Array.from(studentMap.values()).some((s) => s.nisn === sid)) {
-            studentMap.set(u.id, {
-              id: u.id,
-              nisn: sid,
-              name: u.name,
-              gender: (u.avatar === '👧🏻' ? 'P' : 'L') as 'L' | 'P',
-              className: u.className || activeRombel.name,
-              parentName: u.childName ? `Orang Tua ${u.name}` : '-',
-              status: 'AKTIF',
-              source: 'INPUT_MANUAL',
-              createdAt: u.createdDate || new Date().toISOString(),
-              schoolId: u.schoolId || activeSchool.id,
-              schoolName: u.schoolName || activeSchool.name,
-            });
-          }
+    // 2. Also check registered student user personas
+    users.forEach((u) => {
+      if (u.role === 'STUDENT' && isClassMatch(u.className) && isSchoolMatch(u.schoolId, u.schoolName)) {
+        const sid = u.identifierValue || u.username;
+        const exists = Array.from(studentMap.values()).some(
+          (s) => s.id === u.id || (sid && s.nisn === sid) || s.name.toLowerCase().trim() === u.name.toLowerCase().trim()
+        );
+        if (!exists) {
+          studentMap.set(u.id, {
+            id: u.id,
+            nisn: sid || '-',
+            name: u.name,
+            gender: (u.avatar === '👧🏻' ? 'P' : 'L') as 'L' | 'P',
+            className: u.className || activeRombel.name,
+            parentName: u.childName ? `Orang Tua ${u.name}` : '-',
+            status: 'AKTIF',
+            source: 'INPUT_MANUAL',
+            createdAt: u.createdDate || new Date().toISOString(),
+            schoolId: u.schoolId || activeSchool.id,
+            schoolName: u.schoolName || activeSchool.name,
+          });
         }
-      });
-    }
+      }
+    });
+
+    // 3. Resilient fallback: Also check journal submissions belonging to this class
+    syncedJournals.forEach((j) => {
+      if (isClassMatch(j.className) && (j.studentName || j.studentId || j.studentNisn)) {
+        const exists = Array.from(studentMap.values()).some(
+          (s) =>
+            (j.studentId && s.id === j.studentId) ||
+            (j.studentNisn && s.nisn === j.studentNisn) ||
+            (j.studentName && s.name.toLowerCase().trim() === j.studentName.toLowerCase().trim())
+        );
+        if (!exists) {
+          const generatedId = j.studentId || `stu-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+          studentMap.set(generatedId, {
+            id: generatedId,
+            nisn: j.studentNisn || '-',
+            name: j.studentName || 'Peserta Didik',
+            gender: 'L',
+            className: j.className || activeRombel.name,
+            parentName: '-',
+            status: 'AKTIF',
+            source: 'INPUT_MANUAL',
+            createdAt: j.journalDate || new Date().toISOString(),
+            schoolId: j.schoolId || activeSchool.id,
+            schoolName: j.schoolName || activeSchool.name,
+          });
+        }
+      }
+    });
 
     return Array.from(studentMap.values());
-  }, [students, users, activeRombel, activeSchool]);
+  }, [students, users, syncedJournals, activeRombel, activeSchool]);
 
   // Calculate synchronized student rows with journal metrics (0 when no data)
   const studentsList: StudentClassRow[] = useMemo(() => {
     return rawClassStudents.map((st) => {
       const studentJournals = syncedJournals.filter((j) => {
-        if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) {
-          if (j.schoolName && activeSchool.name && !j.schoolName.toLowerCase().includes(activeSchool.name.toLowerCase()) && !activeSchool.name.toLowerCase().includes(j.schoolName.toLowerCase())) {
-            return false;
-          }
-        }
         if (j.studentId && (j.studentId === st.id || j.studentId === st.nisn)) return true;
         if (j.studentNisn && st.nisn && j.studentNisn === st.nisn) return true;
         if (j.studentName && st.name && j.studentName.toLowerCase().trim() === st.name.toLowerCase().trim()) return true;
@@ -531,10 +610,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       let monthlyConsistency = 0;
       let completenessRate = 0;
       let lastDate = '-';
+      let totalCompletedHabits = 0;
 
       if (studentJournals.length > 0) {
-        const todayDate = new Date().toISOString().split('T')[0];
-        const todayJournal = studentJournals.find((j) => (j.journalDate || (j as any).date) === todayDate);
+        const now = new Date();
+        const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const utcTodayStr = now.toISOString().split('T')[0];
+
+        const todayJournal = studentJournals.find((j) => {
+          const d = j.journalDate || (j as any).date;
+          return d === localTodayStr || d === utcTodayStr;
+        });
+
         if (todayJournal) {
           if (todayJournal.entries) {
             completedToday = Object.values(todayJournal.entries).filter((h: any) => h?.completed).length;
@@ -545,8 +632,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           }
         }
 
-        const totalEntries = studentJournals.length;
-        let totalCompletedHabits = 0;
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const recordedDates = new Set(
+          studentJournals.map((j) => j.journalDate || (j as any).date).filter(Boolean)
+        );
+        completenessRate = Math.min(100, Math.round((recordedDates.size / daysInMonth) * 100));
+
         studentJournals.forEach((j) => {
           if (j.entries) {
             totalCompletedHabits += Object.values(j.entries).filter((h: any) => h?.completed).length;
@@ -556,23 +647,38 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             totalCompletedHabits += j.completedCount;
           }
         });
-        completenessRate = Math.min(100, Math.round((totalEntries / 30) * 100));
-        monthlyConsistency = totalEntries > 0 ? Math.min(100, Math.round((totalCompletedHabits / (totalEntries * 7)) * 100)) : 0;
-        
-        const sortedJournals = [...studentJournals].sort((a, b) => (b.journalDate || '').localeCompare(a.journalDate || ''));
+
+        monthlyConsistency = studentJournals.length > 0
+          ? Math.min(100, Math.round((totalCompletedHabits / (studentJournals.length * 7)) * 100))
+          : 0;
+
+        const sortedJournals = [...studentJournals].sort((a, b) => {
+          const da = a.journalDate || (a as any).date || '';
+          const db = b.journalDate || (b as any).date || '';
+          return db.localeCompare(da);
+        });
         lastDate = sortedJournals[0]?.journalDate || (sortedJournals[0] as any)?.date || '-';
       }
 
+      const avgCompletedHabits = studentJournals.length > 0 ? (totalCompletedHabits / studentJournals.length) : 0;
+
+      // Sync category strictly with 7 habits completion data:
+      // TERPANTAU_BAIK: >= 5.6 kebiasaan (~6-7 kebiasaan) or monthlyConsistency >= 80%
+      // PERLU_PENGUATAN: >= 3.8 kebiasaan (~4-5 kebiasaan) or monthlyConsistency >= 55%
+      // PERLU_PENDAMPINGAN: < 3.8 kebiasaan (<= 3 kebiasaan) or monthlyConsistency < 55%
       const category: EarlyWarningCategory | 'BELUM_ADA_DATA' =
         studentJournals.length === 0
           ? 'BELUM_ADA_DATA'
-          : monthlyConsistency >= 85
+          : (avgCompletedHabits >= 5.6 || monthlyConsistency >= 80)
           ? 'TERPANTAU_BAIK'
-          : monthlyConsistency >= 70
+          : (avgCompletedHabits >= 3.8 || monthlyConsistency >= 55)
           ? 'PERLU_PENGUATAN'
           : 'PERLU_PENDAMPINGAN';
 
-      const isValidated = !!teacherValidations[st.id];
+      const isValidated =
+        !!teacherValidations[st.id] ||
+        (st.nisn ? !!teacherValidations[st.nisn] : false) ||
+        studentJournals.some((j) => j.teacherValidated);
 
       return {
         id: st.id,
@@ -581,6 +687,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         completedTodayCount: Math.min(7, completedToday),
         monthlyConsistency: Math.min(100, Math.max(0, monthlyConsistency)),
         completenessRate: Math.min(100, Math.max(0, completenessRate)),
+        avgHabitsCompleted: studentJournals.length > 0 ? Math.round(avgCompletedHabits * 10) / 10 : 0,
+        totalJournalsCount: studentJournals.length,
         category,
         lastJournalDate: lastDate,
         validatedByTeacher: isValidated,
@@ -591,7 +699,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         status: st.status,
       };
     });
-  }, [rawClassStudents, syncedJournals, teacherValidations, activeSchool.id]);
+  }, [rawClassStudents, syncedJournals, teacherValidations]);
 
   const [localFollowUps, setLocalFollowUps] = useState<FollowUpPlan[]>(() => getStoredTeacherFollowUps());
   const [localPrograms, setLocalPrograms] = useState<SchoolProgram[]>(() => getStoredTeacherPrograms());
@@ -732,10 +840,127 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   const handleValidateStudent = (studentId: string) => {
     const updated = { ...teacherValidations, [studentId]: true };
+    const s = studentsList.find((st) => st.id === studentId);
+    if (s?.nisn) updated[s.nisn] = true;
     setTeacherValidations(updated);
     saveStoredValidations(updated);
-    const s = studentsList.find((st) => st.id === studentId);
+
+    if (selectedStudent && selectedStudent.id === studentId) {
+      setSelectedStudent((prev) => (prev ? { ...prev, validatedByTeacher: true } : null));
+    }
+
+    // Also notify App / backend through onValidateJournal
+    const studentJ = syncedJournals.find(
+      (j) =>
+        j.studentId === studentId ||
+        (s && s.nisn && j.studentNisn === s.nisn) ||
+        (s && j.studentName && j.studentName.toLowerCase().trim() === s.name.toLowerCase().trim())
+    );
+
+    if (studentJ && onValidateJournal) {
+      onValidateJournal(studentJ.id, undefined, 'Divalidasi oleh Wali Kelas', {
+        validatorName: activeRombel.teacher || currentPersona?.name || 'Wali Kelas',
+        asTeacher: true,
+      });
+    }
+
+    // Persist validation to journals in localStorage
+    try {
+      const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
+      if (storedJournalsStr) {
+        const list: DailyJournal[] = JSON.parse(storedJournalsStr);
+        let modified = false;
+        const nextList = list.map((j) => {
+          const match =
+            j.studentId === studentId ||
+            (s && s.nisn && j.studentNisn === s.nisn) ||
+            (s && j.studentName && j.studentName.toLowerCase().trim() === s.name.toLowerCase().trim());
+          if (match) {
+            modified = true;
+            const updatedEntries = { ...j.entries };
+            if (updatedEntries) {
+              Object.keys(updatedEntries).forEach((k) => {
+                const hCode = k as HabitCode;
+                if (updatedEntries[hCode]) {
+                  updatedEntries[hCode] = { ...updatedEntries[hCode], teacherValidated: true };
+                }
+              });
+            }
+            return {
+              ...j,
+              teacherValidated: true,
+              teacherValidatedAt: new Date().toISOString(),
+              entries: updatedEntries,
+            };
+          }
+          return j;
+        });
+        if (modified) {
+          localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextList));
+          setSyncedJournals(nextList);
+          window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: nextList }));
+        }
+      }
+    } catch (_e) {}
+
     showToast(`Jurnal ananda ${s?.name || 'siswa'} berhasil divalidasi oleh Wali Kelas.`);
+  };
+
+  const handleValidateAllToday = () => {
+    const studentsWithToday = studentsList.filter((s) => s.completedTodayCount > 0 && !s.validatedByTeacher);
+    if (studentsWithToday.length === 0) {
+      showToast('Semua siswa yang mengisi hari ini sudah tervalidasi.');
+      return;
+    }
+
+    const updated = { ...teacherValidations };
+    studentsWithToday.forEach((s) => {
+      updated[s.id] = true;
+      if (s.nisn) updated[s.nisn] = true;
+    });
+    setTeacherValidations(updated);
+    saveStoredValidations(updated);
+
+    try {
+      const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
+      if (storedJournalsStr) {
+        const list: DailyJournal[] = JSON.parse(storedJournalsStr);
+        const idsSet = new Set(studentsWithToday.map((s) => s.id));
+        const nisnsSet = new Set(studentsWithToday.map((s) => s.nisn).filter(Boolean));
+        const namesSet = new Set(studentsWithToday.map((s) => s.name.toLowerCase().trim()));
+
+        const nextList = list.map((j) => {
+          const match =
+            (j.studentId && idsSet.has(j.studentId)) ||
+            (j.studentNisn && nisnsSet.has(j.studentNisn)) ||
+            (j.studentName && namesSet.has(j.studentName.toLowerCase().trim()));
+          if (match) {
+            const updatedEntries = { ...j.entries };
+            if (updatedEntries) {
+              Object.keys(updatedEntries).forEach((k) => {
+                const hCode = k as HabitCode;
+                if (updatedEntries[hCode]) {
+                  updatedEntries[hCode] = { ...updatedEntries[hCode], teacherValidated: true };
+                }
+              });
+            }
+            return {
+              ...j,
+              teacherValidated: true,
+              teacherValidatedAt: new Date().toISOString(),
+              entries: updatedEntries,
+            };
+          }
+          return j;
+        });
+
+        localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextList));
+        setSyncedJournals(nextList);
+        window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: nextList }));
+      }
+    } catch (_e) {}
+
+    showToast(`Berhasil memvalidasi ${studentsWithToday.length} siswa yang mengisi hari ini!`);
   };
 
   // Synchronized aggregates (reset to 0 if no students or no journal entries)
@@ -747,6 +972,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const averageCompleteness = studentsList.length > 0
     ? Math.round((studentsList.reduce((acc, s) => acc + s.completenessRate, 0) / studentsList.length) * 10) / 10
     : 0;
+
+  const averageHabitsToday = useMemo(() => {
+    if (filledTodayCount === 0) return 0;
+    const totalTodayHabits = studentsList.reduce((acc, s) => acc + s.completedTodayCount, 0);
+    return Math.round((totalTodayHabits / filledTodayCount) * 10) / 10;
+  }, [studentsList, filledTodayCount]);
+
+  const classAvgHabitsPerEntry = useMemo(() => {
+    const studentsWithData = studentsList.filter((s) => (s.avgHabitsCompleted || 0) > 0);
+    if (studentsWithData.length === 0) return 0;
+    const sum = studentsWithData.reduce((acc, s) => acc + (s.avgHabitsCompleted || 0), 0);
+    return Math.round((sum / studentsWithData.length) * 10) / 10;
+  }, [studentsList]);
 
   const goodCount = studentsList.filter((s) => s.category === 'TERPANTAU_BAIK').length;
   const strengthenCount = studentsList.filter((s) => s.category === 'PERLU_PENGUATAN').length;
@@ -762,14 +1000,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const normActiveRombel = normalizeClassName(activeRombel.name);
 
     return syncedJournals.filter((j) => {
-      if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) {
-        if (j.schoolName && activeSchool.name && !j.schoolName.toLowerCase().includes(activeSchool.name.toLowerCase()) && !activeSchool.name.toLowerCase().includes(j.schoolName.toLowerCase())) {
-          return false;
-        }
-      }
-      if (studentIds.has(j.studentId)) return true;
-      if (j.studentNisn && studentNisns.has(j.studentNisn)) return true;
-      if (studentNisns.has(j.studentId)) return true;
+      if (j.studentId && (studentIds.has(j.studentId) || studentNisns.has(j.studentId))) return true;
+      if (j.studentNisn && (studentNisns.has(j.studentNisn) || studentIds.has(j.studentNisn))) return true;
       if (j.studentName && studentNames.has(j.studentName.toLowerCase().trim())) return true;
       if (j.className && normActiveRombel) {
         const normJ = normalizeClassName(j.className);
@@ -777,7 +1009,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       }
       return false;
     });
-  }, [rawClassStudents, syncedJournals, activeSchool, activeRombel]);
+  }, [rawClassStudents, syncedJournals, activeRombel]);
 
   const hasJournalData = useMemo(() => {
     return classJournals.length > 0;
@@ -794,31 +1026,44 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       { code: 'SLEEP_EARLY', name: 'Tidur Cepat' },
     ];
 
-    if (classJournals.length === 0) {
-      return habitDefinitions.map((h) => ({
-        code: h.code,
-        name: h.name,
-        percentage: 0,
-        status: 'BELUM_ADA_DATA' as const,
-      }));
-    }
-
     const totalJournalCount = classJournals.length;
+    const now = new Date();
+    const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const utcTodayStr = now.toISOString().split('T')[0];
+
+    const todayJournals = classJournals.filter((j) => {
+      const d = j.journalDate || (j as any).date;
+      return d === localTodayStr || d === utcTodayStr;
+    });
 
     return habitDefinitions.map((h) => {
+      const hCode = h.code as HabitCode;
       let completedCount = 0;
       classJournals.forEach((j) => {
-        const habitEntry = (j.entries && j.entries[h.code]) || (j.habits && j.habits[h.code]);
+        const habitEntry = (j.entries && j.entries[hCode]) || (j.habits && (j as any).habits[hCode]);
         if (habitEntry && habitEntry.completed) {
           completedCount++;
         }
       });
-      const pct = Math.min(100, Math.round((completedCount / totalJournalCount) * 100));
+
+      let todayCompletedCount = 0;
+      todayJournals.forEach((j) => {
+        const habitEntry = (j.entries && j.entries[hCode]) || (j.habits && (j as any).habits[hCode]);
+        if (habitEntry && habitEntry.completed) {
+          todayCompletedCount++;
+        }
+      });
+
+      const pct = totalJournalCount > 0 ? Math.min(100, Math.round((completedCount / totalJournalCount) * 100)) : 0;
       return {
         code: h.code,
         name: h.name,
         percentage: pct,
-        status: (pct >= 85 ? 'TERPANTAU_BAIK' : pct >= 70 ? 'PERLU_PENGUATAN' : 'PERLU_PENDAMPINGAN') as any,
+        completedCount,
+        totalCount: totalJournalCount,
+        todayCompletedCount,
+        todayTotalCount: todayJournals.length,
+        status: (pct >= 80 ? 'TERPANTAU_BAIK' : pct >= 60 ? 'PERLU_PENGUATAN' : pct > 0 ? 'PERLU_PENDAMPINGAN' : 'BELUM_ADA_DATA') as any,
       };
     });
   }, [classJournals]);
@@ -841,7 +1086,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Open real Student Dossier with true data or structured empty state
   const openStudentDossier = (s: StudentClassRow) => {
     const sJournals = syncedJournals.filter((j) => {
-      if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) return false;
       return (
         j.studentId === s.id ||
         j.studentId === s.nisn ||
@@ -916,7 +1160,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   const handleExportCsv = () => {
-    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Kelamin', 'Status Siswa', 'Nama Orang Tua', 'No. HP Orang Tua', 'Jurnal Hari Ini', 'Kelengkapan (%)', 'Konsistensi (%)', 'Kategori Monitoring', 'Validasi Guru'];
+    const headers = [
+      'No',
+      'NISN',
+      'Nama Siswa',
+      'Kelas',
+      'Jenis Kelamin',
+      'Status Siswa',
+      'Nama Orang Tua',
+      'No. HP Orang Tua',
+      'Jurnal Hari Ini',
+      'Rerata Isian Kebiasaan',
+      'Kelengkapan (%)',
+      'Konsistensi (%)',
+      'Kategori Monitoring',
+      'Validasi Guru',
+    ];
     const rows = filteredStudents.map((s, idx) => [
       idx + 1,
       `"${s.nisn}"`,
@@ -927,9 +1186,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       `"${s.parentName || '-'}"`,
       `"${s.parentPhone || '-'}"`,
       `"${s.completedTodayCount}/7"`,
+      `"${s.avgHabitsCompleted || 0}/7"`,
       `${s.completenessRate}%`,
       `${s.monthlyConsistency}%`,
-      s.category,
+      s.category === 'TERPANTAU_BAIK'
+        ? 'Terpantau Baik'
+        : s.category === 'PERLU_PENGUATAN'
+        ? 'Perlu Penguatan'
+        : s.category === 'PERLU_PENDAMPINGAN'
+        ? 'Perlu Pendampingan'
+        : 'Belum Ada Data',
       s.validatedByTeacher ? 'Tervalidasi' : 'Belum Divalidasi',
     ]);
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
@@ -1118,11 +1384,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('MONITORING')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'MONITORING' ? 'bg-white text-[#0753A5] shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Matriks 7KAIH
+            <span>Kategori Monitoring (7KAIH)</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              activeTab === 'MONITORING' ? 'bg-blue-100 text-[#0753A5]' : 'bg-slate-200 text-slate-700'
+            }`}>
+              {studentsList.length}
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('STUDENTS')}
@@ -1222,44 +1493,66 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </p>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Distribusi Pemantauan
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="Terpantau Baik">
-                  {goodCount} Baik
-                </span>
-                <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-xs font-bold" title="Perlu Penguatan">
-                  {strengthenCount} Penguatan
-                </span>
-                <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-xs font-bold" title="Perlu Pendampingan">
-                  {supportCount} Damping
-                </span>
-                {unupdatedCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-xs font-bold" title="Belum Ada Data">
-                    {unupdatedCount} Belum Ada Data
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Distribusi Kategori Monitoring
                   </span>
-                )}
+                  <button
+                    onClick={() => setActiveTab('MONITORING')}
+                    className="text-[11px] font-bold text-[#0753A5] hover:underline cursor-pointer"
+                  >
+                    Tab Monitoring →
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="Terpantau Baik (≥6 Kebiasaan / ≥80%)">
+                    {goodCount} Baik
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-xs font-bold" title="Perlu Penguatan (4-5 Kebiasaan / 55-79%)">
+                    {strengthenCount} Penguatan
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-xs font-bold" title="Perlu Pendampingan (≤3 Kebiasaan / <55%)">
+                    {supportCount} Damping
+                  </span>
+                  {unupdatedCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-xs font-bold" title="Belum Ada Data">
+                      {unupdatedCount} Belum Ada Data
+                    </span>
+                  )}
+                </div>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">
-                *Kategori monitoring internal kelas
+              <p className="text-[10px] text-slate-400 mt-2">
+                *Sinkron dengan kelengkapan isian 7 kebiasaan {studentsList.length} siswa rombel {activeRombel.name}
               </p>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Validasi Wali Kelas Hari Ini
-              </span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-slate-900">{validatedCount} / {totalStudentsCount}</span>
-                <span className={`text-xs font-semibold ${totalStudentsCount === 0 ? 'text-slate-400' : totalStudentsCount - validatedCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {totalStudentsCount === 0 ? 'Belum Ada Siswa' : totalStudentsCount - validatedCount > 0 ? `${totalStudentsCount - validatedCount} Menunggu` : 'Semua Tervalidasi'}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Validasi Wali Kelas Hari Ini
                 </span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-2xl font-black text-slate-900">{validatedCount} / {totalStudentsCount}</span>
+                  <span className={`text-xs font-semibold ${totalStudentsCount === 0 ? 'text-slate-400' : totalStudentsCount - validatedCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {totalStudentsCount === 0 ? 'Belum Ada Siswa' : totalStudentsCount - validatedCount > 0 ? `${totalStudentsCount - validatedCount} Menunggu` : 'Semua Tervalidasi'}
+                  </span>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Validasi cepat memastikan akurasi data
-              </p>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {filledTodayCount} siswa isi hari ini
+                </span>
+                {studentsList.some((s) => s.completedTodayCount > 0 && !s.validatedByTeacher) && (
+                  <button
+                    onClick={handleValidateAllToday}
+                    className="text-[11px] font-bold text-[#0753A5] hover:underline cursor-pointer"
+                  >
+                    Validasi Semua
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1361,7 +1654,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               />
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {studentsList.some((s) => s.completedTodayCount > 0 && !s.validatedByTeacher) && (
+                <button
+                  onClick={handleValidateAllToday}
+                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                  title="Validasi sekaligus semua murid yang mengisi jurnal hari ini"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Validasi Semua Hari Ini</span>
+                </button>
+              )}
               <button
                 onClick={handleExportCsv}
                 className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -1560,23 +1863,242 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       {activeTab === 'MONITORING' && (
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
             <div>
-              <h3 className="text-base font-black text-slate-900">
-                Matriks Monitoring 7 Kebiasaan Anak Indonesia Hebat
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Pemetaan konsistensi lintas 7 dimensi kebiasaan untuk identifikasi kebutuhan penguatan kelompok tanpa perankingan atau pelabelan.
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-black text-slate-900">
+                  Kategori Monitoring & Matriks 7 Kebiasaan Anak Indonesia Hebat
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-[#0753A5]">
+                  {activeRombel.name} ({activeRombel.phase || 'Fase D'})
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Tersinkronisasi Data Jurnal
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
+                Sinkronisasi komprehensif data dashboard kelas pada info tab kategori monitoring dengan data kelengkapan isian 7 kebiasaan peserta didik secara objektif, transparan, dan non-punitif.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {studentsList.some((s) => s.completedTodayCount > 0 && !s.validatedByTeacher) && (
+                <button
+                  onClick={handleValidateAllToday}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white cursor-pointer shadow-xs transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Validasi Semua Hari Ini</span>
+                </button>
+              )}
               <button
                 onClick={handleExportCsv}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer shadow-xs transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Unduh Rekap</span>
+                <span>Unduh Rekap CSV</span>
               </button>
+            </div>
+          </div>
+
+          {/* 4 Synchronized Category & Completeness Metrics Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Terpantau Baik */}
+            <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Terpantau Baik
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-200/70 text-emerald-800">
+                    ≥ 6 Kebiasaan
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-black text-emerald-950">{goodCount}</span>
+                  <span className="text-xs font-semibold text-emerald-700">
+                    Siswa ({totalStudentsCount > 0 ? Math.round((goodCount / totalStudentsCount) * 100) : 0}%)
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-800 mt-1 leading-tight">
+                  Konsistensi ≥ 80% atau rerata 6-7 kebiasaan mandiri terisi tertib.
+                </p>
+              </div>
+              <div className="w-full bg-emerald-200/60 h-1.5 rounded-full mt-3 overflow-hidden">
+                <div
+                  className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${totalStudentsCount > 0 ? (goodCount / totalStudentsCount) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Card 2: Perlu Penguatan */}
+            <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    Perlu Penguatan
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-200/70 text-amber-800">
+                    4-5 Kebiasaan
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-black text-amber-950">{strengthenCount}</span>
+                  <span className="text-xs font-semibold text-amber-700">
+                    Siswa ({totalStudentsCount > 0 ? Math.round((strengthenCount / totalStudentsCount) * 100) : 0}%)
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 mt-1 leading-tight">
+                  Konsistensi 55-79% atau rerata 4-5 kebiasaan mandiri terisi.
+                </p>
+              </div>
+              <div className="w-full bg-amber-200/60 h-1.5 rounded-full mt-3 overflow-hidden">
+                <div
+                  className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${totalStudentsCount > 0 ? (strengthenCount / totalStudentsCount) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Card 3: Perlu Pendampingan */}
+            <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/80 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-rose-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                    Perlu Pendampingan
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-200/70 text-rose-800">
+                    ≤ 3 Kebiasaan
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-black text-rose-950">{supportCount}</span>
+                  <span className="text-xs font-semibold text-rose-700">
+                    Siswa ({totalStudentsCount > 0 ? Math.round((supportCount / totalStudentsCount) * 100) : 0}%)
+                  </span>
+                </div>
+                <p className="text-[11px] text-rose-800 mt-1 leading-tight">
+                  Konsistensi &lt; 55% atau rerata ≤ 3 kebiasaan terisi berkala.
+                </p>
+              </div>
+              <div className="w-full bg-rose-200/60 h-1.5 rounded-full mt-3 overflow-hidden">
+                <div
+                  className="bg-rose-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${totalStudentsCount > 0 ? (supportCount / totalStudentsCount) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Card 4: Kelengkapan Isian 7 Kebiasaan */}
+            <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200/80 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                    Kelengkapan Isian Kelas
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-200/70 text-blue-800">
+                    Hari Ini
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-black text-blue-950">{filledTodayCount}/{totalStudentsCount}</span>
+                  <span className="text-xs font-semibold text-blue-700">
+                    Siswa ({totalStudentsCount > 0 ? Math.round((filledTodayCount / totalStudentsCount) * 100) : 0}%)
+                  </span>
+                </div>
+                <p className="text-[11px] text-blue-800 mt-1 leading-tight">
+                  Rerata terisi hari ini: <strong>{averageHabitsToday} / 7 kebiasaan</strong> • Kelengkapan bulanan: <strong>{averageCompleteness}%</strong>
+                </p>
+              </div>
+              <div className="w-full bg-blue-200/60 h-1.5 rounded-full mt-3 overflow-hidden">
+                <div
+                  className="bg-[#0753A5] h-full rounded-full transition-all duration-500"
+                  style={{ width: `${totalStudentsCount > 0 ? (filledTodayCount / totalStudentsCount) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Panel Rincian Kelengkapan 7 Dimensi Kebiasaan 7KAIH */}
+          <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-900">
+                  Tingkat Keterlaksanaan 7 Dimensi Kebiasaan Kelas {activeRombel.name}
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">
+                  Rerata Kelas: {classAvgHabitsPerEntry} / 7 Kebiasaan
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-500">
+                Data terakumulasi dari seluruh isian jurnal siswa rombel ini
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
+              {classHabitStats.map((stat) => {
+                const habitMeta: Record<string, { icon: string; shortName: string }> = {
+                  WAKE_EARLY: { icon: '🌅', shortName: 'Pagi' },
+                  WORSHIP: { icon: '🕌', shortName: 'Ibadah' },
+                  EXERCISE: { icon: '🏃', shortName: 'Olahraga' },
+                  HEALTHY_EATING: { icon: '🥗', shortName: 'Makan Sehat' },
+                  LEARNING: { icon: '📚', shortName: 'Belajar' },
+                  SOCIAL: { icon: '🤝', shortName: 'Bermasyarakat' },
+                  SLEEP_EARLY: { icon: '🌙', shortName: 'Tidur' },
+                };
+                const meta = habitMeta[stat.code] || { icon: '✨', shortName: stat.name };
+                const isHigh = stat.percentage >= 80;
+                const isMedium = stat.percentage >= 55;
+                const badgeColor =
+                  stat.percentage === 0
+                    ? 'bg-slate-100 text-slate-600 border-slate-200'
+                    : isHigh
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : isMedium
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200';
+
+                return (
+                  <div
+                    key={stat.code}
+                    className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs space-y-1.5 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-base">{meta.icon}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${badgeColor}`}>
+                          {stat.percentage}%
+                        </span>
+                      </div>
+                      <div className="font-bold text-slate-900 text-xs mt-1 truncate" title={stat.name}>
+                        {meta.shortName}
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        {stat.todayCompletedCount} siswa hari ini
+                      </div>
+                    </div>
+                    <div>
+                      <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            stat.percentage >= 80 ? 'bg-emerald-500' : stat.percentage >= 55 ? 'bg-amber-500' : stat.percentage > 0 ? 'bg-rose-500' : 'bg-slate-200'
+                          }`}
+                          style={{ width: `${stat.percentage}%` }}
+                        />
+                      </div>
+                      <div className="text-[9px] text-slate-400 mt-1 text-right">
+                        {stat.completedCount} entri
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -1622,12 +2144,96 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           </div>
 
+          {/* Filter & Search Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-slate-500">Filter Kategori:</span>
+              <button
+                onClick={() => setCategoryFilter('ALL')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  categoryFilter === 'ALL'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Semua ({studentsList.length})
+              </button>
+              <button
+                onClick={() => setCategoryFilter('TERPANTAU_BAIK')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  categoryFilter === 'TERPANTAU_BAIK'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                }`}
+              >
+                <span>Terpantau Baik</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30 font-bold">
+                  {goodCount}
+                </span>
+              </button>
+              <button
+                onClick={() => setCategoryFilter('PERLU_PENGUATAN')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  categoryFilter === 'PERLU_PENGUATAN'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                <span>Perlu Penguatan</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30 font-bold">
+                  {strengthenCount}
+                </span>
+              </button>
+              <button
+                onClick={() => setCategoryFilter('PERLU_PENDAMPINGAN')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  categoryFilter === 'PERLU_PENDAMPINGAN'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                }`}
+              >
+                <span>Perlu Pendampingan</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30 font-bold">
+                  {supportCount}
+                </span>
+              </button>
+              {unupdatedCount > 0 && (
+                <button
+                  onClick={() => setCategoryFilter('BELUM_ADA_DATA' as any)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                    (categoryFilter as string) === 'BELUM_ADA_DATA'
+                      ? 'bg-slate-700 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>Belum Ada Data</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30 font-bold">
+                    {unupdatedCount}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            <div className="relative min-w-[220px]">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Cari siswa atau NISN..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0753A5]"
+              />
+            </div>
+          </div>
+
           {/* Matrix Table */}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto border border-slate-200/80 rounded-2xl">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-500 font-bold bg-slate-50/60">
+                <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50/80">
                   <th className="py-3 px-3">Siswa</th>
+                  <th className="py-3 px-2 text-center" title="Kelengkapan Hari Ini">Hari Ini</th>
+                  <th className="py-3 px-2 text-center" title="Rata-rata Isian">Rerata Isian</th>
                   <th className="py-3 px-2 text-center" title="Bangun Pagi">🌅 Pagi</th>
                   <th className="py-3 px-2 text-center" title="Beribadah">🕌 Ibadah</th>
                   <th className="py-3 px-2 text-center" title="Berolahraga">🏃 Olahraga</th>
@@ -1637,20 +2243,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <th className="py-3 px-2 text-center" title="Tidur Cepat">🌙 Tidur</th>
                   <th className="py-3 px-3 text-center">Konsistensi</th>
                   <th className="py-3 px-3">Kategori Monitoring</th>
+                  <th className="py-3 px-2 text-center">Validasi Guru</th>
                   <th className="py-3 px-3 text-center">Dossier</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-8 text-center text-slate-400">
-                      Belum ada data siswa untuk rombel ini.
+                    <td colSpan={14} className="py-8 text-center text-slate-400">
+                      Tidak ada siswa yang sesuai dengan filter ini.
                     </td>
                   </tr>
                 ) : (
                   filteredStudents.map((s) => {
                     const studentJournals = syncedJournals.filter((j) => {
-                      if (j.schoolId && activeSchool.id && activeSchool.id !== 'sch-default' && j.schoolId !== activeSchool.id) return false;
                       return (
                         j.studentId === s.id ||
                         j.studentId === s.nisn ||
@@ -1661,58 +2267,132 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     const hasStudentJournal = studentJournals.length > 0;
 
                     const getHabitStatus = (habitKey: string) => {
-                      if (!hasStudentJournal) return { label: '-', className: 'bg-slate-100 text-slate-400' };
+                      if (!hasStudentJournal) return { label: '-', className: 'bg-slate-100 text-slate-400', title: 'Belum ada data' };
                       let completedCount = 0;
                       studentJournals.forEach((j) => {
                         const entry = (j.entries && j.entries[habitKey]) || (j.habits && j.habits[habitKey]);
                         if (entry && entry.completed) completedCount++;
                       });
                       const rate = Math.round((completedCount / studentJournals.length) * 100);
-                      if (rate >= 80) return { label: '✓', className: 'bg-emerald-100 text-emerald-700' };
-                      if (rate >= 50) return { label: '•', className: 'bg-amber-100 text-amber-700' };
-                      return { label: '!', className: 'bg-rose-100 text-rose-700' };
+                      if (rate >= 80) return { label: '✓', className: 'bg-emerald-100 text-emerald-700', title: `Terbiasa Mandiri (${rate}% - ${completedCount}/${studentJournals.length} entri)` };
+                      if (rate >= 50) return { label: '•', className: 'bg-amber-100 text-amber-700', title: `Sedang Dikuatkan (${rate}% - ${completedCount}/${studentJournals.length} entri)` };
+                      return { label: '!', className: 'bg-rose-100 text-rose-700', title: `Perlu Pendampingan (${rate}% - ${completedCount}/${studentJournals.length} entri)` };
                     };
+
+                    const todayPillColor =
+                      s.completedTodayCount >= 6
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : s.completedTodayCount >= 4
+                        ? 'bg-amber-100 text-amber-800'
+                        : s.completedTodayCount > 0
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-slate-100 text-slate-400';
 
                     return (
                       <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-2.5 px-3">
                           <div className="font-bold text-slate-900">{s.name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{s.nisn}</div>
+                          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
+                            <span>{s.nisn}</span>
+                            {s.gender && (
+                              <span className="text-[9px] px-1 rounded bg-slate-100 text-slate-600">
+                                {s.gender}
+                              </span>
+                            )}
+                          </div>
                         </td>
+
+                        {/* Kelengkapan Hari Ini */}
+                        <td className="py-2.5 px-2 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[11px] ${todayPillColor}`}>
+                            {s.completedTodayCount > 0 ? `${s.completedTodayCount}/7` : '0/7'}
+                          </span>
+                        </td>
+
+                        {/* Rerata Isian */}
+                        <td className="py-2.5 px-2 text-center">
+                          <span className="font-mono font-bold text-slate-800">
+                            {s.avgHabitsCompleted ? `${s.avgHabitsCompleted}/7` : '-'}
+                          </span>
+                          <div className="text-[9px] text-slate-400">
+                            {s.completenessRate}% entri
+                          </div>
+                        </td>
+
+                        {/* 7 Kebiasaan */}
                         {['WAKE_EARLY', 'WORSHIP', 'EXERCISE', 'HEALTHY_EATING', 'LEARNING', 'SOCIAL', 'SLEEP_EARLY'].map((hKey) => {
                           const status = getHabitStatus(hKey);
                           return (
                             <td key={hKey} className="py-2.5 px-2 text-center">
-                              <span className={`inline-block w-6 h-6 rounded-full font-bold text-[10px] leading-6 ${status.className}`}>
+                              <span
+                                title={status.title}
+                                className={`inline-block w-6 h-6 rounded-full font-bold text-[10px] leading-6 cursor-help ${status.className}`}
+                              >
                                 {status.label}
                               </span>
                             </td>
                           );
                         })}
+
+                        {/* Konsistensi */}
                         <td className="py-2.5 px-3 text-center">
                           <span className="font-mono font-bold text-slate-800">{s.monthlyConsistency}%</span>
                         </td>
+
+                        {/* Kategori Monitoring */}
                         <td className="py-2.5 px-3">
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              s.category === 'TERPANTAU_BAIK'
-                                ? 'bg-emerald-100 text-emerald-800'
+                          <div className="flex flex-col gap-0.5">
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-block w-fit ${
+                                s.category === 'TERPANTAU_BAIK'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : s.category === 'PERLU_PENGUATAN'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : s.category === 'PERLU_PENDAMPINGAN'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {s.category === 'TERPANTAU_BAIK'
+                                ? 'Terpantau Baik'
                                 : s.category === 'PERLU_PENGUATAN'
-                                ? 'bg-amber-100 text-amber-800'
+                                ? 'Perlu Penguatan'
                                 : s.category === 'PERLU_PENDAMPINGAN'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {s.category === 'TERPANTAU_BAIK'
-                              ? 'Terpantau Baik'
-                              : s.category === 'PERLU_PENGUATAN'
-                              ? 'Perlu Penguatan'
-                              : s.category === 'PERLU_PENDAMPINGAN'
-                              ? 'Perlu Pendampingan'
-                              : 'Belum Ada Data'}
-                          </span>
+                                ? 'Perlu Pendampingan'
+                                : 'Belum Ada Data'}
+                            </span>
+                            <span className="text-[9px] text-slate-400">
+                              {s.category === 'TERPANTAU_BAIK'
+                                ? '≥ 6 kebiasaan'
+                                : s.category === 'PERLU_PENGUATAN'
+                                ? '4 - 5 kebiasaan'
+                                : s.category === 'PERLU_PENDAMPINGAN'
+                                ? '≤ 3 kebiasaan'
+                                : 'Belum isi jurnal'}
+                            </span>
+                          </div>
                         </td>
+
+                        {/* Validasi Guru */}
+                        <td className="py-2.5 px-2 text-center">
+                          {s.validatedByTeacher ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span>Valid</span>
+                            </span>
+                          ) : s.completedTodayCount > 0 || hasStudentJournal ? (
+                            <button
+                              onClick={() => handleValidateStudent(s.id)}
+                              className="px-2 py-0.5 rounded-md bg-[#0753A5] hover:bg-blue-700 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
+                            >
+                              Validasi
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">-</span>
+                          )}
+                        </td>
+
+                        {/* Dossier */}
                         <td className="py-2.5 px-3 text-center">
                           <button
                             onClick={() => openStudentDossier(s)}
@@ -1729,8 +2409,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </tbody>
             </table>
           </div>
-          <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-100">
-            Keterangan Simbol: (✓) Terbiasa Mandiri • (•) Sedang Dikuatkan • (!) Perlu Pendampingan Khusus Bersama Keluarga • (-) Belum Ada Data Jurnal.
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+            <div>
+              <strong>Keterangan Simbol:</strong> (✓) Terbiasa Mandiri (≥80%) • (•) Sedang Dikuatkan (50-79%) • (!) Perlu Pendampingan (&lt;50%) • (-) Belum Ada Data Jurnal.
+            </div>
+            <div className="text-slate-500 italic">
+              *Catatan Etis: Kategori monitoring merupakan instrumen diagnostik pendampingan karakter internal, bukan perankingan atau pelabelan siswa.
+            </div>
           </div>
         </div>
       )}

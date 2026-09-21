@@ -235,14 +235,12 @@ export const isDeprecatedOrDummyJournal = (j: any): boolean => {
   const sName = (j.studentName || '').toLowerCase().trim();
   const jId = (j.id || '').toLowerCase().trim();
 
-  // Exclude legacy mock student journals and test data
+  // Exclude legacy mock student journals and test data only
   if (
-    sId === 'usr-student-01' ||
-    sId === 'usr-student-02' ||
     sId.includes('sample-01') ||
     sId.includes('dummy') ||
-    jId.includes('sample') ||
-    sName.includes('budi pratama') ||
+    jId.includes('sample-01') ||
+    jId.includes('dummy') ||
     sName.includes('siswa contoh') ||
     sName.includes('ananda dummy')
   ) {

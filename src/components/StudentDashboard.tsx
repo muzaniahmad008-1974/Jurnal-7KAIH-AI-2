@@ -38,6 +38,10 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  HelpCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { formatRealtimeSaveTime } from '../lib/dateUtils';
 import { ParentSignatureModal } from './ParentSignatureModal';
@@ -51,6 +55,8 @@ interface StudentDashboardProps {
   onOpenBadges: () => void;
   onOpenAICoach: () => void;
   studentName: string;
+  studentId?: string;
+  studentNisn?: string;
   className: string;
   badges: Badge[];
   onValidateJournal?: (
@@ -65,6 +71,8 @@ interface StudentDashboardProps {
       asParent?: boolean;
     }
   ) => void;
+  onSelectDate?: (dateStr: string) => void;
+  onOpenCalendar?: () => void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -76,17 +84,49 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   onOpenBadges,
   onOpenAICoach,
   studentName,
+  studentId,
+  studentNisn,
   className,
   badges,
   onValidateJournal,
+  onSelectDate,
+  onOpenCalendar,
 }) => {
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState<boolean>(false);
   const [selectedJournalToSign, setSelectedJournalToSign] = useState<DailyJournal | null>(null);
   const [showValidationSettings, setShowValidationSettings] = useState<boolean>(false);
   const [showPastJournals, setShowPastJournals] = useState<boolean>(false);
+  const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
+  const [selectedHabitEval, setSelectedHabitEval] = useState<HabitCode | 'ALL'>('ALL');
+  const [showHabitsDetail, setShowHabitsDetail] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(() =>
     new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   );
+
+  // Dedicated Calendar View State inside Student Dashboard
+  const [calDate, setCalDate] = useState<Date>(() => new Date());
+  const [calHabitFilter, setCalHabitFilter] = useState<HabitCode | 'ALL'>('ALL');
+
+  // Local synced journals state guaranteeing immediate reactive synchronization
+  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
+    try {
+      const saved = localStorage.getItem('si7kaih_journals_prod');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (_e) {}
+    return allJournals || [];
+  });
+
+  // Keep syncedJournals in lockstep with allJournals prop
+  useEffect(() => {
+    if (allJournals) {
+      setSyncedJournals(allJournals);
+    }
+  }, [allJournals]);
 
   // Parent validation mode preference:
   // 'BOTH' (default): Bisa divalidasi di Dashboard Murid maupun Dashboard Orang Tua
@@ -108,12 +148,26 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     } catch (_e) {}
   };
 
-  // Real-time synchronization listeners for journal updates from Parent Dashboard or other tabs
+  // Real-time synchronization listeners for journal updates from form, other tabs, or parent validations
   useEffect(() => {
-    const handleSync = () => {
+    const handleSync = (evt?: Event) => {
       setLastSyncTime(
         new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       );
+      try {
+        const customEvt = evt as CustomEvent<DailyJournal[]>;
+        if (customEvt?.detail && Array.isArray(customEvt.detail)) {
+          setSyncedJournals(customEvt.detail);
+          return;
+        }
+        const saved = localStorage.getItem('si7kaih_journals_prod');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setSyncedJournals(parsed);
+          }
+        }
+      } catch (_e) {}
     };
 
     window.addEventListener('si7kaih_journals_updated', handleSync);
@@ -128,7 +182,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       try {
         bc = new BroadcastChannel('si7kaih_sync_channel');
         bc.onmessage = (msg) => {
-          if (msg.data?.type === 'JOURNALS_UPDATED') {
+          if (
+            msg.data?.type === 'JOURNALS_UPDATED' ||
+            msg.data?.type === 'STUDENT_UPDATED' ||
+            msg.data?.type === 'MASTER_DATA_SYNC'
+          ) {
             handleSync();
           }
         };
@@ -141,6 +199,25 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     };
   }, []);
 
+  const handleManualSync = () => {
+    setIsManualSyncing(true);
+    setLastSyncTime(
+      new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    );
+    try {
+      const saved = localStorage.getItem('si7kaih_journals_prod');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setSyncedJournals(parsed);
+        }
+      }
+    } catch (_e) {}
+    setTimeout(() => {
+      setIsManualSyncing(false);
+    }, 400);
+  };
+
   const habitsIconMap = {
     WAKE_EARLY: Sun,
     WORSHIP: HeartHandshake,
@@ -151,18 +228,121 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     SLEEP_EARLY: Moon,
   };
 
-  // Monthly Habit Calculations (Pure analytics formulas)
-  const daysInMonth = 31;
-  const recordedDays = allJournals.length;
-  // Calculate average completed days for Wake Early as flagship example
-  const wakeCompletedDays = allJournals.filter((j) => j.entries?.WAKE_EARLY?.completed).length;
-  const monthlySummary = calculateMonthlyHabitSummary(wakeCompletedDays, recordedDays, daysInMonth);
+  // 1. Accurate filtering of journals belonging to the active student
+  const studentJournals = useMemo(() => {
+    const baseList = syncedJournals.length > 0 ? syncedJournals : (allJournals || []);
+    const targetId = (studentId || todayJournal?.studentId || '').trim().toLowerCase();
+    const targetNisn = (studentNisn || todayJournal?.studentNisn || '').trim();
+    const targetName = (studentName || todayJournal?.studentName || '').trim().toLowerCase();
 
-  // Derive active month name synchronized with updated journal data
-  const activeMonthLabel = useMemo(() => {
-    if (allJournals && allJournals.length > 0) {
-      const dates = allJournals
-        .map((j) => j.journalDate || (j as any).date)
+    const filtered = baseList.filter((j) => {
+      if (targetId && j.studentId && j.studentId.toLowerCase() === targetId) return true;
+      if (targetNisn && j.studentNisn && j.studentNisn === targetNisn) return true;
+      if (targetName && j.studentName && j.studentName.trim().toLowerCase() === targetName) return true;
+      if (!j.studentId && !j.studentNisn && !j.studentName) return true;
+      return false;
+    });
+
+    // Merge with todayJournal to guarantee 0-latency reflection of today's journal state
+    if (todayJournal?.journalDate) {
+      const existsIdx = filtered.findIndex((j) => j.journalDate === todayJournal.journalDate);
+      if (existsIdx >= 0) {
+        filtered[existsIdx] = todayJournal;
+      } else if ((todayJournal.completedCount || 0) > 0 || Object.values(todayJournal.entries || {}).some((e: any) => e?.completed)) {
+        filtered.push(todayJournal);
+      }
+    }
+
+    return filtered;
+  }, [syncedJournals, allJournals, studentId, studentNisn, todayJournal, studentName]);
+
+  // Calendar state derivations for monthly view inside Student Dashboard
+  const calYear = calDate.getFullYear();
+  const calMonth = calDate.getMonth();
+  const calDaysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const calFirstDayIndex = new Date(calYear, calMonth, 1).getDay(); // 0 = Sunday
+  const calMonthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  const calMonthLabel = calMonthNames[calMonth];
+
+  const calMonthJournals = useMemo(() => {
+    const prefix = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
+    return studentJournals.filter((j) => j.journalDate && j.journalDate.startsWith(prefix));
+  }, [studentJournals, calYear, calMonth]);
+
+  const calJournalMap = useMemo(() => {
+    const map = new Map<string, DailyJournal>();
+    studentJournals.forEach((j) => {
+      map.set(j.journalDate, j);
+    });
+    if (todayJournal?.journalDate) {
+      map.set(todayJournal.journalDate, todayJournal);
+    }
+    return map;
+  }, [studentJournals, todayJournal]);
+
+  const calRecordedDays = useMemo(() => {
+    const dates = new Set(
+      calMonthJournals
+        .filter((j) => (j.completedCount || 0) > 0 || Object.values(j.entries || {}).some((e: any) => e?.completed))
+        .map((j) => j.journalDate)
+    );
+    return dates.size;
+  }, [calMonthJournals]);
+
+  const calHabitualDays = useMemo(() => {
+    return calMonthJournals.filter((j) => (j.completedCount || 0) >= 6).length;
+  }, [calMonthJournals]);
+
+  const calAverageHabits = useMemo(() => {
+    if (calRecordedDays === 0) return 0;
+    const total = calMonthJournals.reduce((acc, j) => {
+      const cnt = j.completedCount ?? Object.values(j.entries || {}).filter((e: any) => e?.completed).length;
+      return acc + cnt;
+    }, 0);
+    return Math.round((total / calRecordedDays) * 10) / 10;
+  }, [calMonthJournals, calRecordedDays]);
+
+  const calValidatedDays = useMemo(() => {
+    return calMonthJournals.filter(
+      (j) => j.parentValidated || Object.values(j.entries || {}).some((e: any) => e?.parentValidated)
+    ).length;
+  }, [calMonthJournals]);
+
+  const calTargetThreshold = calculateHabitualThreshold(calDaysInMonth);
+  const calCompletenessRate = Math.round((calRecordedDays / calDaysInMonth) * 100);
+
+  const isCalCurrentMonth = useMemo(() => {
+    const now = new Date();
+    return now.getFullYear() === calYear && now.getMonth() === calMonth;
+  }, [calYear, calMonth]);
+
+  const handlePrevCalMonth = () => {
+    setCalDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+  const handleNextCalMonth = () => {
+    setCalDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+  const handleTodayCalMonth = () => {
+    setCalDate(new Date());
+  };
+
+  const handleDayClick = (dateStr: string) => {
+    if (onSelectDate) {
+      onSelectDate(dateStr);
+    } else if (dateStr === todayJournal?.journalDate) {
+      onOpenJournal();
+    }
+  };
+
+  const calDayHeaders = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+  const { activeYear, activeMonthIdx, daysInMonth, activeMonthLabel } = useMemo(() => {
+    let d = new Date();
+    if (studentJournals.length > 0) {
+      const dates = studentJournals
+        .map((j) => j.journalDate)
         .filter(Boolean)
         .sort((a, b) => b.localeCompare(a));
       if (dates[0]) {
@@ -171,14 +351,75 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           const y = parseInt(parts[0], 10);
           const m = parseInt(parts[1], 10);
           if (!isNaN(y) && !isNaN(m)) {
-            const d = new Date(y, m - 1, 1);
-            return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+            d = new Date(y, m - 1, 1);
           }
         }
       }
     }
-    return new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-  }, [allJournals]);
+    const year = d.getFullYear();
+    const monthIdx = d.getMonth();
+    const days = new Date(year, monthIdx + 1, 0).getDate();
+    const label = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    return { activeYear: year, activeMonthIdx: monthIdx, daysInMonth: days, activeMonthLabel: label };
+  }, [studentJournals]);
+
+  // 3. Filter journals for active month
+  const currentMonthJournals = useMemo(() => {
+    const prefix = `${activeYear}-${String(activeMonthIdx + 1).padStart(2, '0')}`;
+    return studentJournals.filter((j) => j.journalDate && j.journalDate.startsWith(prefix));
+  }, [studentJournals, activeYear, activeMonthIdx]);
+
+  // 4. Threshold & Recorded Days Calculation
+  const targetThreshold = calculateHabitualThreshold(daysInMonth);
+  const recordedDays = useMemo(() => {
+    const dates = new Set(
+      currentMonthJournals
+        .filter((j) => (j.completedCount || 0) > 0 || Object.values(j.entries || {}).some((e: any) => e?.completed))
+        .map((j) => j.journalDate)
+    );
+    return dates.size;
+  }, [currentMonthJournals]);
+
+  // 5. Dimension-by-dimension calculation for all 7 habits
+  const habitsEvaluation = useMemo(() => {
+    return HABIT_LIST.map((h) => {
+      const completedDays = currentMonthJournals.filter(
+        (j) => j.entries?.[h.code]?.completed
+      ).length;
+      const isHabitual = completedDays >= targetThreshold;
+      const consistencyRate = recordedDays > 0 ? Math.round((completedDays / recordedDays) * 100) : 0;
+      const progressPercent = Math.min(100, Math.round((completedDays / targetThreshold) * 100));
+
+      return {
+        code: h.code,
+        name: h.name,
+        completedDays,
+        targetThreshold,
+        isHabitual,
+        consistencyRate,
+        progressPercent,
+      };
+    });
+  }, [currentMonthJournals, targetThreshold, recordedDays]);
+
+  // 6. Aggregated metrics across 7 habits
+  const habitualCount = useMemo(() => {
+    return habitsEvaluation.filter((h) => h.isHabitual).length;
+  }, [habitsEvaluation]);
+
+  const averageCompletedDays = useMemo(() => {
+    if (habitsEvaluation.length === 0) return 0;
+    const total = habitsEvaluation.reduce((acc, h) => acc + h.completedDays, 0);
+    return Math.round((total / habitsEvaluation.length) * 10) / 10;
+  }, [habitsEvaluation]);
+
+  const completenessRate = Math.round((recordedDays / daysInMonth) * 100);
+
+  // 7. Active evaluation data based on selected dimension
+  const currentHabitEval = useMemo(() => {
+    if (selectedHabitEval === 'ALL') return null;
+    return habitsEvaluation.find((h) => h.code === selectedHabitEval) || null;
+  }, [selectedHabitEval, habitsEvaluation]);
 
   const completedCount = todayJournal?.completedCount || 0;
   const isAllCompleted = completedCount === 7;
@@ -192,10 +433,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     return null;
   }, [todayJournal]);
 
-  // Real consecutive streak calculation
+  // Real consecutive streak calculation specifically for this student
   const streakDays = useMemo(() => {
-    return allJournals.filter((j) => (j.completedCount || 0) >= 5).length;
-  }, [allJournals]);
+    return studentJournals.filter((j) => (j.completedCount || 0) >= 5).length;
+  }, [studentJournals]);
 
   return (
     <div className="space-y-6">
@@ -357,6 +598,278 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ============================================================================ */}
+      {/* INFO KALENDER KEBIASAAN 7KAIH (Sinkron Realtime dengan Jurnal Murid) */}
+      {/* ============================================================================ */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-5 transition-all">
+        {/* Calendar Header & Month Navigation Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 text-[#0753A5] flex items-center justify-center shrink-0 shadow-2xs">
+              <Calendar className="w-5 h-5 text-[#0753A5]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-black text-slate-900">
+                  Kalender Kebiasaan 7KAIH: {calMonthLabel} {calYear}
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Sinkron Realtime: {lastSyncTime} WITA
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Jejak pembiasaan karakter harian ananda <span className="font-bold text-slate-700">{studentName}</span>. Otomatis diperbarui dari setiap pengisian jurnal.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Manual Sync Trigger */}
+            <button
+              type="button"
+              onClick={handleManualSync}
+              className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-all cursor-pointer"
+              title="Sinkronkan data kalender sekarang"
+            >
+              <RefreshCw className={`w-4 h-4 ${isManualSyncing ? 'animate-spin text-blue-600' : ''}`} />
+            </button>
+
+            {/* Month Switcher */}
+            <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={handlePrevCalMonth}
+                className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-all cursor-pointer"
+                title="Bulan Sebelumnya"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              {!isCalCurrentMonth && (
+                <button
+                  type="button"
+                  onClick={handleTodayCalMonth}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold text-[#0753A5] hover:bg-white transition-all cursor-pointer"
+                >
+                  Bulan Ini
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleNextCalMonth}
+                className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-all cursor-pointer"
+                title="Bulan Berikutnya"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Full Calendar Link if available */}
+            {onOpenCalendar && (
+              <button
+                type="button"
+                onClick={onOpenCalendar}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-[#0753A5] hover:bg-blue-100 text-xs font-bold transition-all cursor-pointer border border-blue-200"
+              >
+                <span>Halaman Kalender</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 4 Cards Monthly Statistical Summary Bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100">
+            <span className="text-[11px] font-semibold text-blue-700 block">Hari Tercatat</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-xl font-black text-slate-900">{calRecordedDays}</span>
+              <span className="text-xs text-slate-500">/ {calDaysInMonth} hari ({calCompletenessRate}%)</span>
+            </div>
+          </div>
+
+          <div className="p-3 bg-emerald-50/60 rounded-2xl border border-emerald-100">
+            <span className="text-[11px] font-semibold text-emerald-700 block">Terbiasa (6-7 Selesai)</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-xl font-black text-slate-900">{calHabitualDays}</span>
+              <span className="text-xs text-slate-500">hari ({calTargetThreshold} target)</span>
+            </div>
+          </div>
+
+          <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-100">
+            <span className="text-[11px] font-semibold text-amber-700 block">Rerata Kebiasaan</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-xl font-black text-slate-900">{calAverageHabits}</span>
+              <span className="text-xs text-slate-500">/ 7 kebiasaan</span>
+            </div>
+          </div>
+
+          <div className="p-3 bg-indigo-50/60 rounded-2xl border border-indigo-100">
+            <span className="text-[11px] font-semibold text-indigo-700 block">Tervalidasi Orang Tua</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-xl font-black text-slate-900">{calValidatedDays}</span>
+              <span className="text-xs text-slate-500">hari tervalidasi</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Habit Filter Chips */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+          <span className="text-xs font-bold text-slate-500 mr-1">Tampilan:</span>
+          <button
+            type="button"
+            onClick={() => setCalHabitFilter('ALL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              calHabitFilter === 'ALL'
+                ? 'bg-[#0753A5] text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Semua (Ringkasan 7 Kebiasaan)
+          </button>
+          {HABIT_LIST.map((h) => (
+            <button
+              key={h.code}
+              type="button"
+              onClick={() => setCalHabitFilter(h.code)}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                calHabitFilter === h.code
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+              }`}
+            >
+              {h.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Calendar Day-of-Week Headers */}
+        <div className="grid grid-cols-7 gap-1.5 sm:gap-2 text-center pt-1">
+          {calDayHeaders.map((d, idx) => (
+            <div
+              key={d}
+              className={`text-xs font-bold py-1 ${
+                idx === 0 || idx === 6 ? 'text-rose-500' : 'text-slate-500'
+              }`}
+            >
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Calendar Cells Grid */}
+        <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+          {/* Empty cells before month start */}
+          {Array.from({ length: calFirstDayIndex }).map((_, i) => (
+            <div key={`cal-empty-${i}`} className="h-18 sm:h-22 rounded-2xl bg-slate-50/50 border border-transparent" />
+          ))}
+
+          {/* Days of Month */}
+          {Array.from({ length: calDaysInMonth }).map((_, i) => {
+            const dayNum = i + 1;
+            const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+            const journal = calJournalMap.get(dateStr);
+            const isToday = new Date().toISOString().split('T')[0] === dateStr;
+
+            // Determine status based on habit filter
+            let cellStyle = 'bg-slate-50/80 border-slate-200 text-slate-700'; // Missing/unrecorded by default (neutral gray)
+            let badgeText = 'Belum Dicatat';
+            let badgeColor = 'text-slate-400 bg-slate-100';
+
+            if (journal && ((journal.completedCount || 0) > 0 || Object.values(journal.entries || {}).some((e: any) => e?.completed))) {
+              if (calHabitFilter === 'ALL') {
+                const count = journal.completedCount ?? Object.values(journal.entries || {}).filter((e: any) => e?.completed).length;
+                if (count >= 6) {
+                  cellStyle = 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70';
+                  badgeText = `${count}/7 Selesai`;
+                  badgeColor = 'text-emerald-800 bg-emerald-100';
+                } else if (count >= 4) {
+                  cellStyle = 'bg-sky-50/80 border-sky-300 text-sky-950 hover:bg-sky-100/70';
+                  badgeText = `${count}/7 Selesai`;
+                  badgeColor = 'text-sky-800 bg-sky-100';
+                } else {
+                  cellStyle = 'bg-amber-50/80 border-amber-300 text-amber-950 hover:bg-amber-100/70';
+                  badgeText = `${count}/7 Selesai`;
+                  badgeColor = 'text-amber-800 bg-amber-100';
+                }
+              } else {
+                const entry = journal.entries?.[calHabitFilter];
+                const isHabitDone = !!entry?.completed;
+                if (isHabitDone) {
+                  cellStyle = 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70';
+                  badgeText = 'Terlaksana ✓';
+                  badgeColor = 'text-emerald-800 bg-emerald-100';
+                } else {
+                  cellStyle = 'bg-amber-50/80 border-amber-200 text-amber-900 hover:bg-amber-100/70';
+                  badgeText = 'Belum';
+                  badgeColor = 'text-amber-700 bg-amber-100';
+                }
+              }
+            }
+
+            const isValidated = journal?.parentValidated || Object.values(journal?.entries || {}).some((e: any) => e?.parentValidated);
+
+            return (
+              <button
+                key={dateStr}
+                type="button"
+                onClick={() => handleDayClick(dateStr)}
+                className={`h-18 sm:h-22 p-1.5 sm:p-2 rounded-2xl border flex flex-col justify-between text-left transition-all cursor-pointer shadow-2xs hover:shadow-md hover:scale-[1.01] ${cellStyle} ${
+                  isToday ? 'ring-2 ring-blue-500 ring-offset-2 font-bold' : ''
+                }`}
+                title={`Klik untuk melihat / mengisi jurnal ${dateStr}`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className={`text-xs font-black ${isToday ? 'px-1.5 py-0.5 rounded-full bg-blue-600 text-white' : ''}`}>
+                    {dayNum}
+                  </span>
+                  {journal && (
+                    <span className="text-[9px] sm:text-[10px] font-semibold hidden sm:inline">
+                      {isValidated ? '✅ Valid' : '⏳ Menunggu'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="w-full">
+                  <span className={`text-[8px] sm:text-[10px] font-bold px-1 sm:px-1.5 py-0.5 rounded-md block truncate text-center ${badgeColor}`}>
+                    {badgeText}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Non-punitive Statistical Invariant Legend */}
+        <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-md bg-emerald-100 border border-emerald-300" />
+              <span className="text-slate-600 font-medium">Terbiasa / 6-7 Selesai</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-md bg-sky-100 border border-sky-300" />
+              <span className="text-slate-600 font-medium">4-5 Selesai</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-md bg-amber-100 border border-amber-300" />
+              <span className="text-slate-600 font-medium">1-3 Selesai</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-md bg-slate-100 border border-slate-300" />
+              <span className="text-slate-600 font-medium">Belum Dicatat (Data Kosong)</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+            <HelpCircle className="w-4 h-4 text-blue-500 shrink-0" />
+            <span className="text-[11px]">
+              <strong>Catatan Statistik:</strong> Data belum dicatat <span className="underline">bukan</span> berarti anak tidak melaksanakan kebiasaan. Klik pada tanggal untuk mengisi atau melengkapi jurnal.
+            </span>
+          </div>
         </div>
       </div>
 
@@ -748,56 +1261,220 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
       {/* Monthly Statistics & Habitual Threshold Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Card 1: Pembiasaan Bulan Ini (Threshold 2/3: 21 hari target) */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Evaluasi Pembiasaan • {activeMonthLabel}
-            </span>
-            <span
-              className={`text-xs font-extrabold px-2.5 py-1 rounded-full ${
-                monthlySummary.habitualStatus === 'SUDAH_TERBIASA'
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-amber-100 text-amber-800'
-              }`}
-            >
-              {monthlySummary.habitualStatus === 'SUDAH_TERBIASA'
-                ? 'Sudah Terbiasa'
-                : 'Belum Terbiasa'}
-            </span>
-          </div>
+        {/* Card 1: Evaluasi Pembiasaan (Sinkron Realtime dengan Pengisian Jurnal Murid) */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4 flex flex-col justify-between">
+          <div className="space-y-3">
+            {/* Header: Judul, Sinkronisasi Realtime, & Status Terbiasa */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Evaluasi Pembiasaan • {activeMonthLabel}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleManualSync}
+                    className="text-slate-400 hover:text-blue-600 transition-colors p-0.5 rounded cursor-pointer"
+                    title="Sinkronkan dengan data jurnal terkini"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isManualSyncing ? 'animate-spin text-blue-600' : ''}`} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] font-semibold text-emerald-700">
+                    Sinkron Jurnal: {lastSyncTime} WITA
+                  </span>
+                </div>
+              </div>
 
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-900">
-                {monthlySummary.numerator}
-              </span>
-              <span className="text-sm font-semibold text-slate-500">
-                / {monthlySummary.denominator} hari target
+              {/* Status Badge */}
+              <span
+                className={`text-xs font-extrabold px-3 py-1 rounded-full shrink-0 self-start sm:self-auto ${
+                  selectedHabitEval === 'ALL'
+                    ? habitualCount >= 5 || averageCompletedDays >= targetThreshold
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : recordedDays > 0 || averageCompletedDays > 0
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-700'
+                    : currentHabitEval?.isHabitual
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : (currentHabitEval?.completedDays || 0) > 0
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {selectedHabitEval === 'ALL'
+                  ? habitualCount >= 5 || averageCompletedDays >= targetThreshold
+                    ? 'Sudah Terbiasa'
+                    : recordedDays > 0 || averageCompletedDays > 0
+                    ? 'Sedang Berproses'
+                    : 'Belum Terbiasa'
+                  : currentHabitEval?.isHabitual
+                  ? 'Sudah Terbiasa'
+                  : (currentHabitEval?.completedDays || 0) > 0
+                  ? 'Sedang Berproses'
+                  : 'Belum Terbiasa'}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Rumus Baku: 2/3 × {daysInMonth} hari = target minimal {calculateHabitualThreshold(daysInMonth)} hari konsisten.
-            </p>
+
+            {/* Quick Dimensi Selector Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-thin">
+              <button
+                type="button"
+                onClick={() => setSelectedHabitEval('ALL')}
+                className={`px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  selectedHabitEval === 'ALL'
+                    ? 'bg-[#0753A5] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                7 Kebiasaan ({habitualCount}/7)
+              </button>
+              {habitsEvaluation.map((h) => {
+                const isSelected = selectedHabitEval === h.code;
+                const shortLabel =
+                  h.code === 'WAKE_EARLY'
+                    ? 'Bangun Pagi'
+                    : h.code === 'WORSHIP'
+                    ? 'Beribadah'
+                    : h.code === 'EXERCISE'
+                    ? 'Olahraga'
+                    : h.code === 'HEALTHY_EATING'
+                    ? 'Makan Sehat'
+                    : h.code === 'LEARNING'
+                    ? 'Belajar'
+                    : h.code === 'SOCIAL'
+                    ? 'Masyarakat'
+                    : 'Tidur Cepat';
+                return (
+                  <button
+                    key={h.code}
+                    type="button"
+                    onClick={() => setSelectedHabitEval(h.code)}
+                    className={`px-2 py-1 rounded-lg font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-[#0753A5] text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{shortLabel}</span>
+                    {h.isHabitual && <span className="text-emerald-400 text-[10px]">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Main Progress Figures */}
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900">
+                  {selectedHabitEval === 'ALL' ? averageCompletedDays : currentHabitEval?.completedDays || 0}
+                </span>
+                <span className="text-sm font-semibold text-slate-500">
+                  / {targetThreshold} hari target {selectedHabitEval === 'ALL' ? '(rata-rata)' : ''}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {selectedHabitEval === 'ALL'
+                  ? `Rumus Baku: 2/3 × ${daysInMonth} hari = minimal ${targetThreshold} hari konsisten. Sebanyak ${habitualCount} dari 7 kebiasaan sudah mencapai target pembiasaan.`
+                  : `Keterlaksanaan ${currentHabitEval?.name}: tercapai ${currentHabitEval?.completedDays || 0} hari (${currentHabitEval?.consistencyRate || 0}% konsistensi) dari ${recordedDays} hari pengisian jurnal.`}
+              </p>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="bg-[#41A85F] h-2.5 rounded-full transition-all duration-500"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    selectedHabitEval === 'ALL'
+                      ? Math.round((averageCompletedDays / targetThreshold) * 100)
+                      : currentHabitEval?.progressPercent || 0
+                  )}%`,
+                }}
+              />
+            </div>
+
+            {/* Collapsible Detail 7 Kebiasaan */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowHabitsDetail(!showHabitsDetail)}
+                className="text-[11px] font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1 cursor-pointer"
+              >
+                <span>{showHabitsDetail ? 'Sembunyikan Rincian 7 Kebiasaan' : 'Lihat Rincian Capaian 7 Kebiasaan'}</span>
+                {showHabitsDetail ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {showHabitsDetail && (
+                <div className="mt-2.5 space-y-1.5 p-2.5 bg-slate-50 rounded-2xl border border-slate-100 max-h-48 overflow-y-auto scrollbar-thin">
+                  {habitsEvaluation.map((h) => {
+                    const HabitIcon = habitsIconMap[h.code as keyof typeof habitsIconMap] || Sun;
+                    return (
+                      <div
+                        key={h.code}
+                        onClick={() => setSelectedHabitEval(h.code)}
+                        className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all ${
+                          selectedHabitEval === h.code
+                            ? 'bg-blue-50 border-blue-200'
+                            : 'bg-white border-slate-100 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                              h.isHabitual ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            <HabitIcon className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-[11px] font-bold text-slate-800 block truncate">
+                              {h.name}
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              {h.completedDays} / {targetThreshold} hari • {h.consistencyRate}% konsistensi
+                            </span>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                            h.isHabitual
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : h.completedDays > 0
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {h.isHabitual ? 'Sudah Terbiasa' : h.completedDays > 0 ? 'Sedang Berproses' : 'Belum'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-            <div
-              className="bg-[#41A85F] h-2.5 rounded-full transition-all"
-              style={{
-                width: `${Math.min(
-                  100,
-                  (monthlySummary.numerator / monthlySummary.denominator) * 100
-                )}%`,
-              }}
-            />
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-            <span>Kelengkapan Jurnal:</span>
-            <span className="font-bold text-[#0753A5]">
-              {monthlySummary.completenessRate}% ({recordedDays}/{daysInMonth} hari)
-            </span>
+          {/* Footer Card: Kelengkapan Jurnal & Input Hari Ini */}
+          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            <div className="flex items-center gap-1.5">
+              <span>Kelengkapan Jurnal:</span>
+              <span className="font-bold text-[#0753A5]">
+                {completenessRate}% ({recordedDays}/{daysInMonth} hari)
+              </span>
+            </div>
+            {completedCount > 0 && (
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg">
+                Hari ini: {completedCount}/7 ✓
+              </span>
+            )}
           </div>
         </div>
 

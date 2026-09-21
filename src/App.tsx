@@ -900,7 +900,7 @@ export default function App() {
       // Synchronize to localStorage immediately for cross-tab and instant reactive listeners
       try {
         localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextJournals));
-        window.dispatchEvent(new CustomEvent('si7kaih_journals_updated'));
+        window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: nextJournals }));
       } catch (_e) {}
 
       return nextJournals;
@@ -914,7 +914,11 @@ export default function App() {
       try {
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const bc = new BroadcastChannel('si7kaih_sync_channel');
-          bc.postMessage({ type: 'JOURNALS_UPDATED' });
+          bc.postMessage({
+            type: 'JOURNALS_UPDATED',
+            journals: updatedJournalToPersist ? [updatedJournalToPersist] : undefined,
+            latestJournal: updatedJournalToPersist,
+          });
           bc.close();
         }
       } catch (_e) {}
@@ -1195,8 +1199,13 @@ export default function App() {
               onOpenBadges={() => setActiveTab('badges')}
               onOpenAICoach={() => setActiveTab('ai-coach')}
               studentName={activeStudentName}
+              studentId={currentPersona.id}
+              studentNisn={currentPersona.identifierValue}
               className={activeStudentClass}
               badges={badges}
+              onValidateJournal={handleValidateJournal}
+              onSelectDate={openJournalForDate}
+              onOpenCalendar={() => setActiveTab('calendar')}
             />
           );
         case 'journal':
@@ -1216,6 +1225,8 @@ export default function App() {
               journals={journals}
               onSelectDate={openJournalForDate}
               studentName={activeStudentName}
+              studentId={currentPersona.id}
+              studentNisn={currentPersona.identifierValue}
             />
           );
         case 'reflection':
@@ -1243,9 +1254,13 @@ export default function App() {
               onOpenBadges={() => setActiveTab('badges')}
               onOpenAICoach={() => setActiveTab('ai-coach')}
               studentName={activeStudentName}
+              studentId={currentPersona.id}
+              studentNisn={currentPersona.identifierValue}
               className={activeStudentClass}
               badges={badges}
               onValidateJournal={handleValidateJournal}
+              onSelectDate={openJournalForDate}
+              onOpenCalendar={() => setActiveTab('calendar')}
             />
           );
       }
@@ -1260,6 +1275,8 @@ export default function App() {
             journals={journals}
             onSelectDate={openJournalForDate}
             studentName={activeChildName}
+            studentId={currentPersona.childId}
+            studentNisn={currentPersona.childNisn}
           />
         );
       }
@@ -1290,6 +1307,7 @@ export default function App() {
           onOpenReportModal={() => setIsReportModalOpen(true)}
           activeNavTab={activeTab}
           currentPersona={currentPersona}
+          onValidateJournal={handleValidateJournal}
         />
       );
     }
