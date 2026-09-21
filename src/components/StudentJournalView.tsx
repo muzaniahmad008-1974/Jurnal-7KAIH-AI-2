@@ -40,7 +40,7 @@ import {
   SleepEarlyData,
 } from '../../packages/types/src/index';
 import { HABIT_LIST, UserPersona } from '../lib/constants';
-import { formatRealtimeSaveTime } from '../lib/dateUtils';
+import { formatRealtimeSaveTime, getLocalDateString } from '../lib/dateUtils';
 
 interface StudentJournalViewProps {
   journals: DailyJournal[];
@@ -59,7 +59,7 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
   studentName,
   currentPersona,
 }) => {
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => getLocalDateString(), []);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 

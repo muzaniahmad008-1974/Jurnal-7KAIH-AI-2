@@ -43,7 +43,13 @@ import {
   HelpCircle,
   ExternalLink,
 } from 'lucide-react';
-import { formatRealtimeSaveTime } from '../lib/dateUtils';
+import {
+  formatRealtimeSaveTime,
+  formatTimeOnly,
+  getLocalDateString,
+  formatIndonesianFullDate,
+  formatIndonesianShortDate,
+} from '../lib/dateUtils';
 import { ParentSignatureModal } from './ParentSignatureModal';
 
 interface StudentDashboardProps {
@@ -247,7 +253,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     if (todayJournal?.journalDate) {
       const existsIdx = filtered.findIndex((j) => j.journalDate === todayJournal.journalDate);
       if (existsIdx >= 0) {
-        filtered[existsIdx] = todayJournal;
+        const existing = filtered[existsIdx];
+        const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+        const propTime = todayJournal.updatedAt ? new Date(todayJournal.updatedAt).getTime() : 0;
+        if (propTime >= existingTime) {
+          filtered[existsIdx] = todayJournal;
+        }
       } else if ((todayJournal.completedCount || 0) > 0 || Object.values(todayJournal.entries || {}).some((e: any) => e?.completed)) {
         filtered.push(todayJournal);
       }
@@ -421,17 +432,64 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     return habitsEvaluation.find((h) => h.code === selectedHabitEval) || null;
   }, [selectedHabitEval, habitsEvaluation]);
 
-  const completedCount = todayJournal?.completedCount || 0;
+  // Live ticking time for current day and second
+  const [liveCurrentTime, setLiveCurrentTime] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentTodayDateStr = useMemo(() => getLocalDateString(liveCurrentTime), [liveCurrentTime]);
+  const formattedFullTodayDate = useMemo(() => formatIndonesianFullDate(liveCurrentTime), [liveCurrentTime]);
+  const formattedShortTodayDate = useMemo(() => formatIndonesianShortDate(liveCurrentTime), [liveCurrentTime]);
+  const liveClockTimeStr = useMemo(() => formatTimeOnly(liveCurrentTime, 'WITA'), [liveCurrentTime]);
+
+  // Resolve the active, most up-to-date journal for today for this student
+  const activeTodayJournal = useMemo(() => {
+    // 1. Check in studentJournals for an entry matching currentTodayDateStr
+    const match = studentJournals.find((j) => j.journalDate === currentTodayDateStr);
+    if (match) {
+      if (todayJournal && todayJournal.journalDate === currentTodayDateStr && todayJournal.updatedAt && match.updatedAt) {
+        if (new Date(todayJournal.updatedAt).getTime() > new Date(match.updatedAt).getTime()) {
+          return todayJournal;
+        }
+      }
+      return match;
+    }
+    // 2. If todayJournal prop is on today's date
+    if (todayJournal && (todayJournal.journalDate === currentTodayDateStr || !todayJournal.journalDate)) {
+      return todayJournal;
+    }
+    // 3. Fallback to empty default journal representation for today
+    return todayJournal;
+  }, [studentJournals, currentTodayDateStr, todayJournal]);
+
+  const completedCount = useMemo(() => {
+    if (!activeTodayJournal) return 0;
+    if (typeof activeTodayJournal.completedCount === 'number') {
+      return activeTodayJournal.completedCount;
+    }
+    if (activeTodayJournal.entries) {
+      return Object.values(activeTodayJournal.entries).filter((e: any) => e?.completed).length;
+    }
+    return 0;
+  }, [activeTodayJournal]);
+
   const isAllCompleted = completedCount === 7;
   const firstName = studentName?.trim() ? studentName.trim().split(' ')[0] : 'Hebat';
 
   const todaySavedRealtime = useMemo(() => {
-    if (todayJournal?.savedAt) return todayJournal.savedAt;
-    if (todayJournal?.updatedAt && (todayJournal.completedCount || 0) > 0) {
-      return formatRealtimeSaveTime(todayJournal.updatedAt);
+    if (!activeTodayJournal) return null;
+    if (activeTodayJournal.savedAt) {
+      return formatRealtimeSaveTime(activeTodayJournal.savedAt, 'WITA');
+    }
+    if (activeTodayJournal.updatedAt && completedCount > 0) {
+      return formatRealtimeSaveTime(activeTodayJournal.updatedAt, 'WITA');
     }
     return null;
-  }, [todayJournal]);
+  }, [activeTodayJournal, completedCount]);
 
   // Real consecutive streak calculation specifically for this student
   const streakDays = useMemo(() => {
@@ -460,40 +518,72 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </div>
 
           {/* Quick Today Action */}
-          <div className="bg-white/10 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-white/20 flex flex-col items-center sm:items-end w-full md:w-auto">
+          <div className="bg-white/10 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-white/20 flex flex-col items-center sm:items-end w-full md:w-auto shadow-sm">
+            {/* Live Synchronized Current Day & Time */}
+            <div className="flex items-center gap-2 text-xs font-semibold text-blue-100 mb-2 bg-black/20 px-3 py-1.5 rounded-xl border border-white/15 shadow-2xs backdrop-blur-xs">
+              <Calendar className="w-3.5 h-3.5 text-sky-300" />
+              <span className="font-bold">{formattedFullTodayDate}</span>
+              <span className="text-white/40">•</span>
+              <Clock className="w-3.5 h-3.5 text-amber-300" />
+              <span className="font-mono font-bold text-amber-200">{liveClockTimeStr}</span>
+            </div>
+
             <div className="flex items-center gap-2 text-xs font-bold text-amber-300 mb-1">
               <Flame className="w-4 h-4 fill-amber-300" />
               <span>{streakDays > 0 ? `Konsisten ${streakDays} Hari Berturut-turut!` : 'Mulai Pembiasaan Hari Ini!'}</span>
             </div>
+            
             <div className="text-sm font-semibold mb-1">
-              Jurnal Hari Ini: <span className="font-extrabold underline decoration-amber-400">{completedCount} dari 7 Selesai</span>
+              Jurnal Hari Ini ({formattedShortTodayDate}):{' '}
+              <span className={`font-extrabold underline decoration-2 ${completedCount >= 6 ? 'text-emerald-300 decoration-emerald-400' : completedCount > 0 ? 'text-sky-200 decoration-sky-300' : 'text-amber-200 decoration-amber-400'}`}>
+                {completedCount} dari 7 Selesai
+              </span>
             </div>
-            {todaySavedRealtime && (
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/25 border border-emerald-300/40 text-[11px] font-semibold text-emerald-100 mb-2.5 shadow-2xs">
+
+            {/* Info Waktu Terupdate Hari Terkini */}
+            {todaySavedRealtime ? (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/30 border border-emerald-300/50 text-[11px] font-semibold text-emerald-100 mb-3 shadow-2xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <Clock className="w-3 h-3 text-emerald-300" />
-                <span>Info Simpan Realtime: <strong className="text-white">{todaySavedRealtime}</strong></span>
+                <span>Info Waktu Terupdate: <strong className="text-white">{todaySavedRealtime}</strong></span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-300/40 text-[11px] font-semibold text-amber-100 mb-3 shadow-2xs">
+                <Clock className="w-3 h-3 text-amber-300" />
+                <span>Info Waktu Terkini: <strong className="text-white">{formattedFullTodayDate}</strong> (Belum Diisi)</span>
               </div>
             )}
+
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-center sm:justify-end">
               <button
                 id="hero-open-journal-btn"
-                onClick={onOpenJournal}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white text-[#0753A5] hover:bg-blue-50 font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                onClick={() => {
+                  if (onSelectDate) {
+                    onSelectDate(currentTodayDateStr);
+                  } else {
+                    onOpenJournal();
+                  }
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white text-[#0753A5] hover:bg-blue-50 font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                title={`Buka Formulir Jurnal Hari Ini: ${formattedFullTodayDate}`}
               >
-                <span>{completedCount > 0 ? (isAllCompleted ? 'Lihat / Edit Jurnal Hari Ini' : 'Lanjutkan Isi Jurnal') : 'Isi Jurnal Hari Ini'}</span>
+                <span>
+                  {completedCount > 0
+                    ? (isAllCompleted ? `Lihat / Edit Jurnal Hari Ini (${formattedShortTodayDate})` : `Lanjutkan Isi Jurnal (${formattedShortTodayDate})`)
+                    : `Isi Jurnal Hari Ini (${formattedShortTodayDate})`}
+                </span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               {completedCount > 0 && onResetTodayJournal && (
                 <button
                   id="hero-reset-journal-btn"
                   onClick={() => {
-                    if (window.confirm('Kosongkan seluruh isian Jurnal 7 Kebiasaan Hari Ini?')) {
+                    if (window.confirm(`Kosongkan seluruh isian Jurnal 7 Kebiasaan Hari Ini (${formattedFullTodayDate})?`)) {
                       onResetTodayJournal();
                     }
                   }}
                   className="px-3.5 py-2.5 rounded-xl bg-white/20 hover:bg-rose-600/40 text-rose-100 hover:text-white border border-white/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                  title="Kosongkan seluruh isian jurnal 7 kebiasaan hari ini"
+                  title={`Kosongkan seluruh isian jurnal 7 kebiasaan hari ini (${formattedShortTodayDate})`}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Kosongkan Isian</span>
@@ -511,14 +601,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
               <span>7 Kebiasaan Hari Ini</span>
               <span className="text-xs sm:text-sm font-normal text-slate-500">
-                ({new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })})
+                ({formattedFullTodayDate})
               </span>
             </h3>
             {todaySavedRealtime && (
               <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 shadow-2xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <Clock className="w-3 h-3 text-emerald-600" />
-                <span>Info Simpan Realtime: {todaySavedRealtime}</span>
+                <span>Info Terupdate: {todaySavedRealtime}</span>
               </span>
             )}
           </div>
@@ -527,19 +617,25 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <button
                 id="dashboard-reset-journal-btn"
                 onClick={() => {
-                  if (window.confirm('Kosongkan seluruh isian Jurnal 7 Kebiasaan Hari Ini?')) {
+                  if (window.confirm(`Kosongkan seluruh isian Jurnal 7 Kebiasaan Hari Ini (${formattedFullTodayDate})?`)) {
                     onResetTodayJournal();
                   }
                 }}
                 className="text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                title="Kosongkan seluruh isian jurnal 7 kebiasaan hari ini"
+                title={`Kosongkan seluruh isian jurnal 7 kebiasaan hari ini (${formattedShortTodayDate})`}
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Kosongkan Isian</span>
               </button>
             )}
             <button
-              onClick={onOpenJournal}
+              onClick={() => {
+                if (onSelectDate) {
+                  onSelectDate(currentTodayDateStr);
+                } else {
+                  onOpenJournal();
+                }
+              }}
               className="text-xs sm:text-sm font-bold text-[#0753A5] hover:underline flex items-center gap-1 cursor-pointer"
             >
               <span>Buka Formulir</span>
@@ -551,13 +647,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {HABIT_LIST.map((h, index) => {
             const Icon = habitsIconMap[h.code];
-            const entry = todayJournal.entries[h.code];
+            const entry = activeTodayJournal?.entries?.[h.code] || todayJournal?.entries?.[h.code];
             const isDone = !!entry?.completed;
 
             return (
               <div
                 key={h.code}
-                onClick={onOpenJournal}
+                onClick={() => {
+                  if (onSelectDate) {
+                    onSelectDate(currentTodayDateStr);
+                  } else {
+                    onOpenJournal();
+                  }
+                }}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer shadow-xs hover:shadow-md flex items-center justify-between gap-3 ${
                   isDone
                     ? 'bg-white border-emerald-200 hover:border-emerald-300'
@@ -994,130 +1096,132 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Validation Body for Today's Journal */}
         <div className="p-6">
-          {todayJournal?.parentValidated ? (
-            /* SUDAH DIVALIDASI */
-            <div className="bg-gradient-to-br from-emerald-50/80 via-white to-emerald-50/40 p-5 sm:p-6 rounded-2xl border border-emerald-200 shadow-2xs space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs">
-                    <CheckCircle2 className="w-5 h-5" />
-                  </span>
-                  <div>
-                    <h4 className="text-sm sm:text-base font-extrabold text-emerald-950">
-                      Jurnal Hari Ini Telah Divalidasi Orang Tua / Wali
-                    </h4>
-                    <p className="text-xs text-emerald-700">
-                      Terverifikasi resmi dalam portofolio 7 Kebiasaan Anak Indonesia Hebat
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedJournalToSign(todayJournal);
-                    setIsSignatureModalOpen(true);
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl border border-emerald-300 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Perbarui Tanda Tangan atau Catatan Validasi"
-                >
-                  <PenTool className="w-3.5 h-3.5" />
-                  <span>Perbarui Tanda Tangan / Catatan</span>
-                </button>
-              </div>
-
-              {/* Grid: Validator Metadata & Signature Box */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                {/* Info Kolom 1 & 2 */}
-                <div className="md:col-span-2 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div className="bg-white p-3 rounded-xl border border-emerald-100">
-                      <span className="text-slate-400 block text-[11px]">Nama Orang Tua / Wali:</span>
-                      <strong className="text-slate-900 font-bold text-sm block mt-0.5">
-                        {todayJournal.parentValidatorName || 'Orang Tua / Wali Siswa'}
-                      </strong>
-                    </div>
-
-                    <div className="bg-white p-3 rounded-xl border border-emerald-100">
-                      <span className="text-slate-400 block text-[11px]">Format &amp; Lokasi Validasi:</span>
-                      <strong className="text-slate-900 font-bold text-sm block mt-0.5">
-                        {todayJournal.parentValidationType === 'INITIALS' ? 'Paraf Resmi' : 'Tanda Tangan Digital'}
-                      </strong>
-                      <span className="text-[10px] text-emerald-700 mt-0.5 block">
-                        {todayJournal.parentValidationSource === 'PARENT_DASHBOARD'
-                          ? '• Dari Dashboard Orang Tua'
-                          : '• Dari Dashboard Murid'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {todayJournal.parentValidatedAt && (
-                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>
-                        Waktu Validasi:{' '}
-                        <strong className="text-slate-700">
-                          {new Date(todayJournal.parentValidatedAt).toLocaleDateString('id-ID', {
-                            weekday: 'long',
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                          })}{' '}
-                          pukul{' '}
-                          {new Date(todayJournal.parentValidatedAt).toLocaleTimeString('id-ID', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}{' '}
-                          WITA
-                        </strong>
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Pesan Apresiasi Orang Tua */}
-                  {todayJournal.parentValidationNote && (
-                    <div className="bg-white p-3.5 rounded-xl border border-emerald-200/80 space-y-1">
-                      <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
-                        <Heart className="w-3.5 h-3.5 text-rose-500" />
-                        <span>Pesan Apresiasi &amp; Kasih Sayang Orang Tua:</span>
-                      </span>
-                      <p className="text-xs text-slate-800 italic leading-relaxed">
-                        "{todayJournal.parentValidationNote}"
+          {(() => {
+            const currentValJournal = activeTodayJournal || todayJournal;
+            return currentValJournal?.parentValidated ? (
+              /* SUDAH DIVALIDASI */
+              <div className="bg-gradient-to-br from-emerald-50/80 via-white to-emerald-50/40 p-5 sm:p-6 rounded-2xl border border-emerald-200 shadow-2xs space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <h4 className="text-sm sm:text-base font-extrabold text-emerald-950">
+                        Jurnal Hari Ini Telah Divalidasi Orang Tua / Wali
+                      </h4>
+                      <p className="text-xs text-emerald-700">
+                        Terverifikasi resmi dalam portofolio 7 Kebiasaan Anak Indonesia Hebat
                       </p>
                     </div>
-                  )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedJournalToSign(currentValJournal);
+                      setIsSignatureModalOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl border border-emerald-300 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Perbarui Tanda Tangan atau Catatan Validasi"
+                  >
+                    <PenTool className="w-3.5 h-3.5" />
+                    <span>Perbarui Tanda Tangan / Catatan</span>
+                  </button>
                 </div>
 
-                {/* Kolom 3: Pratinjau Tanda Tangan / Paraf */}
-                <div className="bg-white p-3.5 rounded-2xl border-2 border-dashed border-emerald-300 flex flex-col items-center justify-between text-center min-h-[140px]">
-                  <span className="text-[10px] font-bold tracking-wider uppercase text-emerald-800">
-                    {todayJournal.parentValidationType === 'INITIALS' ? 'Pratinjau Paraf' : 'Pratinjau Tanda Tangan'}
-                  </span>
+                {/* Grid: Validator Metadata & Signature Box */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                  {/* Info Kolom 1 & 2 */}
+                  <div className="md:col-span-2 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="bg-white p-3 rounded-xl border border-emerald-100">
+                        <span className="text-slate-400 block text-[11px]">Nama Orang Tua / Wali:</span>
+                        <strong className="text-slate-900 font-bold text-sm block mt-0.5">
+                          {currentValJournal.parentValidatorName || 'Orang Tua / Wali Siswa'}
+                        </strong>
+                      </div>
 
-                  {todayJournal.parentSignature ? (
-                    <div className="my-2 p-1 bg-blue-50/30 rounded-xl w-full flex items-center justify-center">
-                      <img
-                        src={todayJournal.parentSignature}
-                        alt="Tanda Tangan / Paraf Orang Tua"
-                        className="max-h-20 max-w-full object-contain"
-                      />
+                      <div className="bg-white p-3 rounded-xl border border-emerald-100">
+                        <span className="text-slate-400 block text-[11px]">Format &amp; Lokasi Validasi:</span>
+                        <strong className="text-slate-900 font-bold text-sm block mt-0.5">
+                          {currentValJournal.parentValidationType === 'INITIALS' ? 'Paraf Resmi' : 'Tanda Tangan Digital'}
+                        </strong>
+                        <span className="text-[10px] text-emerald-700 mt-0.5 block">
+                          {currentValJournal.parentValidationSource === 'PARENT_DASHBOARD'
+                            ? '• Dari Dashboard Orang Tua'
+                            : '• Dari Dashboard Murid'}
+                        </span>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="my-3 py-2 px-4 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-semibold">
-                      ✓ Tervalidasi Resmi
-                    </div>
-                  )}
 
-                  <div className="w-full pt-1 border-t border-slate-100">
-                    <p className="text-[11px] font-extrabold text-slate-800 truncate">
-                      {todayJournal.parentValidatorName || 'Orang Tua / Wali'}
-                    </p>
-                    <span className="text-[9px] text-emerald-600 block">Digital Verified</span>
+                    {currentValJournal.parentValidatedAt && (
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>
+                          Waktu Validasi:{' '}
+                          <strong className="text-slate-700">
+                            {new Date(currentValJournal.parentValidatedAt).toLocaleDateString('id-ID', {
+                              weekday: 'long',
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                            })}{' '}
+                            pukul{' '}
+                            {new Date(currentValJournal.parentValidatedAt).toLocaleTimeString('id-ID', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}{' '}
+                            WITA
+                          </strong>
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Pesan Apresiasi Orang Tua */}
+                    {currentValJournal.parentValidationNote && (
+                      <div className="bg-white p-3.5 rounded-xl border border-emerald-200/80 space-y-1">
+                        <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1.5">
+                          <Heart className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Pesan Apresiasi &amp; Kasih Sayang Orang Tua:</span>
+                        </span>
+                        <p className="text-xs text-slate-800 italic leading-relaxed">
+                          "{currentValJournal.parentValidationNote}"
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Kolom 3: Pratinjau Tanda Tangan / Paraf */}
+                  <div className="bg-white p-3.5 rounded-2xl border-2 border-dashed border-emerald-300 flex flex-col items-center justify-between text-center min-h-[140px]">
+                    <span className="text-[10px] font-bold tracking-wider uppercase text-emerald-800">
+                      {currentValJournal.parentValidationType === 'INITIALS' ? 'Pratinjau Paraf' : 'Pratinjau Tanda Tangan'}
+                    </span>
+
+                    {currentValJournal.parentSignature ? (
+                      <div className="my-2 p-1 bg-blue-50/30 rounded-xl w-full flex items-center justify-center">
+                        <img
+                          src={currentValJournal.parentSignature}
+                          alt="Tanda Tangan / Paraf Orang Tua"
+                          className="max-h-20 max-w-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="my-3 py-2 px-4 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-semibold">
+                        ✓ Tervalidasi Resmi
+                      </div>
+                    )}
+
+                    <div className="w-full pt-1 border-t border-slate-100">
+                      <p className="text-[11px] font-extrabold text-slate-800 truncate">
+                        {currentValJournal.parentValidatorName || 'Orang Tua / Wali'}
+                      </p>
+                      <span className="text-[9px] text-emerald-600 block">Digital Verified</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ) : (
+            ) : (
             /* BELUM DIVALIDASI */
             <div className="bg-gradient-to-br from-blue-50/50 via-slate-50 to-amber-50/30 p-5 sm:p-6 rounded-2xl border border-blue-200/80 shadow-2xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1144,7 +1248,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     type="button"
                     id="student-dashboard-validate-parent-btn"
                     onClick={() => {
-                      setSelectedJournalToSign(todayJournal);
+                      setSelectedJournalToSign(currentValJournal);
                       setIsSignatureModalOpen(true);
                     }}
                     className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#0753A5] hover:bg-blue-700 text-white font-extrabold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
@@ -1170,7 +1274,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 )}
               </div>
             </div>
-          )}
+          );
+        })()}
 
           {/* Collapsible: Riwayat Jurnal Sebelumnya untuk Divalidasi */}
           {allJournals.length > 1 && (

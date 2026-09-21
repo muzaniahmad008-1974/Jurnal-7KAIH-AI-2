@@ -81,7 +81,7 @@ import {
   applySuperAdminMasterDataToStorage,
 } from './lib/supabaseService';
 import { Database, Zap, CheckCircle2, Clock } from 'lucide-react';
-import { formatRealtimeSaveTime } from './lib/dateUtils';
+import { formatRealtimeSaveTime, getLocalDateString } from './lib/dateUtils';
 
 export default function App() {
   // Active Persona (Loaded from persistent storage if active session exists in browser)
@@ -379,9 +379,7 @@ export default function App() {
 
   // Modals state
   const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
-  const [selectedJournalDate, setSelectedJournalDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string>(() => getLocalDateString());
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
@@ -636,8 +634,8 @@ export default function App() {
     }
   }, [viewMode, activeTab, currentPersona.id]);
 
-  // Today's journal - clean empty fallback when no entry exists
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  // Today's journal - clean empty fallback when no entry exists (using local date string)
+  const todayStr = useMemo(() => getLocalDateString(), []);
   const emptyDefaultJournal: DailyJournal = useMemo(
     () => ({
       id: `journal-${todayStr}-${currentPersona.id}`,
