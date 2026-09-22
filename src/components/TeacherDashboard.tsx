@@ -41,12 +41,13 @@ import {
 import { StudentDossierModal, StudentDossierData } from './StudentDossierModal';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { Rombel, Student, getStoredRombels, getStoredStudents } from '../lib/studentData';
+import { formatAcademicYearAndSemester, getCurrentIndonesianMonthYear } from '../lib/dateUtils';
 
 interface TeacherDashboardProps {
   journals: DailyJournal[];
   programs: SchoolProgram[];
   followUps: FollowUpPlan[];
-  onOpenReportModal: () => void;
+  onOpenReportModal: (student?: any) => void;
   activeNavTab?: string;
   currentPersona?: UserPersona;
   onValidateJournal?: (
@@ -366,7 +367,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       id: 'rmb-default',
       name: currentPersona?.className || 'Rombongan Belajar',
       code: '-',
-      academicYear: '2025/2026 Ganjil',
+      academicYear: formatAcademicYearAndSemester().fullDisplay,
       teacher: currentPersona?.name || 'Wali Kelas',
       teacherNip: currentPersona?.identifierValue || '-',
       capacity: 32,
@@ -374,6 +375,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       schoolId: currentPersona?.schoolId || '',
     };
   }, [rombels, selectedRombelId, currentPersona]);
+
+  // Dynamically resolve academic year and active semester from active rombel
+  const rombelAcademicInfo = useMemo(() => {
+    return formatAcademicYearAndSemester(activeRombel?.academicYear);
+  }, [activeRombel?.academicYear]);
+
+  const currentMonthYearName = useMemo(() => {
+    return getCurrentIndonesianMonthYear();
+  }, []);
 
   const activeSchool = useMemo(() => {
     if (activeRombel.schoolId) {
@@ -980,10 +990,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   }, [studentsList, filledTodayCount]);
 
   const classAvgHabitsPerEntry = useMemo(() => {
-    const studentsWithData = studentsList.filter((s) => (s.avgHabitsCompleted || 0) > 0);
-    if (studentsWithData.length === 0) return 0;
-    const sum = studentsWithData.reduce((acc, s) => acc + (s.avgHabitsCompleted || 0), 0);
-    return Math.round((sum / studentsWithData.length) * 10) / 10;
+    if (studentsList.length === 0) return 0;
+    const sum = studentsList.reduce((acc, s) => acc + (s.avgHabitsCompleted || 0), 0);
+    return Math.round((sum / studentsList.length) * 10) / 10;
   }, [studentsList]);
 
   const goodCount = studentsList.filter((s) => s.category === 'TERPANTAU_BAIK').length;
@@ -1026,8 +1035,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       { code: 'SLEEP_EARLY', name: 'Tidur Cepat' },
     ];
 
-    const totalJournalCount = classJournals.length;
     const now = new Date();
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const utcTodayStr = now.toISOString().split('T')[0];
 
@@ -1036,15 +1045,51 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       return d === localTodayStr || d === utcTodayStr;
     });
 
+    const totalRegisteredStudents = studentsList.length;
+
     return habitDefinitions.map((h) => {
       const hCode = h.code as HabitCode;
-      let completedCount = 0;
-      classJournals.forEach((j) => {
-        const habitEntry = (j.entries && j.entries[hCode]) || (j.habits && (j as any).habits[hCode]);
-        if (habitEntry && habitEntry.completed) {
-          completedCount++;
+
+      // Hitung persentase keterlaksanaan bulan berjalan berdasarkan rata-rata pengisian jurnal murid dari sejumlah siswa yang terdaftar
+      let sumStudentRates = 0;
+      let totalCompletedInMonth = 0;
+      let totalJournalEntriesInMonth = 0;
+
+      studentsList.forEach((st) => {
+        // Ambil riwayat jurnal siswa terdaftar ini
+        const sJournals = classJournals.filter((j) => {
+          if (j.studentId && (j.studentId === st.id || j.studentId === st.nisn)) return true;
+          if (j.studentNisn && st.nisn && j.studentNisn === st.nisn) return true;
+          if (j.studentName && st.name && j.studentName.toLowerCase().trim() === st.name.toLowerCase().trim()) return true;
+          return false;
+        });
+
+        // Filter jurnal bulan berjalan
+        const monthJournals = sJournals.filter((j) => {
+          const d = j.journalDate || (j as any).date;
+          return d ? d.startsWith(currentMonthPrefix) : true;
+        });
+        const targetJournals = monthJournals.length > 0 ? monthJournals : sJournals;
+
+        if (targetJournals.length > 0) {
+          totalJournalEntriesInMonth += targetJournals.length;
+          let studentHabitDone = 0;
+          targetJournals.forEach((j) => {
+            const habitEntry = (j.entries && j.entries[hCode]) || (j.habits && (j as any).habits[hCode]);
+            if (habitEntry && habitEntry.completed) {
+              studentHabitDone++;
+              totalCompletedInMonth++;
+            }
+          });
+          const studentRate = studentHabitDone / targetJournals.length;
+          sumStudentRates += studentRate;
         }
       });
+
+      // Rata-rata persentase keterlaksanaan dari seluruh siswa yang terdaftar
+      const pct = totalRegisteredStudents > 0
+        ? Math.min(100, Math.max(0, Math.round((sumStudentRates / totalRegisteredStudents) * 100)))
+        : 0;
 
       let todayCompletedCount = 0;
       todayJournals.forEach((j) => {
@@ -1054,19 +1099,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         }
       });
 
-      const pct = totalJournalCount > 0 ? Math.min(100, Math.round((completedCount / totalJournalCount) * 100)) : 0;
       return {
         code: h.code,
         name: h.name,
         percentage: pct,
-        completedCount,
-        totalCount: totalJournalCount,
+        completedCount: totalCompletedInMonth,
+        totalCount: totalJournalEntriesInMonth,
         todayCompletedCount,
         todayTotalCount: todayJournals.length,
         status: (pct >= 80 ? 'TERPANTAU_BAIK' : pct >= 60 ? 'PERLU_PENGUATAN' : pct > 0 ? 'PERLU_PENDAMPINGAN' : 'BELUM_ADA_DATA') as any,
       };
     });
-  }, [classJournals]);
+  }, [classJournals, studentsList]);
 
   const sortedHabits = useMemo(() => {
     return [...classHabitStats].sort((a, b) => b.percentage - a.percentage);
@@ -1331,7 +1375,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <p className="text-xs text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                 <span>Wali Kelas: <strong className="text-slate-700 font-semibold">{activeRombel.teacher}</strong></span>
                 <span>•</span>
-                <span>T.A. {activeRombel.academicYear || '2025/2026'}</span>
+                <span>T.A. {rombelAcademicInfo.academicYear} ({rombelAcademicInfo.semesterName})</span>
                 <span>•</span>
                 <span>NPSN: {activeSchool.npsn || '20109988'}</span>
               </p>
@@ -1564,11 +1608,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   Konsistensi 7 Kebiasaan di {activeRombel.name} ({activeRombel.phase || 'Fase D'})
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Persentase keterlaksanaan dari seluruh entri jurnal {totalStudentsCount} siswa bulan berjalan.
+                  Persentase keterlaksanaan rata-rata pengisian jurnal dari {totalStudentsCount} siswa terdaftar bulan berjalan ({currentMonthYearName}).
                 </p>
               </div>
               <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-50 text-[#0753A5] border border-blue-200">
-                Semester Berjalan 2025/2026
+                {rombelAcademicInfo.fullDisplay}
               </span>
             </div>
 

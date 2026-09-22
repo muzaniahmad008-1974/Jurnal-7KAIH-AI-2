@@ -53,7 +53,7 @@ interface StudentDossierModalProps {
   onClose: () => void;
   student: StudentDossierData | null;
   onValidateStudent: (studentId: string) => void;
-  onOpenReportModal: () => void;
+  onOpenReportModal: (student?: any) => void;
 }
 
 const habitIcons: Record<string, React.FC<{ className?: string }>> = {
@@ -519,7 +519,7 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
         {/* Modal Footer with Actions */}
         <div className="bg-slate-50 border-t border-slate-100 p-4 px-6 flex flex-wrap items-center justify-between gap-3 text-xs">
           <button
-            onClick={onOpenReportModal}
+            onClick={() => onOpenReportModal(student)}
             className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold flex items-center gap-1.5 cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5 text-slate-500" />

@@ -339,13 +339,35 @@ export default function App() {
     } catch (_e) {}
     // Reset or unlock badges dynamically based on updated journal records without triggering reference churn
     setBadges((prevBadges) => {
-      const newBadges = calculateBadgesFromJournals(journals);
+      let targetJournals = journals;
+      if (currentPersona.role === 'STUDENT') {
+        const sId = (currentPersona.id || '').toLowerCase();
+        const sNisn = (currentPersona.identifierValue || '').trim();
+        const sName = (currentPersona.name || '').toLowerCase();
+        targetJournals = journals.filter(
+          (j) =>
+            (sId && j.studentId && j.studentId.toLowerCase() === sId) ||
+            (sNisn && j.studentNisn && j.studentNisn === sNisn) ||
+            (sName && j.studentName && j.studentName.toLowerCase() === sName) ||
+            (!j.studentId && !j.studentNisn)
+        );
+      } else if (currentPersona.role === 'PARENT') {
+        const cNisn = (currentPersona.childNisn || '').trim();
+        const cName = (currentPersona.childName || '').toLowerCase();
+        targetJournals = journals.filter(
+          (j) =>
+            (cNisn && j.studentNisn && j.studentNisn === cNisn) ||
+            (cName && j.studentName && j.studentName.toLowerCase() === cName) ||
+            (!j.studentId && !j.studentNisn)
+        );
+      }
+      const newBadges = calculateBadgesFromJournals(targetJournals);
       if (JSON.stringify(prevBadges) === JSON.stringify(newBadges)) {
         return prevBadges;
       }
       return newBadges;
     });
-  }, [journals]);
+  }, [journals, currentPersona]);
 
   useEffect(() => {
     try {
@@ -381,6 +403,16 @@ export default function App() {
   const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
   const [selectedJournalDate, setSelectedJournalDate] = useState<string>(() => getLocalDateString());
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [selectedReportStudent, setSelectedReportStudent] = useState<any | null>(null);
+
+  const handleOpenReportModal = (studentData?: any) => {
+    if (studentData && (studentData.name || studentData.nisn || studentData.id)) {
+      setSelectedReportStudent(studentData);
+    } else {
+      setSelectedReportStudent(null);
+    }
+    setIsReportModalOpen(true);
+  };
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
 
@@ -1204,6 +1236,7 @@ export default function App() {
               onValidateJournal={handleValidateJournal}
               onSelectDate={openJournalForDate}
               onOpenCalendar={() => setActiveTab('calendar')}
+              onOpenReportModal={handleOpenReportModal}
             />
           );
         case 'journal':
@@ -1259,6 +1292,7 @@ export default function App() {
               onValidateJournal={handleValidateJournal}
               onSelectDate={openJournalForDate}
               onOpenCalendar={() => setActiveTab('calendar')}
+              onOpenReportModal={handleOpenReportModal}
             />
           );
       }
@@ -1291,7 +1325,7 @@ export default function App() {
           onValidateJournal={handleValidateJournal}
           onSaveReflection={handleSaveParentReflection}
           activeNavTab={activeTab}
-          onOpenReportModal={() => setIsReportModalOpen(true)}
+          onOpenReportModal={handleOpenReportModal}
         />
       );
     }
@@ -1302,7 +1336,7 @@ export default function App() {
           journals={journals}
           programs={programs}
           followUps={followUps}
-          onOpenReportModal={() => setIsReportModalOpen(true)}
+          onOpenReportModal={handleOpenReportModal}
           activeNavTab={activeTab}
           currentPersona={currentPersona}
           onValidateJournal={handleValidateJournal}
@@ -1315,7 +1349,7 @@ export default function App() {
         <PrincipalDashboard
           programs={programs}
           followUps={followUps}
-          onOpenReportModal={() => setIsReportModalOpen(true)}
+          onOpenReportModal={handleOpenReportModal}
           activeNavTab={activeTab}
           currentPersona={currentPersona}
           journals={journals}
@@ -1326,7 +1360,7 @@ export default function App() {
     if (role === 'SUPERVISOR') {
       return (
         <SupervisorDashboard
-          onOpenReportModal={() => setIsReportModalOpen(true)}
+          onOpenReportModal={handleOpenReportModal}
           activeNavTab={activeTab}
           currentPersona={currentPersona}
           journals={journals}
@@ -1339,7 +1373,7 @@ export default function App() {
       return (
         <SuperAdminView
           activeNavTab={activeTab}
-          onOpenReportModal={() => setIsReportModalOpen(true)}
+          onOpenReportModal={handleOpenReportModal}
           onSelectPersona={handleSelectPersona}
           currentPersona={currentPersona}
           onUpdatePersona={(updated) => {
@@ -1411,7 +1445,7 @@ export default function App() {
             setViewMode('APP');
             setActiveTab(tab);
           }}
-          onOpenReportModal={() => setIsReportModalOpen(true)}
+          onOpenReportModal={() => handleOpenReportModal()}
           onOpenLoginModal={() => setIsLoginModalOpen(true)}
           onOpenLoginDashboard={() => setViewMode('LOGIN_DASHBOARD')}
           onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
@@ -1495,17 +1529,41 @@ export default function App() {
       {/* 6. Printable Official Report Modal */}
       <ReportView
         isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        studentName={currentPersona.role === 'STUDENT' ? currentPersona.name : (currentPersona.childName || '')}
-        className={currentPersona.role === 'STUDENT' ? (currentPersona.className || currentPersona.title || '') : (currentPersona.className || '')}
-        schoolName={currentPersona.schoolName || ''}
-        nisn={currentPersona.role === 'STUDENT' ? currentPersona.identifierValue : (currentPersona.childNisn || '')}
+        onClose={() => {
+          setIsReportModalOpen(false);
+          setSelectedReportStudent(null);
+        }}
+        targetStudent={selectedReportStudent}
+        studentName={
+          selectedReportStudent?.name ||
+          (currentPersona.role === 'STUDENT'
+            ? currentPersona.name
+            : currentPersona.role === 'PARENT'
+            ? currentPersona.childName || ''
+            : '')
+        }
+        className={
+          selectedReportStudent?.className ||
+          (currentPersona.role === 'STUDENT'
+            ? currentPersona.className || currentPersona.title || ''
+            : currentPersona.className || '')
+        }
+        schoolName={selectedReportStudent?.schoolName || currentPersona.schoolName || ''}
+        nisn={
+          selectedReportStudent?.nisn ||
+          (currentPersona.role === 'STUDENT'
+            ? currentPersona.identifierValue
+            : currentPersona.role === 'PARENT'
+            ? currentPersona.childNisn || ''
+            : '')
+        }
         monthName="September"
         year={2026}
         journals={journals}
         studentReflection={studentReflection}
         parentReflection={parentReflection}
         badges={badges}
+        currentPersona={currentPersona}
       />
 
       {/* 7. Official SSO Login / Authentication Portal Modal */}

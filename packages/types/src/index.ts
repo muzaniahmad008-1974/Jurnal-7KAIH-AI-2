@@ -265,6 +265,12 @@ export interface Badge {
   description: string;
   iconName: string;
   earnedAt?: string;
+  habitCode?: HabitCode;
+  category?: 'HABIT' | 'STREAK' | 'MILESTONE';
+  targetCount?: number;
+  currentCount?: number;
+  progressPercent?: number;
+  criteriaDescription?: string;
 }
 
 export interface AuditLog {

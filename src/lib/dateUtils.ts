@@ -114,3 +114,60 @@ export function getCurrentRealtimeString(tz: 'WITA' | 'WIB' = 'WITA'): string {
   return formatRealtimeSaveTime(new Date(), tz);
 }
 
+/**
+ * Resolves and formats academic year and active semester dynamically or from rombel config
+ * e.g. "Semester Ganjil 2026/2027" or "Semester Genap 2025/2026"
+ */
+export function formatAcademicYearAndSemester(raw?: string, dateInput: Date = new Date()): {
+  academicYear: string;
+  semesterName: string;
+  fullDisplay: string;
+} {
+  const month = dateInput.getMonth() + 1; // 1-12
+  const currentYear = dateInput.getFullYear();
+
+  // Default based on Indonesian school calendar (July-Dec = Ganjil, Jan-June = Genap)
+  const defaultSemester = month >= 7 && month <= 12 ? 'Semester Ganjil' : 'Semester Genap';
+  const defaultYear = month >= 7 && month <= 12 ? `${currentYear}/${currentYear + 1}` : `${currentYear - 1}/${currentYear}`;
+
+  if (!raw || !raw.trim()) {
+    return {
+      academicYear: defaultYear,
+      semesterName: defaultSemester,
+      fullDisplay: `${defaultSemester} ${defaultYear}`,
+    };
+  }
+
+  const trimmed = raw.trim();
+  let semesterName = defaultSemester;
+  if (/genap/i.test(trimmed)) {
+    semesterName = 'Semester Genap';
+  } else if (/ganjil/i.test(trimmed)) {
+    semesterName = 'Semester Ganjil';
+  }
+
+  const yearMatch = trimmed.match(/\d{4}\s*\/\s*\d{4}/);
+  const academicYear = yearMatch ? yearMatch[0].replace(/\s+/g, '') : defaultYear;
+
+  return {
+    academicYear,
+    semesterName,
+    fullDisplay: `${semesterName} ${academicYear}`,
+  };
+}
+
+/**
+ * Returns the current month and year in Indonesian:
+ * e.g. "September 2026"
+ */
+export function getCurrentIndonesianMonthYear(dateInput: Date = new Date()): string {
+  try {
+    return dateInput.toLocaleDateString('id-ID', {
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch (_e) {
+    return '';
+  }
+}
+

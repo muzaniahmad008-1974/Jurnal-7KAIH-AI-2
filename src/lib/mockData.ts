@@ -16,45 +16,110 @@ import {
 export const DEFAULT_BADGES: Badge[] = [
   {
     id: 'badge-01',
-    code: 'STREAK_7',
-    title: 'Konsisten 7 Hari',
-    description: 'Mencatat jurnal harian 7 hari berturut-turut.',
-    iconName: 'Flame',
+    code: 'STREAK_3',
+    title: 'Langkah Awal Hebat',
+    description: 'Mencatat jurnal pembiasaan harian minimal 3 hari aktif.',
+    iconName: 'Sparkles',
+    category: 'STREAK',
+    targetCount: 3,
+    criteriaDescription: 'Mencatat jurnal pembiasaan aktif minimal 3 hari.',
   },
   {
     id: 'badge-02',
-    code: 'EARLY_BIRD',
-    title: 'Bangun Pagi Hebat',
-    description: 'Bangun pagi segar dan bersemangat selama 14 hari.',
-    iconName: 'SunMedium',
+    code: 'STREAK_7',
+    title: 'Konsisten 7 Hari',
+    description: 'Mencatat jurnal pembiasaan harian minimal 7 hari aktif.',
+    iconName: 'Flame',
+    category: 'STREAK',
+    targetCount: 7,
+    criteriaDescription: 'Mencatat jurnal pembiasaan aktif minimal 7 hari.',
   },
   {
     id: 'badge-03',
+    code: 'DEVOUT_SPIRIT',
+    title: 'Pribadi Beriman',
+    description: 'Melaksanakan ibadah tepat waktu dan bersyukur minimal 14 hari.',
+    iconName: 'Sparkles',
+    habitCode: 'WORSHIP',
+    category: 'HABIT',
+    targetCount: 14,
+    criteriaDescription: 'Melaksanakan ibadah sesuai agama & bersyukur minimal 14 hari.',
+  },
+  {
+    id: 'badge-04',
+    code: 'EARLY_BIRD',
+    title: 'Bangun Pagi Hebat',
+    description: 'Bangun pagi segar dan bersemangat minimal 14 hari.',
+    iconName: 'SunMedium',
+    habitCode: 'WAKE_EARLY',
+    category: 'HABIT',
+    targetCount: 14,
+    criteriaDescription: 'Bangun pagi sebelum fajar/tepat waktu minimal 14 hari.',
+  },
+  {
+    id: 'badge-05',
+    code: 'ACTIVE_MOVER',
+    title: 'Aktif Bergerak',
+    description: 'Berolahraga dan aktivitas fisik menyenangkan minimal 14 hari.',
+    iconName: 'Activity',
+    habitCode: 'EXERCISE',
+    category: 'HABIT',
+    targetCount: 14,
+    criteriaDescription: 'Olahraga/aktivitas fisik minimal 15 menit selama 14 hari.',
+  },
+  {
+    id: 'badge-06',
     code: 'HEALTHY_CHAMP',
     title: 'Sahabat Sehat',
     description: 'Sarapan bernutrisi, makan buah/sayur, dan minum air cukup 14 hari.',
     iconName: 'Apple',
+    habitCode: 'HEALTHY_EATING',
+    category: 'HABIT',
+    targetCount: 14,
+    criteriaDescription: 'Sarapan bergizi dan makan buah/sayur minimal 14 hari.',
   },
   {
-    id: 'badge-04',
-    code: 'ACTIVE_MOVER',
-    title: 'Aktif Bergerak',
-    description: 'Berolahraga dan aktivitas fisik menyenangkan secara konsisten.',
-    iconName: 'Activity',
-  },
-  {
-    id: 'badge-05',
+    id: 'badge-07',
     code: 'CURIOUS_READER',
     title: 'Pembelajar Hebat',
-    description: 'Gemar membaca buku dan menemukan hal baru secara mandiri.',
+    description: 'Gemar membaca buku dan belajar hal baru secara mandiri 14 hari.',
     iconName: 'BookOpenCheck',
+    habitCode: 'LEARNING',
+    category: 'HABIT',
+    targetCount: 14,
+    criteriaDescription: 'Membaca buku literasi/belajar mandiri minimal 14 hari.',
   },
   {
-    id: 'badge-06',
+    id: 'badge-08',
     code: 'HELPING_HAND',
     title: 'Peduli Sesama',
-    description: 'Melakukan kebaikan, membantu sesama, dan gotong royong.',
+    description: 'Melakukan kebaikan, membantu orang tua/sesama, dan gotong royong 14 hari.',
     iconName: 'Heart',
+    habitCode: 'SOCIAL',
+    category: 'HABIT',
+    targetCount: 14,
+    criteriaDescription: 'Berbuat baik, gotong royong, atau bantu sesama minimal 14 hari.',
+  },
+  {
+    id: 'badge-09',
+    code: 'DISCIPLINED_REST',
+    title: 'Istirahat Teratur',
+    description: 'Tidur cepat tepat waktu sebelum 21:30 dan istirahat cukup 14 hari.',
+    iconName: 'Moon',
+    habitCode: 'SLEEP_EARLY',
+    category: 'HABIT',
+    targetCount: 14,
+    criteriaDescription: 'Tidur sebelum 21:30 & istirahat berkualitas minimal 14 hari.',
+  },
+  {
+    id: 'badge-10',
+    code: 'GOLDEN_HABIT_21',
+    title: 'Karakter Emas 21 Hari',
+    description: 'Konsistensi pembiasaan 7 kebiasaan selama 21 hari pembentukan karakter.',
+    iconName: 'Trophy',
+    category: 'MILESTONE',
+    targetCount: 21,
+    criteriaDescription: 'Mencapai minimal 5 dari 7 kebiasaan tuntas selama 21 hari.',
   },
 ];
 
@@ -66,32 +131,47 @@ export const calculateBadgesFromJournals = (
   journals: DailyJournal[] = [],
   baseBadges: Badge[] = DEFAULT_BADGES
 ): Badge[] => {
-  if (!journals || journals.length === 0) {
-    return baseBadges.map((b) => ({
-      ...b,
-      earnedAt: undefined,
-    }));
-  }
-
   const getJournalDate = (j: DailyJournal): string => j.journalDate || (j as unknown as { date?: string }).date || '';
 
-  // Urutkan tanggal jurnal kronologis menaik
-  const sorted = [...journals].sort((a, b) => getJournalDate(a).localeCompare(getJournalDate(b)));
-
-  // 1. STREAK_7: Minimal 7 entri jurnal tercatat
-  let streak7Date: string | undefined = undefined;
-  if (sorted.length >= 7) {
-    streak7Date = getJournalDate(sorted[6]);
+  // Filter jurnal unik berdasarkan tanggal untuk menghindari duplikasi
+  const uniqueDateMap = new Map<string, DailyJournal>();
+  if (Array.isArray(journals)) {
+    journals.forEach((j) => {
+      const d = getJournalDate(j);
+      if (d && (!uniqueDateMap.has(d) || (j.updatedAt && (!uniqueDateMap.get(d)?.updatedAt || j.updatedAt > (uniqueDateMap.get(d)?.updatedAt || ''))))) {
+        uniqueDateMap.set(d, j);
+      }
+    });
   }
 
+  const sorted = Array.from(uniqueDateMap.values()).sort((a, b) =>
+    getJournalDate(a).localeCompare(getJournalDate(b))
+  );
+
+  const totalDays = sorted.length;
+  const latestDate = totalDays > 0 ? getJournalDate(sorted[totalDays - 1]) : undefined;
+
+  // 1. Streak 3 hari
+  const streak3Date = totalDays >= 3 ? getJournalDate(sorted[2]) : undefined;
+  // 2. Streak 7 hari
+  const streak7Date = totalDays >= 7 ? getJournalDate(sorted[6]) : undefined;
+
+  // Helper untuk mengecek keterlaksanaan kebiasaan
+  const isHabitCompleted = (j: DailyJournal, code: HabitCode): boolean => {
+    const raw = j as any;
+    const entry = (j.entries && j.entries[code]) || (raw.habits && raw.habits[code]);
+    if (!entry) return raw[code] === true;
+    return !!(entry.completed || entry.status === 'COMPLETED' || raw[code] === true);
+  };
+
   // Hitung jumlah ketercapaian per dimensi kebiasaan
-  const countHabit = (habitCode: HabitCode): { count: number; dateOfThreshold?: string } => {
+  const countHabit = (habitCode: HabitCode, targetDays = 14): { count: number; dateOfThreshold?: string } => {
     let count = 0;
     let dateOfThreshold: string | undefined = undefined;
     for (const j of sorted) {
-      if (j.entries && j.entries[habitCode]?.completed) {
+      if (isHabitCompleted(j, habitCode)) {
         count++;
-        if (count === 14 && !dateOfThreshold) {
+        if (count === targetDays && !dateOfThreshold) {
           dateOfThreshold = getJournalDate(j);
         }
       }
@@ -99,41 +179,106 @@ export const calculateBadgesFromJournals = (
     return { count, dateOfThreshold };
   };
 
-  const wakeEarly = countHabit('WAKE_EARLY');
-  const healthyEating = countHabit('HEALTHY_EATING');
-  const exercise = countHabit('EXERCISE');
-  const learning = countHabit('LEARNING');
-  const social = countHabit('SOCIAL');
+  const worship = countHabit('WORSHIP', 14);
+  const wakeEarly = countHabit('WAKE_EARLY', 14);
+  const exercise = countHabit('EXERCISE', 14);
+  const healthyEating = countHabit('HEALTHY_EATING', 14);
+  const learning = countHabit('LEARNING', 14);
+  const social = countHabit('SOCIAL', 14);
+  const sleepEarly = countHabit('SLEEP_EARLY', 14);
+
+  // Hitung hari dengan minimal 5 kebiasaan tuntas (Karakter Emas 21 Hari)
+  let daysWith5Plus = 0;
+  let dateOfThreshold21: string | undefined = undefined;
+  const allCodes: HabitCode[] = ['WAKE_EARLY', 'WORSHIP', 'EXERCISE', 'HEALTHY_EATING', 'LEARNING', 'SOCIAL', 'SLEEP_EARLY'];
+  for (const j of sorted) {
+    let completedInDay = 0;
+    for (const c of allCodes) {
+      if (isHabitCompleted(j, c)) completedInDay++;
+    }
+    if (completedInDay >= 5) {
+      daysWith5Plus++;
+      if (daysWith5Plus === 21 && !dateOfThreshold21) {
+        dateOfThreshold21 = getJournalDate(j);
+      }
+    }
+  }
 
   return baseBadges.map((badge) => {
     let earnedAt: string | undefined = undefined;
-    const latestDate = sorted.length > 0 ? getJournalDate(sorted[sorted.length - 1]) : undefined;
+    let currentCount = 0;
+    let targetCount = badge.targetCount || 14;
 
     switch (badge.code) {
+      case 'STREAK_3':
+        targetCount = 3;
+        currentCount = totalDays;
+        if (currentCount >= targetCount) earnedAt = streak3Date || latestDate;
+        break;
       case 'STREAK_7':
-        earnedAt = streak7Date;
+        targetCount = 7;
+        currentCount = totalDays;
+        if (currentCount >= targetCount) earnedAt = streak7Date || latestDate;
+        break;
+      case 'DEVOUT_SPIRIT':
+        targetCount = 14;
+        currentCount = worship.count;
+        if (currentCount >= targetCount) earnedAt = worship.dateOfThreshold || latestDate;
         break;
       case 'EARLY_BIRD':
-        if (wakeEarly.count >= 14) earnedAt = wakeEarly.dateOfThreshold || latestDate;
-        break;
-      case 'HEALTHY_CHAMP':
-        if (healthyEating.count >= 14) earnedAt = healthyEating.dateOfThreshold || latestDate;
+        targetCount = 14;
+        currentCount = wakeEarly.count;
+        if (currentCount >= targetCount) earnedAt = wakeEarly.dateOfThreshold || latestDate;
         break;
       case 'ACTIVE_MOVER':
-        if (exercise.count >= 14) earnedAt = exercise.dateOfThreshold || latestDate;
+        targetCount = 14;
+        currentCount = exercise.count;
+        if (currentCount >= targetCount) earnedAt = exercise.dateOfThreshold || latestDate;
+        break;
+      case 'HEALTHY_CHAMP':
+        targetCount = 14;
+        currentCount = healthyEating.count;
+        if (currentCount >= targetCount) earnedAt = healthyEating.dateOfThreshold || latestDate;
         break;
       case 'CURIOUS_READER':
-        if (learning.count >= 14) earnedAt = learning.dateOfThreshold || latestDate;
+        targetCount = 14;
+        currentCount = learning.count;
+        if (currentCount >= targetCount) earnedAt = learning.dateOfThreshold || latestDate;
         break;
       case 'HELPING_HAND':
-        if (social.count >= 14) earnedAt = social.dateOfThreshold || latestDate;
+        targetCount = 14;
+        currentCount = social.count;
+        if (currentCount >= targetCount) earnedAt = social.dateOfThreshold || latestDate;
+        break;
+      case 'DISCIPLINED_REST':
+        targetCount = 14;
+        currentCount = sleepEarly.count;
+        if (currentCount >= targetCount) earnedAt = sleepEarly.dateOfThreshold || latestDate;
+        break;
+      case 'GOLDEN_HABIT_21':
+        targetCount = 21;
+        currentCount = daysWith5Plus;
+        if (currentCount >= targetCount) earnedAt = dateOfThreshold21 || latestDate;
         break;
       default:
-        earnedAt = undefined;
+        // Cek jika badge punya habitCode
+        if (badge.habitCode) {
+          const res = countHabit(badge.habitCode, targetCount);
+          currentCount = res.count;
+          if (currentCount >= targetCount) earnedAt = res.dateOfThreshold || latestDate;
+        } else {
+          currentCount = totalDays;
+          if (currentCount >= targetCount) earnedAt = latestDate;
+        }
     }
+
+    const progressPercent = Math.min(100, Math.round((currentCount / targetCount) * 100));
 
     return {
       ...badge,
+      targetCount,
+      currentCount,
+      progressPercent,
       earnedAt,
     };
   });
