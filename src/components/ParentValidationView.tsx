@@ -229,15 +229,101 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
   };
 
   // Reflection form states - clean defaults without hardcoded child strings
-  const [observedChange, setObservedChange] = useState(initialReflection?.observedChange || '');
-  const [difficulty, setDifficulty] = useState(initialReflection?.difficulty || '');
-  const [familySupport, setFamilySupport] = useState(initialReflection?.familySupport || '');
-  const [nextMonthSupport, setNextMonthSupport] = useState(initialReflection?.nextMonthSupport || '');
-  const [parentNote, setParentNote] = useState(initialReflection?.parentNote || '');
+  const [observedChange, setObservedChange] = useState(() => {
+    try {
+      const targetId = studentId || currentPersona?.childId;
+      const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+      if (targetId) {
+        const saved = localStorage.getItem(`si7kaih_reflection_parent_${targetId}_${periodKey}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.observedChange) return parsed.observedChange;
+        }
+      }
+    } catch (_e) {}
+    return initialReflection?.observedChange || '';
+  });
+  const [difficulty, setDifficulty] = useState(() => {
+    try {
+      const targetId = studentId || currentPersona?.childId;
+      const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+      if (targetId) {
+        const saved = localStorage.getItem(`si7kaih_reflection_parent_${targetId}_${periodKey}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.difficulty) return parsed.difficulty;
+        }
+      }
+    } catch (_e) {}
+    return initialReflection?.difficulty || '';
+  });
+  const [familySupport, setFamilySupport] = useState(() => {
+    try {
+      const targetId = studentId || currentPersona?.childId;
+      const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+      if (targetId) {
+        const saved = localStorage.getItem(`si7kaih_reflection_parent_${targetId}_${periodKey}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.familySupport) return parsed.familySupport;
+        }
+      }
+    } catch (_e) {}
+    return initialReflection?.familySupport || '';
+  });
+  const [nextMonthSupport, setNextMonthSupport] = useState(() => {
+    try {
+      const targetId = studentId || currentPersona?.childId;
+      const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+      if (targetId) {
+        const saved = localStorage.getItem(`si7kaih_reflection_parent_${targetId}_${periodKey}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.nextMonthSupport) return parsed.nextMonthSupport;
+        }
+      }
+    } catch (_e) {}
+    return initialReflection?.nextMonthSupport || '';
+  });
+  const [parentNote, setParentNote] = useState(() => {
+    try {
+      const targetId = studentId || currentPersona?.childId;
+      const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+      if (targetId) {
+        const saved = localStorage.getItem(`si7kaih_reflection_parent_${targetId}_${periodKey}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.parentNote) return parsed.parentNote;
+        }
+      }
+    } catch (_e) {}
+    return initialReflection?.parentNote || '';
+  });
   const [isReflectionSaved, setIsReflectionSaved] = useState(false);
 
   useEffect(() => {
-    if (initialReflection) {
+    const targetId = studentId || currentPersona?.childId;
+    const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    let loadedFromPerStudent = false;
+
+    if (targetId) {
+      try {
+        const saved = localStorage.getItem(`si7kaih_reflection_parent_${targetId}_${periodKey}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed) {
+            setObservedChange(parsed.observedChange || '');
+            setDifficulty(parsed.difficulty || '');
+            setFamilySupport(parsed.familySupport || '');
+            setNextMonthSupport(parsed.nextMonthSupport || '');
+            setParentNote(parsed.parentNote || '');
+            loadedFromPerStudent = true;
+          }
+        }
+      } catch (_e) {}
+    }
+
+    if (!loadedFromPerStudent && initialReflection) {
       setObservedChange((prev) => (prev !== (initialReflection.observedChange || '') ? (initialReflection.observedChange || '') : prev));
       setDifficulty((prev) => (prev !== (initialReflection.difficulty || '') ? (initialReflection.difficulty || '') : prev));
       setFamilySupport((prev) => (prev !== (initialReflection.familySupport || '') ? (initialReflection.familySupport || '') : prev));
@@ -245,6 +331,8 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
       setParentNote((prev) => (prev !== (initialReflection.parentNote || '') ? (initialReflection.parentNote || '') : prev));
     }
   }, [
+    studentId,
+    currentPersona?.childId,
     initialReflection?.observedChange,
     initialReflection?.difficulty,
     initialReflection?.familySupport,
@@ -314,15 +402,37 @@ export const ParentValidationView: React.FC<ParentValidationViewProps> = ({
   };
 
   const handleSaveReflection = () => {
+    const targetStudentId = studentId || currentPersona?.childId || initialReflection?.studentId || '';
+    const now = new Date();
+    const periodMonth = initialReflection?.month || now.getMonth() + 1;
+    const periodYear = initialReflection?.year || now.getFullYear();
+    const periodKey = `${periodYear}-${String(periodMonth).padStart(2, '0')}`;
+
     const updated: ParentMonthlyReflection = {
       ...initialReflection,
-      observedChange,
-      difficulty,
-      familySupport,
-      nextMonthSupport,
-      parentNote,
-      updatedAt: new Date().toISOString(),
+      studentId: targetStudentId,
+      month: periodMonth,
+      year: periodYear,
+      observedChange: observedChange.trim(),
+      difficulty: difficulty.trim(),
+      familySupport: familySupport.trim(),
+      nextMonthSupport: nextMonthSupport.trim(),
+      parentNote: parentNote.trim(),
+      updatedAt: now.toISOString(),
     };
+
+    if (targetStudentId) {
+      try {
+        localStorage.setItem(`si7kaih_reflection_parent_${targetStudentId}_${periodKey}`, JSON.stringify(updated));
+      } catch (_e) {}
+    }
+    const cleanNisn = studentNisn || currentPersona?.childNisn;
+    if (cleanNisn) {
+      try {
+        localStorage.setItem(`si7kaih_reflection_parent_nisn_${cleanNisn}_${periodKey}`, JSON.stringify(updated));
+      } catch (_e) {}
+    }
+
     onSaveReflection(updated);
     setIsReflectionSaved(true);
     showToast('Refleksi bulanan orang tua berhasil disimpan!');

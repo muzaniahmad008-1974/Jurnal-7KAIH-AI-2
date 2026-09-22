@@ -311,7 +311,16 @@ export default function App() {
       const saved = localStorage.getItem('si7kaih_parent_reflection_prod');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed.observedChange === 'string' && parsed.observedChange.includes('Budi')) {
+        // Hapus data default/dummy lawas atau data tanpa studentId yang jelas
+        if (
+          !parsed ||
+          !parsed.studentId ||
+          (typeof parsed.observedChange === 'string' &&
+            (parsed.observedChange.includes('Budi') ||
+              parsed.observedChange.includes('Contoh') ||
+              parsed.observedChange.includes('Default')))
+        ) {
+          localStorage.removeItem('si7kaih_parent_reflection_prod');
           return DEFAULT_PARENT_REFLECTION;
         }
         return parsed;
@@ -978,6 +987,12 @@ export default function App() {
 
   const handleSaveParentReflection = (ref: ParentMonthlyReflection) => {
     setParentReflection(ref);
+    if (ref.studentId) {
+      const periodKey = `${ref.year || new Date().getFullYear()}-${String(ref.month || new Date().getMonth() + 1).padStart(2, '0')}`;
+      try {
+        localStorage.setItem(`si7kaih_reflection_parent_${ref.studentId}_${periodKey}`, JSON.stringify(ref));
+      } catch (_e) {}
+    }
     saveParentReflectionToSupabase(ref, currentPersona.id).catch((err) =>
       console.warn('Supabase parent reflection save error:', err)
     );
@@ -1560,8 +1575,20 @@ export default function App() {
         monthName="September"
         year={2026}
         journals={journals}
-        studentReflection={studentReflection}
-        parentReflection={parentReflection}
+        studentReflection={
+          selectedReportStudent
+            ? studentReflection?.studentId === selectedReportStudent.id
+              ? studentReflection
+              : undefined
+            : studentReflection
+        }
+        parentReflection={
+          selectedReportStudent
+            ? parentReflection?.studentId === selectedReportStudent.id
+              ? parentReflection
+              : undefined
+            : parentReflection
+        }
         badges={badges}
         currentPersona={currentPersona}
       />

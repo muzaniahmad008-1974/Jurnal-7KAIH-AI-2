@@ -453,86 +453,156 @@ export const ReportView: React.FC<ReportViewProps> = ({
     });
   }, [studentMonthJournals, recordedDays, targetThreshold]);
 
-  // 7. Refleksi Mandiri Siswa (Ditarik Dinamis dari Storage Siswa Terpilih)
+  // 7. Refleksi Mandiri Siswa (Ditarik Dinamis dari Storage Siswa Terpilih Tanpa Data Default)
   const activeStudentReflection = useMemo<StudentMonthlyReflection | null>(() => {
     try {
-      // 1. Cek storage berbasis studentId dan bulan
+      // 1. Cek storage spesifik berbasis studentId dan bulan
       const perStudentKey = `si7kaih_reflection_student_${activeStudent.id}_${activePeriodKey}`;
       const savedStudent = localStorage.getItem(perStudentKey);
       if (savedStudent) {
         const parsed = JSON.parse(savedStudent);
-        if (parsed && (parsed.rootCause || parsed.actionPlan || parsed.nextMonthTarget)) {
+        if (
+          parsed &&
+          (parsed.studentId === activeStudent.id || !parsed.studentId) &&
+          (parsed.rootCause?.trim() || parsed.actionPlan?.trim() || parsed.nextMonthTarget?.trim())
+        ) {
           return parsed;
         }
       }
 
-      // 2. Cek storage global jika studentId cocok
+      // 2. Cek storage berbasis NISN dan bulan jika ada
+      if (activeStudent.nisn) {
+        const perNisnKey = `si7kaih_reflection_student_nisn_${activeStudent.nisn}_${activePeriodKey}`;
+        const savedNisn = localStorage.getItem(perNisnKey);
+        if (savedNisn) {
+          const parsed = JSON.parse(savedNisn);
+          if (parsed && (parsed.rootCause?.trim() || parsed.actionPlan?.trim() || parsed.nextMonthTarget?.trim())) {
+            return parsed;
+          }
+        }
+      }
+
+      // 3. Cek storage global HANYA JIKA studentId secara eksplisit cocok dengan activeStudent.id
       const globalKey = 'si7kaih_student_reflection_prod';
       const savedGlobal = localStorage.getItem(globalKey);
       if (savedGlobal) {
         const parsed = JSON.parse(savedGlobal);
         if (
           parsed &&
-          (parsed.studentId === activeStudent.id || !parsed.studentId) &&
-          (parsed.rootCause || parsed.actionPlan || parsed.nextMonthTarget)
+          parsed.studentId &&
+          parsed.studentId === activeStudent.id &&
+          (parsed.rootCause?.trim() || parsed.actionPlan?.trim() || parsed.nextMonthTarget?.trim())
         ) {
           return parsed;
         }
       }
     } catch (_e) {}
 
-    // 3. Fallback ke props jika ada isian riil
+    // 4. Fallback ke props HANYA jika studentId secara eksplisit cocok dan ada isian riil
     if (
       propStudentReflection &&
-      (propStudentReflection.rootCause ||
-        propStudentReflection.actionPlan ||
-        propStudentReflection.nextMonthTarget)
+      propStudentReflection.studentId &&
+      propStudentReflection.studentId === activeStudent.id &&
+      (propStudentReflection.rootCause?.trim() ||
+        propStudentReflection.actionPlan?.trim() ||
+        propStudentReflection.nextMonthTarget?.trim())
     ) {
       return propStudentReflection;
     }
 
     return null;
-  }, [activeStudent.id, activePeriodKey, propStudentReflection]);
+  }, [activeStudent.id, activeStudent.nisn, activePeriodKey, propStudentReflection]);
 
-  // 8. Pengamatan & Refleksi Orang Tua (Ditarik Dinamis dari Storage Orang Tua Siswa)
+  // 8. Pengamatan & Refleksi Orang Tua (Ditarik Dinamis HANYA Jika Ada Isian Riil Dari Orang Tua Siswa Ini, Bebas Default Data)
   const activeParentReflection = useMemo<ParentMonthlyReflection | null>(() => {
     try {
-      // 1. Cek storage berbasis studentId dan bulan
+      // 1. Cek storage spesifik berbasis studentId dan bulan
       const perParentKey = `si7kaih_reflection_parent_${activeStudent.id}_${activePeriodKey}`;
       const savedParent = localStorage.getItem(perParentKey);
       if (savedParent) {
         const parsed = JSON.parse(savedParent);
-        if (parsed && (parsed.observedChange || parsed.difficulty || parsed.familySupport)) {
+        if (
+          parsed &&
+          (parsed.studentId === activeStudent.id || !parsed.studentId) &&
+          (parsed.observedChange?.trim() ||
+            parsed.difficulty?.trim() ||
+            parsed.familySupport?.trim() ||
+            parsed.nextMonthSupport?.trim() ||
+            parsed.parentNote?.trim())
+        ) {
           return parsed;
         }
       }
 
-      // 2. Cek storage global
+      // 2. Cek storage spesifik berbasis NISN anak dan bulan (jika ada)
+      if (activeStudent.nisn) {
+        const perNisnKey = `si7kaih_reflection_parent_nisn_${activeStudent.nisn}_${activePeriodKey}`;
+        const savedNisn = localStorage.getItem(perNisnKey);
+        if (savedNisn) {
+          const parsed = JSON.parse(savedNisn);
+          if (
+            parsed &&
+            (parsed.observedChange?.trim() ||
+              parsed.difficulty?.trim() ||
+              parsed.familySupport?.trim() ||
+              parsed.nextMonthSupport?.trim() ||
+              parsed.parentNote?.trim())
+          ) {
+            return parsed;
+          }
+        }
+      }
+
+      // 3. Cek storage global HANYA JIKA studentId secara eksplisit cocok dengan activeStudent.id dan periode cocok
       const globalKey = 'si7kaih_parent_reflection_prod';
       const savedGlobal = localStorage.getItem(globalKey);
       if (savedGlobal) {
         const parsed = JSON.parse(savedGlobal);
+        const matchStudent = parsed && parsed.studentId && parsed.studentId === activeStudent.id;
+        const matchPeriod =
+          !parsed.month ||
+          (parsed.month === activeMonthNumber && (!parsed.year || parsed.year === selectedYearNum));
         if (
-          parsed &&
-          (parsed.studentId === activeStudent.id || !parsed.studentId) &&
-          (parsed.observedChange || parsed.difficulty || parsed.familySupport)
+          matchStudent &&
+          matchPeriod &&
+          (parsed.observedChange?.trim() ||
+            parsed.difficulty?.trim() ||
+            parsed.familySupport?.trim() ||
+            parsed.nextMonthSupport?.trim() ||
+            parsed.parentNote?.trim())
         ) {
           return parsed;
         }
       }
     } catch (_e) {}
 
+    // 4. Props HANYA jika studentId secara eksplisit cocok dengan activeStudent.id dan terdapat isian riil
     if (
       propParentReflection &&
-      (propParentReflection.observedChange ||
-        propParentReflection.difficulty ||
-        propParentReflection.familySupport)
+      propParentReflection.studentId &&
+      propParentReflection.studentId === activeStudent.id &&
+      (!propParentReflection.month ||
+        (propParentReflection.month === activeMonthNumber &&
+          (!propParentReflection.year || propParentReflection.year === selectedYearNum))) &&
+      (propParentReflection.observedChange?.trim() ||
+        propParentReflection.difficulty?.trim() ||
+        propParentReflection.familySupport?.trim() ||
+        propParentReflection.nextMonthSupport?.trim() ||
+        propParentReflection.parentNote?.trim())
     ) {
       return propParentReflection;
     }
 
+    // Default mutlak: Tanpa data default apa pun (bersih)
     return null;
-  }, [activeStudent.id, activePeriodKey, propParentReflection]);
+  }, [
+    activeStudent.id,
+    activeStudent.nisn,
+    activePeriodKey,
+    activeMonthNumber,
+    selectedYearNum,
+    propParentReflection,
+  ]);
 
   // 9. Catatan Saran Pendampingan Berbasis AI (Dihasilkan Dinamis dari Ketercapaian Jurnal Siswa)
   const dynamicAiPedagogicalNote = useMemo(() => {
