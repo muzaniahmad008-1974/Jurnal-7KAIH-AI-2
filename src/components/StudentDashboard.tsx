@@ -9,7 +9,7 @@ import {
   Badge,
   HabitCode,
 } from '../../packages/types/src/index';
-import { HABIT_LIST } from '../lib/constants';
+import { HABIT_LIST, isDeprecatedOrDummyJournal } from '../lib/constants';
 import {
   calculateMonthlyHabitSummary,
   calculateHabitualThreshold,
@@ -243,7 +243,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     SLEEP_EARLY: Moon,
   };
 
-  // 1. Accurate filtering of journals belonging to the active student
+  // 1. Accurate filtering of journals belonging to the active student (strictly no default/dummy)
   const studentJournals = useMemo(() => {
     const baseList = syncedJournals.length > 0 ? syncedJournals : (allJournals || []);
     const targetId = (studentId || todayJournal?.studentId || '').trim().toLowerCase();
@@ -251,15 +251,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     const targetName = (studentName || todayJournal?.studentName || '').trim().toLowerCase();
 
     const filtered = baseList.filter((j) => {
-      if (targetId && j.studentId && j.studentId.toLowerCase() === targetId) return true;
-      if (targetNisn && j.studentNisn && j.studentNisn === targetNisn) return true;
-      if (targetName && j.studentName && j.studentName.trim().toLowerCase() === targetName) return true;
-      if (!j.studentId && !j.studentNisn && !j.studentName) return true;
+      if (isDeprecatedOrDummyJournal(j)) return false;
+      const jId = (j.studentId || '').trim().toLowerCase();
+      const jNisn = (j.studentNisn || '').trim();
+      const jName = (j.studentName || '').trim().toLowerCase();
+
+      if (targetId && jId && jId === targetId) return true;
+      if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return true;
+      if (targetName && jName && jName === targetName) return true;
       return false;
     });
 
     // Merge with todayJournal to guarantee 0-latency reflection of today's journal state
-    if (todayJournal?.journalDate) {
+    if (todayJournal?.journalDate && !isDeprecatedOrDummyJournal(todayJournal)) {
       const existsIdx = filtered.findIndex((j) => j.journalDate === todayJournal.journalDate);
       if (existsIdx >= 0) {
         const existing = filtered[existsIdx];
@@ -553,6 +557,53 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     return studentJournals.filter((j) => (j.completedCount || 0) >= 5).length;
   }, [studentJournals]);
 
+  // Linimasa Pembiasaan Sepekan Terakhir (6 hari lalu s.d. hari ini) - Data riil terkini
+  const recentDays = useMemo(() => {
+    const list = [];
+    const baseDate = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() - i);
+      const str = getLocalDateString(d);
+
+      let match = studentJournals.find((j) => j.journalDate === str && !isDeprecatedOrDummyJournal(j));
+      if (str === currentTodayDateStr && activeTodayJournal) {
+        match = activeTodayJournal;
+      }
+
+      let count = 0;
+      if (match) {
+        if (typeof match.completedCount === 'number') {
+          count = match.completedCount;
+        } else if (match.entries) {
+          count = Object.values(match.entries).filter((e: any) => !!e?.completed).length;
+        }
+      }
+
+      const hasRecord = count > 0;
+      const isFull = count >= 6;
+      const isPartial = count > 0 && count < 6;
+
+      list.push({
+        dateStr: str,
+        dayName: d.toLocaleDateString('id-ID', { weekday: 'short' }),
+        dayNum: d.getDate(),
+        fullDateLabel: formatIndonesianFullDate(d),
+        completedCount: count,
+        hasRecord,
+        isFull,
+        isPartial,
+        isToday: str === currentTodayDateStr,
+        savedAt: match?.savedAt || (match?.updatedAt && count > 0 ? formatRealtimeSaveTime(match.updatedAt, 'WITA') : null),
+      });
+    }
+    return list;
+  }, [studentJournals, currentTodayDateStr, activeTodayJournal]);
+
+  const activeDaysInWeek = useMemo(() => {
+    return recentDays.filter((d) => d.completedCount > 0).length;
+  }, [recentDays]);
+
   return (
     <div className="space-y-6">
       {/* Hero Welcome Card */}
@@ -648,6 +699,131 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ============================================================================ */}
+      {/* LINIMASA PEMBIASAAN SEPEKAN TERAKHIR (Sinkron Realtime dengan Data Jurnal Murid) */}
+      {/* ============================================================================ */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#0753A5] to-[#20A5D5] text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Calendar className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-black text-slate-900">
+                  Linimasa Pembiasaan Sepekan Terakhir
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Sinkron Data Terkini</span>
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Ketercapaian 7 hari kalender pembiasaan ananda {studentName || 'siswa'} • Bebas data dummy/default.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-50 text-slate-700 border border-slate-200">
+              Konsistensi: <strong className="text-[#0753A5] font-black">{activeDaysInWeek} dari 7 Hari</strong> Aktif
+            </span>
+          </div>
+        </div>
+
+        {/* 7-Day Grid Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+          {recentDays.map((item) => (
+            <button
+              key={item.dateStr}
+              onClick={() => {
+                if (onSelectDate) {
+                  onSelectDate(item.dateStr);
+                }
+                onOpenJournal();
+              }}
+              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 relative group hover:shadow-md ${
+                item.isToday
+                  ? 'border-[#0753A5] bg-blue-50/70 ring-2 ring-blue-400/40 shadow-xs'
+                  : item.hasRecord
+                  ? 'border-slate-200 bg-white hover:border-blue-300'
+                  : 'border-slate-200/80 bg-slate-50/50 hover:bg-slate-100 hover:border-slate-300'
+              }`}
+              title={`Klik untuk membuka/mengisi jurnal ${item.fullDateLabel}`}
+            >
+              {/* Header: Day name + Today Pill */}
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  {item.dayName}
+                </span>
+                {item.isToday && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-[#0753A5] text-white">
+                    Hari Ini
+                  </span>
+                )}
+              </div>
+
+              {/* Day Number and Full Date */}
+              <div>
+                <div className="text-xl font-black text-slate-900 group-hover:text-[#0753A5] transition-colors">
+                  {item.dayNum}
+                </div>
+                <div className="text-[10px] text-slate-500 truncate">
+                  {item.fullDateLabel.split(',')[1]?.trim() || item.dateStr}
+                </div>
+              </div>
+
+              {/* Status Pill */}
+              <div className="pt-2 border-t border-slate-100 w-full flex items-center justify-between">
+                {item.hasRecord ? (
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      item.isFull
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-amber-100 text-amber-800 border border-amber-300'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        item.isFull ? 'bg-emerald-500' : 'bg-amber-500'
+                      }`}
+                    />
+                    <span>{item.completedCount}/7 Tuntas</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-400 border border-slate-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                    <span>0/7 Terisi</span>
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Legend & Instructions */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs text-slate-500 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span><strong>6–7 Kebiasaan:</strong> Tuntas Sempurna</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+              <span><strong>1–5 Kebiasaan:</strong> Sebagian Terlaksana</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+              <span><strong>0/7 Terisi:</strong> Belum Ada Catatan Jurnal</span>
+            </span>
+          </div>
+
+          <span className="text-[11px] text-slate-400 italic">
+            * Klik salah satu kartu tanggal di atas untuk membuka & mengisi jurnal hari tersebut.
+          </span>
         </div>
       </div>
 

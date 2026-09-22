@@ -12,6 +12,7 @@ import {
   ParentMonthlyReflection,
   DailyHabitEntry,
 } from '../../packages/types/src/index';
+import { isDeprecatedOrDummyJournal } from './constants';
 
 export const DEFAULT_BADGES: Badge[] = [
   {
@@ -133,10 +134,19 @@ export const calculateBadgesFromJournals = (
 ): Badge[] => {
   const getJournalDate = (j: DailyJournal): string => j.journalDate || (j as unknown as { date?: string }).date || '';
 
-  // Filter jurnal unik berdasarkan tanggal untuk menghindari duplikasi
+  // Helper untuk mengecek keterlaksanaan kebiasaan
+  const isHabitCompleted = (j: DailyJournal, code: HabitCode): boolean => {
+    const raw = j as any;
+    const entry = (j.entries && j.entries[code]) || (raw.habits && raw.habits[code]);
+    if (!entry) return raw[code] === true;
+    return !!(entry.completed || entry.status === 'COMPLETED' || raw[code] === true);
+  };
+
+  // Filter jurnal unik berdasarkan tanggal untuk menghindari duplikasi & singkirkan data dummy
   const uniqueDateMap = new Map<string, DailyJournal>();
   if (Array.isArray(journals)) {
     journals.forEach((j) => {
+      if (isDeprecatedOrDummyJournal(j)) return;
       const d = getJournalDate(j);
       if (d && (!uniqueDateMap.has(d) || (j.updatedAt && (!uniqueDateMap.get(d)?.updatedAt || j.updatedAt > (uniqueDateMap.get(d)?.updatedAt || ''))))) {
         uniqueDateMap.set(d, j);
@@ -148,21 +158,20 @@ export const calculateBadgesFromJournals = (
     getJournalDate(a).localeCompare(getJournalDate(b))
   );
 
-  const totalDays = sorted.length;
-  const latestDate = totalDays > 0 ? getJournalDate(sorted[totalDays - 1]) : undefined;
+  // Hanya hitung hari yang memiliki minimal 1 kebiasaan tuntas (bukan jurnal kosong)
+  const activeJournals = sorted.filter((j) => {
+    if (typeof j.completedCount === 'number' && j.completedCount > 0) return true;
+    if (j.entries && Object.values(j.entries).some((e: any) => !!e?.completed)) return true;
+    return false;
+  });
 
-  // 1. Streak 3 hari
-  const streak3Date = totalDays >= 3 ? getJournalDate(sorted[2]) : undefined;
-  // 2. Streak 7 hari
-  const streak7Date = totalDays >= 7 ? getJournalDate(sorted[6]) : undefined;
+  const totalDays = activeJournals.length;
+  const latestDate = totalDays > 0 ? getJournalDate(activeJournals[totalDays - 1]) : undefined;
 
-  // Helper untuk mengecek keterlaksanaan kebiasaan
-  const isHabitCompleted = (j: DailyJournal, code: HabitCode): boolean => {
-    const raw = j as any;
-    const entry = (j.entries && j.entries[code]) || (raw.habits && raw.habits[code]);
-    if (!entry) return raw[code] === true;
-    return !!(entry.completed || entry.status === 'COMPLETED' || raw[code] === true);
-  };
+  // 1. Streak 3 hari aktif
+  const streak3Date = totalDays >= 3 ? getJournalDate(activeJournals[2]) : undefined;
+  // 2. Streak 7 hari aktif
+  const streak7Date = totalDays >= 7 ? getJournalDate(activeJournals[6]) : undefined;
 
   // Hitung jumlah ketercapaian per dimensi kebiasaan
   const countHabit = (habitCode: HabitCode, targetDays = 14): { count: number; dateOfThreshold?: string } => {

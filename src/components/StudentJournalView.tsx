@@ -4,7 +4,7 @@
 // non-punitive guidance, and positive reinforcement
 // ============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Sun,
@@ -39,7 +39,7 @@ import {
   SocialData,
   SleepEarlyData,
 } from '../../packages/types/src/index';
-import { HABIT_LIST, UserPersona } from '../lib/constants';
+import { HABIT_LIST, UserPersona, isDeprecatedOrDummyJournal } from '../lib/constants';
 import { formatRealtimeSaveTime, getLocalDateString } from '../lib/dateUtils';
 
 interface StudentJournalViewProps {
@@ -69,18 +69,64 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
   const className = currentPersona?.className || '';
   const studentNisn = currentPersona?.identifierValue || '';
 
+  // Local reactive synced journals state
+  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
+    try {
+      const saved = localStorage.getItem('si7kaih_journals_prod');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
+    } catch (_e) {}
+    return (journals || []).filter((j) => !isDeprecatedOrDummyJournal(j));
+  });
+
+  useEffect(() => {
+    if (journals) {
+      setSyncedJournals(journals.filter((j) => !isDeprecatedOrDummyJournal(j)));
+    }
+  }, [journals]);
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'si7kaih_journals_prod' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          }
+        } catch (_e) {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  // Filter khusus jurnal milik ananda murid yang sedang aktif (Bebas data default/dummy)
+  const studentJournals = useMemo(() => {
+    const targetId = (studentId || '').trim().toLowerCase();
+    const targetNisn = (studentNisn || '').trim();
+    const targetName = (studentName || '').trim().toLowerCase();
+
+    return syncedJournals.filter((j) => {
+      if (isDeprecatedOrDummyJournal(j)) return false;
+      const jId = (j.studentId || '').trim().toLowerCase();
+      const jNisn = (j.studentNisn || '').trim();
+      const jName = (j.studentName || '').trim().toLowerCase();
+
+      if (targetId && jId && jId === targetId) return true;
+      if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return true;
+      if (targetName && jName && jName === targetName) return true;
+      return false;
+    });
+  }, [syncedJournals, studentId, studentNisn, studentName]);
+
   // Find existing journal for selectedDate matching this student
   const currentJournal = useMemo(() => {
     return (
-      journals.find(
-        (j) =>
-          j.journalDate === selectedDate &&
-          (j.studentId === studentId ||
-            (studentNisn && j.studentId === studentNisn) ||
-            (studentNisn && j.studentNisn === studentNisn) ||
-            (j.studentName && j.studentName.toLowerCase() === studentName.toLowerCase()) ||
-            (!j.studentId && studentId === 'usr-student-01'))
-      ) || {
+      studentJournals.find((j) => j.journalDate === selectedDate) || {
         id: `journal-${selectedDate}-${studentId}`,
         studentId,
         studentName,
@@ -96,7 +142,7 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
         updatedAt: new Date().toISOString(),
       }
     );
-  }, [journals, selectedDate, studentId, studentName, studentNisn, schoolId, schoolName, className]);
+  }, [studentJournals, selectedDate, studentId, studentName, studentNisn, schoolId, schoolName, className]);
 
   const currentSavedRealtime = useMemo(() => {
     if (currentJournal?.savedAt) return currentJournal.savedAt;
@@ -383,24 +429,42 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
     showToast(`Isian jurnal tanggal ${selectedDate} berhasil dikosongkan/direset.`);
   };
 
-  // Generate 7-day strip (3 days before, today, 3 days after or recent 7 days)
+  // Generate 7-day strip (6 days before up to today) - real-time synchronized with active student journals
   const recentDays = useMemo(() => {
     const list = [];
+    const baseDate = new Date();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const str = d.toISOString().split('T')[0];
-      const match = journals.find((j) => j.journalDate === str);
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() - i);
+      const str = getLocalDateString(d);
+      
+      // Cari jurnal riil milik siswa ini pada tanggal tersebut
+      const match = studentJournals.find((j) => j.journalDate === str);
+      
+      // Jika tanggal ini sama dengan selectedDate, sinkronkan dengan isian realtime lokal
+      let count = match ? (typeof match.completedCount === 'number' ? match.completedCount : 0) : 0;
+      if (str === selectedDate) {
+        count = completedCount;
+      }
+      
+      const hasRecord = count > 0;
+      const isFull = count >= 6;
+      const isPartial = count > 0 && count < 6;
+
       list.push({
         dateStr: str,
         dayName: d.toLocaleDateString('id-ID', { weekday: 'short' }),
         dayNum: d.getDate(),
-        completedCount: match ? match.completedCount : 0,
-        hasRecord: !!match,
+        fullDateLabel: d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' }),
+        completedCount: count,
+        hasRecord,
+        isFull,
+        isPartial,
+        isToday: str === todayStr,
       });
     }
     return list;
-  }, [journals]);
+  }, [studentJournals, selectedDate, completedCount, todayStr]);
 
   const formattedSelectedDate = new Date(selectedDate + 'T00:00:00').toLocaleDateString('id-ID', {
     weekday: 'long',
@@ -448,36 +512,70 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
         </div>
 
         {/* 7-Day Completion Timeline */}
-        <div className="pt-2 border-t border-slate-100">
-          <span className="text-[11px] font-bold text-slate-400 block mb-2 uppercase tracking-wider">
-            Linimasa Pembiasaan Sepekan Terakhir:
-          </span>
+        <div className="pt-3 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Linimasa Pembiasaan Sepekan Terakhir
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Data Terkini
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-slate-500">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" /> 6-7 Tuntas
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-400" /> 1-5 Sebagian
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-slate-300" /> Kosong
+              </span>
+            </div>
+          </div>
           <div className="grid grid-cols-7 gap-2">
             {recentDays.map((item) => {
               const isSelected = item.dateStr === selectedDate;
-              const isFull = item.completedCount >= 6;
-              const isPartial = item.completedCount > 0 && item.completedCount < 6;
               return (
                 <button
                   key={item.dateStr}
                   onClick={() => setSelectedDate(item.dateStr)}
-                  className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                  className={`p-2 sm:p-2.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 relative ${
                     isSelected
-                      ? 'border-[#0753A5] bg-blue-50/80 ring-2 ring-blue-400/30'
-                      : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100'
+                      ? 'border-[#0753A5] bg-blue-50/90 ring-2 ring-blue-500/40 shadow-xs'
+                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300'
                   }`}
+                  title={`${item.fullDateLabel}: ${item.hasRecord ? `${item.completedCount}/7 kebiasaan terisi` : 'Belum ada catatan jurnal'}`}
                 >
-                  <span className="text-[10px] font-bold text-slate-500">{item.dayName}</span>
-                  <span className="text-xs font-black text-slate-800">{item.dayNum}</span>
-                  <div className="flex items-center gap-0.5 mt-0.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-slate-500">{item.dayName}</span>
+                    {item.isToday && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600" title="Hari Ini" />
+                    )}
+                  </div>
+                  <span className="text-xs sm:text-sm font-black text-slate-800">{item.dayNum}</span>
+                  <div className="flex items-center gap-1 mt-0.5">
                     {item.hasRecord ? (
                       <span
-                        className={`w-2 h-2 rounded-full ${
-                          isFull ? 'bg-emerald-500' : isPartial ? 'bg-amber-400' : 'bg-slate-300'
+                        className={`px-1.5 py-0.5 rounded-full text-[9px] font-extrabold flex items-center gap-0.5 ${
+                          item.isFull
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
                         }`}
-                      />
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            item.isFull ? 'bg-emerald-500' : 'bg-amber-500'
+                          }`}
+                        />
+                        {item.completedCount}/7
+                      </span>
                     ) : (
-                      <span className="w-2 h-2 rounded-full bg-slate-200" />
+                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-slate-100 text-slate-400 border border-slate-200">
+                        0/7
+                      </span>
                     )}
                   </div>
                 </button>

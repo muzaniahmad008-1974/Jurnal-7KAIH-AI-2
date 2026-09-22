@@ -1531,87 +1531,95 @@ export default function App() {
       )}
 
       {/* 5. Daily Habit Entry Modal (<1 min completion) */}
-      <DailyJournalModal
-        isOpen={isJournalModalOpen}
-        onClose={() => setIsJournalModalOpen(false)}
-        journalDate={selectedJournalDate}
-        initialJournal={selectedJournalForModal}
-        onSave={handleSaveJournal}
-        onReset={handleResetSingleDateJournal}
-        currentPersona={currentPersona}
-      />
+      {isJournalModalOpen && (
+        <DailyJournalModal
+          isOpen={isJournalModalOpen}
+          onClose={() => setIsJournalModalOpen(false)}
+          journalDate={selectedJournalDate}
+          initialJournal={selectedJournalForModal}
+          onSave={handleSaveJournal}
+          onReset={handleResetSingleDateJournal}
+          currentPersona={currentPersona}
+        />
+      )}
 
       {/* 6. Printable Official Report Modal */}
-      <ReportView
-        isOpen={isReportModalOpen}
-        onClose={() => {
-          setIsReportModalOpen(false);
-          setSelectedReportStudent(null);
-        }}
-        targetStudent={selectedReportStudent}
-        studentName={
-          selectedReportStudent?.name ||
-          (currentPersona.role === 'STUDENT'
-            ? currentPersona.name
-            : currentPersona.role === 'PARENT'
-            ? currentPersona.childName || ''
-            : '')
-        }
-        className={
-          selectedReportStudent?.className ||
-          (currentPersona.role === 'STUDENT'
-            ? currentPersona.className || currentPersona.title || ''
-            : currentPersona.className || '')
-        }
-        schoolName={selectedReportStudent?.schoolName || currentPersona.schoolName || ''}
-        nisn={
-          selectedReportStudent?.nisn ||
-          (currentPersona.role === 'STUDENT'
-            ? currentPersona.identifierValue
-            : currentPersona.role === 'PARENT'
-            ? currentPersona.childNisn || ''
-            : '')
-        }
-        monthName="September"
-        year={2026}
-        journals={journals}
-        studentReflection={
-          selectedReportStudent
-            ? studentReflection?.studentId === selectedReportStudent.id
-              ? studentReflection
-              : undefined
-            : studentReflection
-        }
-        parentReflection={
-          selectedReportStudent
-            ? parentReflection?.studentId === selectedReportStudent.id
-              ? parentReflection
-              : undefined
-            : parentReflection
-        }
-        badges={badges}
-        currentPersona={currentPersona}
-      />
+      {isReportModalOpen && (
+        <ReportView
+          isOpen={isReportModalOpen}
+          onClose={() => {
+            setIsReportModalOpen(false);
+            setSelectedReportStudent(null);
+          }}
+          targetStudent={selectedReportStudent}
+          studentName={
+            selectedReportStudent?.name ||
+            (currentPersona.role === 'STUDENT'
+              ? currentPersona.name
+              : currentPersona.role === 'PARENT'
+              ? currentPersona.childName || ''
+              : '')
+          }
+          className={
+            selectedReportStudent?.className ||
+            (currentPersona.role === 'STUDENT'
+              ? currentPersona.className || currentPersona.title || ''
+              : currentPersona.className || '')
+          }
+          schoolName={selectedReportStudent?.schoolName || currentPersona.schoolName || ''}
+          nisn={
+            selectedReportStudent?.nisn ||
+            (currentPersona.role === 'STUDENT'
+              ? currentPersona.identifierValue
+              : currentPersona.role === 'PARENT'
+              ? currentPersona.childNisn || ''
+              : '')
+          }
+          monthName="September"
+          year={2026}
+          journals={journals}
+          studentReflection={
+            selectedReportStudent
+              ? studentReflection?.studentId === selectedReportStudent.id
+                ? studentReflection
+                : undefined
+              : studentReflection
+          }
+          parentReflection={
+            selectedReportStudent
+              ? parentReflection?.studentId === selectedReportStudent.id
+                ? parentReflection
+                : undefined
+              : parentReflection
+          }
+          badges={badges}
+          currentPersona={currentPersona}
+        />
+      )}
 
       {/* 7. Official SSO Login / Authentication Portal Modal */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onLoginSuccess={(persona) => {
-          handleSelectPersona(persona);
-          setIsLoginModalOpen(false);
-        }}
-      />
+      {isLoginModalOpen && (
+        <LoginModal
+          isOpen={isLoginModalOpen}
+          onClose={() => setIsLoginModalOpen(false)}
+          onLoginSuccess={(persona) => {
+            handleSelectPersona(persona);
+            setIsLoginModalOpen(false);
+          }}
+        />
+      )}
 
       {/* 8. Logout Confirmation & Session Termination Modal */}
-      <LogoutConfirmModal
-        isOpen={isLogoutConfirmOpen}
-        onClose={() => setIsLogoutConfirmOpen(false)}
-        currentPersona={currentPersona}
-        sessionDurationFormatted={sessionDurationFormatted}
-        logoutSettings={logoutSettings}
-        onConfirmLogout={(clearDraft) => executeLogout(clearDraft)}
-      />
+      {isLogoutConfirmOpen && (
+        <LogoutConfirmModal
+          isOpen={isLogoutConfirmOpen}
+          onClose={() => setIsLogoutConfirmOpen(false)}
+          currentPersona={currentPersona}
+          sessionDurationFormatted={sessionDurationFormatted}
+          logoutSettings={logoutSettings}
+          onConfirmLogout={(clearDraft) => executeLogout(clearDraft)}
+        />
+      )}
 
       {/* 9. Supabase Database Connection & Synchronization Modal */}
       {isSupabaseModalOpen && (
@@ -1626,15 +1634,17 @@ export default function App() {
       )}
 
       {/* 10. Peringatan Otomatis Sebelum Logout Sesi Akibat Inaktivitas (Khusus Murid & Akun Aktif) */}
-      <InactivityWarningModal
-        isOpen={isInactivityWarningOpen}
-        studentName={currentPersona.name}
-        role={currentPersona.role}
-        totalTimeoutMinutes={inactivityTimeoutMinutes}
-        warningDurationSeconds={60}
-        onStayLoggedIn={handleStayLoggedIn}
-        onLogoutNow={handleInactivityLogout}
-      />
+      {isInactivityWarningOpen && (
+        <InactivityWarningModal
+          isOpen={isInactivityWarningOpen}
+          studentName={currentPersona.name}
+          role={currentPersona.role}
+          totalTimeoutMinutes={inactivityTimeoutMinutes}
+          warningDurationSeconds={60}
+          onStayLoggedIn={handleStayLoggedIn}
+          onLogoutNow={handleInactivityLogout}
+        />
+      )}
 
       {/* 10. Floating Notification Toast (Shown only on explicit user actions or important alerts) */}
       {syncToast && (
