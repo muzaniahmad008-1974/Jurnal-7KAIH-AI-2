@@ -566,7 +566,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       d.setDate(baseDate.getDate() - i);
       const str = getLocalDateString(d);
 
-      let match = studentJournals.find((j) => j.journalDate === str && !isDeprecatedOrDummyJournal(j));
+      let match = studentJournals.find(
+        (j) => (j.journalDate === str || (j as any).date === str) && !isDeprecatedOrDummyJournal(j)
+      );
       if (str === currentTodayDateStr && activeTodayJournal) {
         match = activeTodayJournal;
       }
@@ -577,6 +579,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           count = match.completedCount;
         } else if (match.entries) {
           count = Object.values(match.entries).filter((e: any) => !!e?.completed).length;
+        } else if ((match as any).habits) {
+          count = Object.values((match as any).habits).filter((e: any) => !!e?.completed).length;
         }
       }
 

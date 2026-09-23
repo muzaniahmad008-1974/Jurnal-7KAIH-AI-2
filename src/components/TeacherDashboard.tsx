@@ -10,8 +10,17 @@ import {
   SchoolProgram,
   FollowUpPlan,
   EarlyWarningCategory,
+  AIRtlSuggestion,
 } from '../../packages/types/src/index';
-import { HABIT_LIST, UserPersona, getStoredUsers } from '../lib/constants';
+import {
+  HABIT_LIST,
+  UserPersona,
+  getStoredUsers,
+  isDeprecatedOrDummyJournal,
+} from '../lib/constants';
+import {
+  calculateHabitualThreshold,
+} from '../../packages/analytics/src/index';
 import {
   Users,
   CheckCircle2,
@@ -26,6 +35,7 @@ import {
   Search,
   Check,
   ChevronRight,
+  ChevronLeft,
   Download,
   Filter,
   Eye,
@@ -37,11 +47,28 @@ import {
   GraduationCap,
   Layers,
   BookOpen,
+  Bot,
+  Wand2,
+  Lightbulb,
+  Clock,
+  Flame,
+  ExternalLink,
+  User,
+  CalendarDays,
+  HelpCircle,
 } from 'lucide-react';
 import { StudentDossierModal, StudentDossierData } from './StudentDossierModal';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { Rombel, Student, getStoredRombels, getStoredStudents } from '../lib/studentData';
-import { formatAcademicYearAndSemester, getCurrentIndonesianMonthYear } from '../lib/dateUtils';
+import {
+  formatAcademicYearAndSemester,
+  getCurrentIndonesianMonthYear,
+  getLocalDateString,
+  formatIndonesianFullDate,
+  formatIndonesianShortDate,
+  formatRealtimeSaveTime,
+  formatTimeOnly,
+} from '../lib/dateUtils';
 
 interface TeacherDashboardProps {
   journals: DailyJournal[];
@@ -725,6 +752,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [newRtlDeadline, setNewRtlDeadline] = useState('2026-09-30');
   const [newRtlProgress, setNewRtlProgress] = useState(25);
 
+  // AI RTL Assistance state
+  const [isAiRtlAssistantOpen, setIsAiRtlAssistantOpen] = useState(true);
+  const [isGeneratingAiRtl, setIsGeneratingAiRtl] = useState(false);
+  const [aiRtlFocusHabit, setAiRtlFocusHabit] = useState<string>('AUTO');
+  const [aiRtlGeneratedSuggestion, setAiRtlGeneratedSuggestion] = useState<AIRtlSuggestion | null>(null);
+  const [aiRtlAppliedSuccess, setAiRtlAppliedSuccess] = useState(false);
+
   // New Program form state
   const [newProgTitle, setNewProgTitle] = useState('');
   const [newProgHabit, setNewProgHabit] = useState<HabitCode>('HEALTHY_EATING');
@@ -1344,12 +1378,472 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
+  const handleGenerateAiRtl = async (customFocus?: string) => {
+    setIsGeneratingAiRtl(true);
+    setAiRtlAppliedSuccess(false);
+    try {
+      const sortedByLowest = [...classHabitStats].sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
+      const lowestHabitObj = sortedByLowest[0];
+      const lowestHabitCode = (lowestHabitObj?.code as string) || 'SLEEP_EARLY';
+
+      const chosenFocus = customFocus || (aiRtlFocusHabit === 'AUTO' ? lowestHabitCode : aiRtlFocusHabit);
+
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskType: 'FollowUpGenerator',
+          actorRole: 'TEACHER',
+          payload: {
+            className: `${activeRombel.name} (${activeRombel.phase || 'Fase D'})`,
+            schoolName: activeSchool.name,
+            focusHabit: chosenFocus,
+            lowestHabit: lowestHabitCode,
+            completenessRate: averageCompleteness,
+            consistencyRate: averageConsistency,
+            totalStudents: totalStudentsCount,
+            stats: classHabitStats,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data?.rtlSuggestion) {
+          setAiRtlGeneratedSuggestion(json.data.rtlSuggestion);
+          showToast('✨ Draf RTL berhasil dirumuskan oleh Asisten AI!');
+        } else if (json.data?.recommendations?.[0]) {
+          const fallbackSuggestion: AIRtlSuggestion = {
+            finding: `Penguatan pembiasaan ${chosenFocus} pada rombel ${activeRombel.name}.`,
+            rootCauseType: 'HYPOTHESIS_TO_VERIFY',
+            rootCause: json.data.hypothesesToVerify?.[0] || 'Keteraturan aktivitas di rumah perlu diselaraskan dengan agenda sekolah.',
+            actionPlan: json.data.recommendations[0],
+            target: `Peserta Didik ${activeRombel.name} & Orang Tua`,
+            indicator: 'Peningkatan konsistensi pembiasaan mandiri ≥85%',
+            owner: `Wali Kelas & Paguyuban ${activeRombel.name}`,
+            recommendedDeadline: new Date(Date.now() + 21 * 24 * 3600 * 1000).toISOString().split('T')[0],
+            reasoning: 'Intervensi positif dan kolaboratif menumbuhkan kesadaran intrinsik siswa tanpa tekanan moral.',
+          };
+          setAiRtlGeneratedSuggestion(fallbackSuggestion);
+          showToast('✨ Draf RTL berhasil dirumuskan oleh AI!');
+        }
+      }
+    } catch (_err) {
+      showToast('Gagal memuat bantuan AI, menggunakan draf rekomendasi lokal.');
+    } finally {
+      setIsGeneratingAiRtl(false);
+    }
+  };
+
+  const handleApplyAiRtlSuggestion = (suggestionToApply?: AIRtlSuggestion) => {
+    const s = suggestionToApply || aiRtlGeneratedSuggestion;
+    if (!s) return;
+    setNewRtlFinding(s.finding);
+    setNewRtlRootCauseType(s.rootCauseType || 'FACT');
+    setNewRtlRootCause(s.rootCause || '');
+    setNewRtlActionPlan(s.actionPlan || '');
+    if (s.owner) setNewRtlOwner(s.owner);
+    if (s.recommendedDeadline) setNewRtlDeadline(s.recommendedDeadline);
+    setAiRtlAppliedSuccess(true);
+    showToast('✨ Draf AI diterapkan ke formulir! Anda dapat menyesuaikan teks sebelum menyimpan.');
+    setTimeout(() => setAiRtlAppliedSuccess(false), 5000);
+  };
+
+  const handleOpenAiRtl = (presetFocus?: string) => {
+    setIsRtlModalOpen(true);
+    setIsAiRtlAssistantOpen(true);
+    if (presetFocus) {
+      setAiRtlFocusHabit(presetFocus);
+      handleGenerateAiRtl(presetFocus);
+    } else {
+      if (!aiRtlGeneratedSuggestion) {
+        handleGenerateAiRtl('AUTO');
+      }
+    }
+  };
+
   const filteredStudents = studentsList.filter((s) => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.nisn.includes(searchTerm);
     const matchesCategory = categoryFilter === 'ALL' || s.category === categoryFilter;
     const matchesStatus = statusFilter === 'ALL' || (s.status || 'AKTIF') === statusFilter;
     return matchesSearch && matchesCategory && matchesStatus;
   });
+
+  // ==========================================================================
+  // 1. REKAP LINIMASA PEMBIASAAN SEPEKAN TERAKHIR MURID
+  // ==========================================================================
+  const [timelineStudentId, setTimelineStudentId] = useState<string>('ALL');
+
+  const selectedTimelineStudent = useMemo(() => {
+    if (timelineStudentId === 'ALL') return null;
+    return studentsList.find((s) => s.id === timelineStudentId || s.nisn === timelineStudentId) || null;
+  }, [timelineStudentId, studentsList]);
+
+  // 7-day timeline strip (from 6 days ago up to today)
+  const timelineRecentDays = useMemo(() => {
+    const list = [];
+    const baseDate = new Date();
+    const todayStr = getLocalDateString(baseDate);
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() - i);
+      const str = getLocalDateString(d);
+
+      if (timelineStudentId === 'ALL') {
+        const dateJournals = classJournals.filter((j) => {
+          const dStr = j.journalDate || (j as any).date;
+          return dStr === str;
+        });
+
+        const studentSet = new Set<string>();
+        dateJournals.forEach((j) => {
+          const key = j.studentId || j.studentNisn || j.studentName || '';
+          if (key) studentSet.add(key);
+        });
+
+        const studentsFilledCount = studentSet.size;
+        const total = totalStudentsCount > 0 ? totalStudentsCount : 1;
+        const rate = Math.round((studentsFilledCount / total) * 100);
+
+        let totalHabitsCompleted = 0;
+        dateJournals.forEach((j) => {
+          let cnt = 0;
+          if (typeof j.completedCount === 'number') cnt = j.completedCount;
+          else if (j.entries) cnt = Object.values(j.entries).filter((e: any) => !!e?.completed).length;
+          else if (j.habits) cnt = Object.values(j.habits).filter((e: any) => !!e?.completed).length;
+          totalHabitsCompleted += cnt;
+        });
+
+        const avgHabits = studentsFilledCount > 0 ? Math.round((totalHabitsCompleted / studentsFilledCount) * 10) / 10 : 0;
+        const hasRecord = studentsFilledCount > 0;
+        const isFull = rate >= 80;
+        const isPartial = rate > 0 && rate < 80;
+
+        list.push({
+          dateStr: str,
+          dayName: d.toLocaleDateString('id-ID', { weekday: 'short' }),
+          dayNum: d.getDate(),
+          fullDateLabel: formatIndonesianFullDate(d),
+          studentsFilledCount,
+          totalStudentsCount,
+          rate,
+          avgHabits,
+          hasRecord,
+          isFull,
+          isPartial,
+          isToday: str === todayStr,
+          journalsCount: dateJournals.length,
+        });
+      } else {
+        const match = classJournals.find((j) => {
+          const dStr = j.journalDate || (j as any).date;
+          if (dStr !== str) return false;
+          if (selectedTimelineStudent?.id && j.studentId === selectedTimelineStudent.id) return true;
+          if (selectedTimelineStudent?.nisn && (j.studentNisn === selectedTimelineStudent.nisn || j.studentId === selectedTimelineStudent.nisn)) return true;
+          if (selectedTimelineStudent?.name && j.studentName && j.studentName.toLowerCase().trim() === selectedTimelineStudent.name.toLowerCase().trim()) return true;
+          return false;
+        });
+
+        let count = 0;
+        if (match) {
+          if (typeof match.completedCount === 'number') count = match.completedCount;
+          else if (match.entries) count = Object.values(match.entries).filter((e: any) => !!e?.completed).length;
+          else if (match.habits) count = Object.values(match.habits).filter((e: any) => !!e?.completed).length;
+        }
+
+        const hasRecord = count > 0;
+        const isFull = count >= 6;
+        const isPartial = count > 0 && count < 6;
+        const isValidated = match?.teacherValidated || (selectedTimelineStudent ? teacherValidations[selectedTimelineStudent.id] : false);
+
+        list.push({
+          dateStr: str,
+          dayName: d.toLocaleDateString('id-ID', { weekday: 'short' }),
+          dayNum: d.getDate(),
+          fullDateLabel: formatIndonesianFullDate(d),
+          completedCount: count,
+          hasRecord,
+          isFull,
+          isPartial,
+          isValidated: !!isValidated,
+          isToday: str === todayStr,
+          savedAt: match?.savedAt || (match?.updatedAt ? formatRealtimeSaveTime(match.updatedAt, 'WITA') : null),
+        });
+      }
+    }
+    return list;
+  }, [timelineStudentId, classJournals, totalStudentsCount, selectedTimelineStudent, teacherValidations]);
+
+  const timelineActiveDays = useMemo(() => {
+    return timelineRecentDays.filter((d: any) => (d.studentsFilledCount || d.completedCount || 0) > 0).length;
+  }, [timelineRecentDays]);
+
+  // ==========================================================================
+  // 2. REKAP KALENDER KEBIASAAN 7KAIH MURID (UPDATE INFO BULAN TAHUN)
+  // ==========================================================================
+  const [calDate, setCalDate] = useState<Date>(() => new Date());
+  const [calHabitFilter, setCalHabitFilter] = useState<string>('ALL');
+  const [calStudentId, setCalStudentId] = useState<string>('ALL');
+  const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
+  const [calLastSyncTime, setCalLastSyncTime] = useState<string>(() => formatTimeOnly(new Date(), 'WITA'));
+
+  const calYear = calDate.getFullYear();
+  const calMonth = calDate.getMonth();
+  const calDaysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const calFirstDayIndex = new Date(calYear, calMonth, 1).getDay(); // 0 = Sunday
+  const calMonthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  ];
+  const calMonthLabel = calMonthNames[calMonth];
+  const calDayHeaders = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+  const selectedCalStudent = useMemo(() => {
+    if (calStudentId === 'ALL') return null;
+    return studentsList.find((s) => s.id === calStudentId || s.nisn === calStudentId) || null;
+  }, [calStudentId, studentsList]);
+
+  // Monthly journals for rombel or selected student
+  const calMonthJournals = useMemo(() => {
+    const prefix = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
+    return classJournals.filter((j) => {
+      const dStr = j.journalDate || (j as any).date;
+      if (!dStr || !dStr.startsWith(prefix)) return false;
+      if (calStudentId === 'ALL') return true;
+      if (selectedCalStudent?.id && j.studentId === selectedCalStudent.id) return true;
+      if (selectedCalStudent?.nisn && (j.studentNisn === selectedCalStudent.nisn || j.studentId === selectedCalStudent.nisn)) return true;
+      if (selectedCalStudent?.name && j.studentName && j.studentName.toLowerCase().trim() === selectedCalStudent.name.toLowerCase().trim()) return true;
+      return false;
+    });
+  }, [classJournals, calYear, calMonth, calStudentId, selectedCalStudent]);
+
+  // Date -> Journals Map
+  const calDateJournalsMap = useMemo(() => {
+    const map = new Map<string, DailyJournal[]>();
+    calMonthJournals.forEach((j) => {
+      const dStr = j.journalDate || (j as any).date;
+      if (!dStr) return;
+      if (!map.has(dStr)) map.set(dStr, []);
+      map.get(dStr)!.push(j);
+    });
+    return map;
+  }, [calMonthJournals]);
+
+  // Monthly metrics
+  const calRecordedDays = useMemo(() => {
+    return calDateJournalsMap.size;
+  }, [calDateJournalsMap]);
+
+  const calHabitualDays = useMemo(() => {
+    if (calStudentId === 'ALL') {
+      let count = 0;
+      calDateJournalsMap.forEach((jList) => {
+        const unique = new Set(jList.map((j) => j.studentId || j.studentNisn || j.studentName).filter(Boolean));
+        const rate = totalStudentsCount > 0 ? (unique.size / totalStudentsCount) * 100 : 0;
+        if (rate >= 75) count++;
+      });
+      return count;
+    } else {
+      return calMonthJournals.filter((j) => {
+        const cnt = typeof j.completedCount === 'number'
+          ? j.completedCount
+          : Object.values(j.entries || {}).filter((e: any) => !!e?.completed).length;
+        return cnt >= 6;
+      }).length;
+    }
+  }, [calStudentId, calDateJournalsMap, calMonthJournals, totalStudentsCount]);
+
+  const calAverageHabits = useMemo(() => {
+    if (calMonthJournals.length === 0) return 0;
+    let totalHabits = 0;
+    calMonthJournals.forEach((j) => {
+      let cnt = 0;
+      if (typeof j.completedCount === 'number') cnt = j.completedCount;
+      else if (j.entries) cnt = Object.values(j.entries).filter((e: any) => !!e?.completed).length;
+      else if (j.habits) cnt = Object.values(j.habits).filter((e: any) => !!e?.completed).length;
+      totalHabits += cnt;
+    });
+    return Math.round((totalHabits / calMonthJournals.length) * 10) / 10;
+  }, [calMonthJournals]);
+
+  const calValidatedDays = useMemo(() => {
+    if (calStudentId === 'ALL') {
+      return calMonthJournals.filter((j) => {
+        if (j.teacherValidated) return true;
+        if (j.studentId && teacherValidations[j.studentId]) return true;
+        if (j.studentNisn && teacherValidations[j.studentNisn]) return true;
+        return false;
+      }).length;
+    } else {
+      return calMonthJournals.filter((j) => {
+        if (j.teacherValidated || j.parentValidated) return true;
+        if (selectedCalStudent && teacherValidations[selectedCalStudent.id]) return true;
+        return false;
+      }).length;
+    }
+  }, [calStudentId, calMonthJournals, teacherValidations, selectedCalStudent]);
+
+  const calTargetThreshold = calculateHabitualThreshold(calDaysInMonth);
+  const calCompletenessRate = Math.round((calRecordedDays / calDaysInMonth) * 100);
+
+  const isCalCurrentMonth = useMemo(() => {
+    const now = new Date();
+    return now.getFullYear() === calYear && now.getMonth() === calMonth;
+  }, [calYear, calMonth]);
+
+  const handlePrevCalMonth = () => {
+    setCalDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+  const handleNextCalMonth = () => {
+    setCalDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+  const handleTodayCalMonth = () => {
+    setCalDate(new Date());
+  };
+
+  const handleManualSync = () => {
+    setIsManualSyncing(true);
+    setTimeout(() => {
+      try {
+        const raw = localStorage.getItem('si7kaih_journals_prod');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setSyncedJournals(parsed);
+        }
+      } catch (_e) {}
+      setCalLastSyncTime(formatTimeOnly(new Date(), 'WITA'));
+      setIsManualSyncing(false);
+      showToast('🔄 Kalender kebiasaan murid berhasil disinkronkan!');
+    }, 450);
+  };
+
+  // Day detail modal state
+  const [selectedDayDetailModal, setSelectedDayDetailModal] = useState<{
+    dateStr: string;
+    fullDateLabel: string;
+  } | null>(null);
+
+  const [modalStudentFilterQuery, setModalStudentFilterQuery] = useState('');
+
+  // Students and their journal status on selected date for the Day Detail modal
+  const modalDateStudents = useMemo(() => {
+    if (!selectedDayDetailModal) return [];
+    const dateStr = selectedDayDetailModal.dateStr;
+
+    return studentsList.map((st) => {
+      const match = classJournals.find((j) => {
+        const dStr = j.journalDate || (j as any).date;
+        if (dStr !== dateStr) return false;
+        if (j.studentId && (j.studentId === st.id || j.studentId === st.nisn)) return true;
+        if (j.studentNisn && st.nisn && j.studentNisn === st.nisn) return true;
+        if (j.studentName && st.name && j.studentName.toLowerCase().trim() === st.name.toLowerCase().trim()) return true;
+        return false;
+      });
+
+      let completedCount = 0;
+      const habitsBreakdown: Record<string, boolean> = {};
+      if (match) {
+        if (typeof match.completedCount === 'number') completedCount = match.completedCount;
+        if (match.entries) {
+          Object.entries(match.entries).forEach(([k, v]: [string, any]) => {
+            habitsBreakdown[k] = !!v?.completed;
+          });
+          if (completedCount === 0) {
+            completedCount = Object.values(match.entries).filter((e: any) => !!e?.completed).length;
+          }
+        } else if (match.habits) {
+          Object.entries(match.habits).forEach(([k, v]: [string, any]) => {
+            habitsBreakdown[k] = !!v?.completed;
+          });
+          if (completedCount === 0) {
+            completedCount = Object.values(match.habits).filter((e: any) => !!e?.completed).length;
+          }
+        }
+      }
+
+      const isValidated = !!match?.teacherValidated || !!teacherValidations[st.id] || (st.nisn ? !!teacherValidations[st.nisn] : false);
+
+      return {
+        student: st,
+        hasJournal: !!match,
+        journalId: match?.id,
+        completedCount,
+        habitsBreakdown,
+        isValidated,
+        savedAt: match?.savedAt || (match?.updatedAt ? formatRealtimeSaveTime(match.updatedAt, 'WITA') : null),
+      };
+    });
+  }, [selectedDayDetailModal, studentsList, classJournals, teacherValidations]);
+
+  const filteredModalStudents = useMemo(() => {
+    if (!modalStudentFilterQuery.trim()) return modalDateStudents;
+    const q = modalStudentFilterQuery.toLowerCase().trim();
+    return modalDateStudents.filter(
+      (item) =>
+        item.student.name.toLowerCase().includes(q) ||
+        item.student.nisn.includes(q)
+    );
+  }, [modalDateStudents, modalStudentFilterQuery]);
+
+  const handleValidateAllOnModalDate = () => {
+    if (!selectedDayDetailModal) return;
+    const unvalidated = modalDateStudents.filter((m) => m.hasJournal && !m.isValidated);
+    if (unvalidated.length === 0) {
+      showToast('Semua siswa yang mengisi pada tanggal ini sudah tervalidasi.');
+      return;
+    }
+
+    const updated = { ...teacherValidations };
+    unvalidated.forEach((m) => {
+      updated[m.student.id] = true;
+      if (m.student.nisn) updated[m.student.nisn] = true;
+    });
+    setTeacherValidations(updated);
+    saveStoredValidations(updated);
+
+    try {
+      const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
+      if (storedJournalsStr) {
+        const list: DailyJournal[] = JSON.parse(storedJournalsStr);
+        const idsSet = new Set(unvalidated.map((m) => m.student.id));
+        const nisnsSet = new Set(unvalidated.map((m) => m.student.nisn).filter(Boolean));
+        const namesSet = new Set(unvalidated.map((m) => m.student.name.toLowerCase().trim()));
+
+        const nextList = list.map((j) => {
+          const match =
+            (j.journalDate === selectedDayDetailModal.dateStr || (j as any).date === selectedDayDetailModal.dateStr) &&
+            ((j.studentId && idsSet.has(j.studentId)) ||
+              (j.studentNisn && nisnsSet.has(j.studentNisn)) ||
+              (j.studentName && namesSet.has(j.studentName.toLowerCase().trim())));
+          if (match) {
+            const updatedEntries = { ...j.entries };
+            if (updatedEntries) {
+              Object.keys(updatedEntries).forEach((k) => {
+                const hCode = k as HabitCode;
+                if (updatedEntries[hCode]) {
+                  updatedEntries[hCode] = { ...updatedEntries[hCode], teacherValidated: true };
+                }
+              });
+            }
+            return {
+              ...j,
+              teacherValidated: true,
+              teacherValidatedAt: new Date().toISOString(),
+              entries: updatedEntries,
+            };
+          }
+          return j;
+        });
+
+        localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextList));
+        setSyncedJournals(nextList);
+        window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: nextList }));
+      }
+    } catch (_e) {}
+
+    showToast(`Berhasil memvalidasi ${unvalidated.length} siswa untuk tanggal ${selectedDayDetailModal.dateStr}!`);
+  };
 
   return (
     <div className="space-y-6">
@@ -1600,6 +2094,162 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           </div>
 
+          {/* ============================================================================ */}
+          {/* 1. REKAP LINIMASA PEMBIASAAN SEPEKAN TERAKHIR MURID */}
+          {/* ============================================================================ */}
+          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-5 transition-all">
+            <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#0753A5] to-[#20A5D5] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Calendar className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-black text-slate-900">
+                      Linimasa Pembiasaan Sepekan Terakhir Murid
+                    </h3>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>Sinkron Data Terkini</span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Rekap 7 hari kalender pembiasaan murid di rombel {activeRombel.name} • Klik tanggal untuk detail isian & validasi cepat.
+                  </p>
+                </div>
+              </div>
+
+              {/* Filter Murid & Konsistensi Badge */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-[11px] font-semibold text-slate-500">Tampilan Murid:</span>
+                  <select
+                    value={timelineStudentId}
+                    onChange={(e) => setTimelineStudentId(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-slate-800 border-none outline-none cursor-pointer max-w-[200px] truncate"
+                  >
+                    <option value="ALL">👥 Seluruh Murid Rombel ({totalStudentsCount} Siswa)</option>
+                    {studentsList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.nisn})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-blue-50 text-blue-900 border border-blue-200">
+                  Konsistensi: <strong className="text-[#0753A5] font-black">{timelineActiveDays} dari 7 Hari</strong> Aktif
+                </span>
+              </div>
+            </div>
+
+            {/* 7-Day Grid Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+              {timelineRecentDays.map((item: any) => (
+                <button
+                  key={item.dateStr}
+                  type="button"
+                  onClick={() =>
+                    setSelectedDayDetailModal({
+                      dateStr: item.dateStr,
+                      fullDateLabel: item.fullDateLabel,
+                    })
+                  }
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 relative group hover:shadow-md ${
+                    item.isToday
+                      ? 'border-[#0753A5] bg-blue-50/70 ring-2 ring-blue-400/40 shadow-xs'
+                      : item.hasRecord
+                      ? 'border-slate-200 bg-white hover:border-blue-300'
+                      : 'border-slate-200/80 bg-slate-50/50 hover:bg-slate-100 hover:border-slate-300'
+                  }`}
+                  title={`Klik untuk melihat detail isian jurnal siswa pada ${item.fullDateLabel}`}
+                >
+                  {/* Header: Day name + Today Pill */}
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                      {item.dayName}
+                    </span>
+                    {item.isToday && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-[#0753A5] text-white">
+                        Hari Ini
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Day Number and Full Date */}
+                  <div>
+                    <div className="text-xl font-black text-slate-900 group-hover:text-[#0753A5] transition-colors">
+                      {item.dayNum}
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      {item.fullDateLabel.split(',')[1]?.trim() || item.dateStr}
+                    </div>
+                  </div>
+
+                  {/* Status Pill */}
+                  <div className="pt-2 border-t border-slate-100 w-full flex flex-col gap-1">
+                    {timelineStudentId === 'ALL' ? (
+                      item.hasRecord ? (
+                        <>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold w-fit ${
+                              item.isFull
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                item.isFull ? 'bg-emerald-500' : 'bg-amber-500'
+                              }`}
+                            />
+                            <span>
+                              {item.studentsFilledCount}/{item.totalStudentsCount} Siswa
+                            </span>
+                          </span>
+                          <span className="text-[9px] text-slate-500 font-medium">
+                            Rerata: {item.avgHabits}/7 Kebiasaan
+                          </span>
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-400 border border-slate-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                          <span>0 Siswa Mengisi</span>
+                        </span>
+                      )
+                    ) : item.hasRecord ? (
+                      <>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold w-fit ${
+                            item.isFull
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              item.isFull ? 'bg-emerald-500' : 'bg-amber-500'
+                            }`}
+                          />
+                          <span>{item.completedCount}/7 Tuntas</span>
+                        </span>
+                        <span className="text-[9px] font-medium text-slate-500">
+                          {item.isValidated ? '✅ Tervalidasi' : '⏳ Menunggu'}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-400 border border-slate-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                        <span>0/7 Terisi</span>
+                      </span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* 7 Habits Aggregate Horizontal Bars */}
           <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
             <div className="flex items-center justify-between">
@@ -1679,6 +2329,357 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               >
                 Buka RTL Kelas →
               </button>
+            </div>
+          </div>
+
+          {/* ============================================================================ */}
+          {/* 2. REKAP KALENDER KEBIASAAN 7KAIH MURID (UPDATE INFO BULAN TAHUN) */}
+          {/* ============================================================================ */}
+          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-5 transition-all">
+            {/* Calendar Header & Month Navigation Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-[#0753A5] flex items-center justify-center shrink-0 shadow-2xs">
+                  <Calendar className="w-5 h-5 text-[#0753A5]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-black text-slate-900">
+                      Rekap Kalender Kebiasaan 7KAIH Murid: {calMonthLabel} {calYear}
+                    </h3>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Sinkron Realtime: {calLastSyncTime} WITA
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Rekap kalender pembiasaan karakter peserta didik rombel {activeRombel.name} ({activeRombel.phase || 'Fase D'}). Diperbarui dari setiap pengisian jurnal.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Manual Sync Trigger */}
+                <button
+                  type="button"
+                  onClick={handleManualSync}
+                  className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-all cursor-pointer"
+                  title="Sinkronkan data kalender sekarang"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isManualSyncing ? 'animate-spin text-blue-600' : ''}`} />
+                </button>
+
+                {/* Month Switcher (Bulan Tahun Navigation) */}
+                <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={handlePrevCalMonth}
+                    className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-all cursor-pointer"
+                    title="Bulan Sebelumnya"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {!isCalCurrentMonth && (
+                    <button
+                      type="button"
+                      onClick={handleTodayCalMonth}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold text-[#0753A5] hover:bg-white transition-all cursor-pointer"
+                    >
+                      Bulan Ini
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleNextCalMonth}
+                    className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-all cursor-pointer"
+                    title="Bulan Berikutnya"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Murid Selector & Habit Filter Chips */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* Filter Murid Dropdown */}
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs">
+                  <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="font-bold text-slate-600">Pilih Subjek:</span>
+                  <select
+                    value={calStudentId}
+                    onChange={(e) => setCalStudentId(e.target.value)}
+                    className="bg-transparent font-bold text-slate-800 border-none outline-none cursor-pointer max-w-[240px] truncate"
+                  >
+                    <option value="ALL">👥 Seluruh Murid Rombel ({totalStudentsCount} Siswa)</option>
+                    {studentsList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.nisn})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {calStudentId !== 'ALL' && selectedCalStudent && (
+                  <span className="text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-[#0753A5] font-semibold border border-blue-200">
+                    Memantau: <strong className="font-bold">{selectedCalStudent.name}</strong> • NISN: {selectedCalStudent.nisn}
+                  </span>
+                )}
+              </div>
+
+              {/* Habit Filter Chips */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                <span className="text-xs font-bold text-slate-500 mr-1">Filter Kebiasaan:</span>
+                <button
+                  type="button"
+                  onClick={() => setCalHabitFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    calHabitFilter === 'ALL'
+                      ? 'bg-[#0753A5] text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Semua (Ringkasan 7 Kebiasaan)
+                </button>
+                {HABIT_LIST.map((h) => (
+                  <button
+                    key={h.code}
+                    type="button"
+                    onClick={() => setCalHabitFilter(h.code)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      calHabitFilter === h.code
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+                    }`}
+                  >
+                    {h.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 4 Cards Monthly Statistical Summary Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100">
+                <span className="text-[11px] font-semibold text-blue-700 block">Hari Tercatat</span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-xl font-black text-slate-900">{calRecordedDays}</span>
+                  <span className="text-xs text-slate-500">/ {calDaysInMonth} hari ({calCompletenessRate}%)</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-emerald-50/60 rounded-2xl border border-emerald-100">
+                <span className="text-[11px] font-semibold text-emerald-700 block">
+                  {calStudentId === 'ALL' ? 'Partisipasi Tinggi (≥75%)' : 'Terbiasa (6-7 Selesai)'}
+                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-xl font-black text-slate-900">{calHabitualDays}</span>
+                  <span className="text-xs text-slate-500">
+                    hari {calStudentId !== 'ALL' ? `(${calTargetThreshold} target)` : 'konsisten'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-100">
+                <span className="text-[11px] font-semibold text-amber-700 block">Rerata Kebiasaan</span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-xl font-black text-slate-900">{calAverageHabits}</span>
+                  <span className="text-xs text-slate-500">/ 7 kebiasaan</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-50/60 rounded-2xl border border-indigo-100">
+                <span className="text-[11px] font-semibold text-indigo-700 block">Tervalidasi Guru / Wali</span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-xl font-black text-slate-900">{calValidatedDays}</span>
+                  <span className="text-xs text-slate-500">
+                    {calStudentId === 'ALL' ? 'entri jurnal' : 'hari tervalidasi'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Calendar Day-of-Week Headers */}
+            <div className="grid grid-cols-7 gap-1.5 sm:gap-2 text-center pt-1">
+              {calDayHeaders.map((d, idx) => (
+                <div
+                  key={d}
+                  className={`text-xs font-bold py-1 ${
+                    idx === 0 || idx === 6 ? 'text-rose-500' : 'text-slate-500'
+                  }`}
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Calendar Cells Grid */}
+            <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+              {Array.from({ length: calFirstDayIndex }).map((_, i) => (
+                <div key={`cal-empty-${i}`} className="h-18 sm:h-22 rounded-2xl bg-slate-50/50 border border-transparent" />
+              ))}
+
+              {Array.from({ length: calDaysInMonth }).map((_, i) => {
+                const dayNum = i + 1;
+                const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                const isToday = getLocalDateString() === dateStr;
+                const cellDate = new Date(calYear, calMonth, dayNum);
+
+                let cellStyle = 'bg-slate-50/80 border-slate-200 text-slate-700';
+                let badgeText = 'Belum Dicatat';
+                let badgeColor = 'text-slate-400 bg-slate-100';
+                let subText = '';
+
+                if (calStudentId === 'ALL') {
+                  const dayJournals = calDateJournalsMap.get(dateStr) || [];
+                  const studentSet = new Set(dayJournals.map((j) => j.studentId || j.studentNisn || j.studentName).filter(Boolean));
+                  const filledCount = studentSet.size;
+
+                  if (filledCount > 0) {
+                    const rate = totalStudentsCount > 0 ? (filledCount / totalStudentsCount) * 100 : 0;
+                    if (calHabitFilter === 'ALL') {
+                      let totalH = 0;
+                      dayJournals.forEach((j) => {
+                        if (typeof j.completedCount === 'number') totalH += j.completedCount;
+                        else if (j.entries) totalH += Object.values(j.entries).filter((e: any) => !!e?.completed).length;
+                        else if (j.habits) totalH += Object.values(j.habits).filter((e: any) => !!e?.completed).length;
+                      });
+                      const avgH = Math.round((totalH / filledCount) * 10) / 10;
+
+                      if (rate >= 75) {
+                        cellStyle = 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70';
+                        badgeColor = 'text-emerald-800 bg-emerald-100';
+                      } else if (rate >= 40) {
+                        cellStyle = 'bg-sky-50/80 border-sky-300 text-sky-950 hover:bg-sky-100/70';
+                        badgeColor = 'text-sky-800 bg-sky-100';
+                      } else {
+                        cellStyle = 'bg-amber-50/80 border-amber-300 text-amber-950 hover:bg-amber-100/70';
+                        badgeColor = 'text-amber-800 bg-amber-100';
+                      }
+                      badgeText = `${filledCount}/${totalStudentsCount} Siswa`;
+                      subText = `Rerata: ${avgH}/7`;
+                    } else {
+                      let habitCompletedCount = 0;
+                      dayJournals.forEach((j) => {
+                        const entry = (j.entries as any)?.[calHabitFilter] || (j.habits as any)?.[calHabitFilter];
+                        if (entry && entry.completed) habitCompletedCount++;
+                      });
+                      if (habitCompletedCount > 0) {
+                        cellStyle = 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70';
+                        badgeColor = 'text-emerald-800 bg-emerald-100';
+                        badgeText = `${habitCompletedCount}/${totalStudentsCount} Siswa`;
+                        subText = 'Terlaksana';
+                      } else {
+                        cellStyle = 'bg-amber-50/80 border-amber-200 text-amber-900 hover:bg-amber-100/70';
+                        badgeColor = 'text-amber-700 bg-amber-100';
+                        badgeText = `0/${totalStudentsCount} Siswa`;
+                        subText = 'Belum';
+                      }
+                    }
+                  }
+                } else {
+                  const studentJournalsOnDate = calDateJournalsMap.get(dateStr) || [];
+                  const journal = studentJournalsOnDate[0];
+
+                  if (journal && ((journal.completedCount || 0) > 0 || Object.values(journal.entries || {}).some((e: any) => e?.completed))) {
+                    if (calHabitFilter === 'ALL') {
+                      const count = journal.completedCount ?? Object.values(journal.entries || {}).filter((e: any) => e?.completed).length;
+                      if (count >= 6) {
+                        cellStyle = 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70';
+                        badgeText = `${count}/7 Selesai`;
+                        badgeColor = 'text-emerald-800 bg-emerald-100';
+                      } else if (count >= 4) {
+                        cellStyle = 'bg-sky-50/80 border-sky-300 text-sky-950 hover:bg-sky-100/70';
+                        badgeText = `${count}/7 Selesai`;
+                        badgeColor = 'text-sky-800 bg-sky-100';
+                      } else {
+                        cellStyle = 'bg-amber-50/80 border-amber-300 text-amber-950 hover:bg-amber-100/70';
+                        badgeText = `${count}/7 Selesai`;
+                        badgeColor = 'text-amber-800 bg-amber-100';
+                      }
+                    } else {
+                      const entry = (journal.entries as any)?.[calHabitFilter] || (journal.habits as any)?.[calHabitFilter];
+                      const isHabitDone = !!entry?.completed;
+                      if (isHabitDone) {
+                        cellStyle = 'bg-emerald-50/80 border-emerald-300 text-emerald-950 hover:bg-emerald-100/70';
+                        badgeText = 'Terlaksana ✓';
+                        badgeColor = 'text-emerald-800 bg-emerald-100';
+                      } else {
+                        cellStyle = 'bg-amber-50/80 border-amber-200 text-amber-900 hover:bg-amber-100/70';
+                        badgeText = 'Belum';
+                        badgeColor = 'text-amber-700 bg-amber-100';
+                      }
+                    }
+
+                    const isValidated = journal.teacherValidated || (selectedCalStudent ? teacherValidations[selectedCalStudent.id] : false);
+                    subText = isValidated ? '✅ Valid' : '⏳ Menunggu';
+                  }
+                }
+
+                return (
+                  <button
+                    key={dateStr}
+                    type="button"
+                    onClick={() =>
+                      setSelectedDayDetailModal({
+                        dateStr,
+                        fullDateLabel: formatIndonesianFullDate(cellDate),
+                      })
+                    }
+                    className={`h-18 sm:h-22 p-1.5 sm:p-2 rounded-2xl border flex flex-col justify-between text-left transition-all cursor-pointer shadow-2xs hover:shadow-md hover:scale-[1.01] ${cellStyle} ${
+                      isToday ? 'ring-2 ring-blue-500 ring-offset-2 font-bold' : ''
+                    }`}
+                    title={`Klik untuk melihat detail jurnal rombel pada ${dateStr}`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className={`text-xs font-black ${isToday ? 'px-1.5 py-0.5 rounded-full bg-blue-600 text-white' : ''}`}>
+                        {dayNum}
+                      </span>
+                      {subText && (
+                        <span className="text-[9px] font-semibold hidden sm:inline text-slate-600">
+                          {subText}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="w-full">
+                      <span className={`text-[8px] sm:text-[10px] font-bold px-1 sm:px-1.5 py-0.5 rounded-md block truncate text-center ${badgeColor}`}>
+                        {badgeText}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Non-punitive Statistical Invariant Legend */}
+            <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-md bg-emerald-100 border border-emerald-300" />
+                  <span className="text-slate-600 font-medium">Terbiasa / 6-7 Selesai</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-md bg-sky-100 border border-sky-300" />
+                  <span className="text-slate-600 font-medium">4-5 Selesai</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-md bg-amber-100 border border-amber-300" />
+                  <span className="text-slate-600 font-medium">1-3 Selesai</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-md bg-slate-100 border border-slate-300" />
+                  <span className="text-slate-600 font-medium">Belum Dicatat (Data Kosong)</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                <HelpCircle className="w-4 h-4 text-blue-500 shrink-0" />
+                <span className="text-[11px]">
+                  <strong>Catatan Statistik:</strong> Data belum dicatat <span className="underline">bukan</span> berarti anak tidak melaksanakan kebiasaan. Klik tanggal manapun untuk melihat isian siswa & memvalidasi.
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -2539,10 +3540,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   Program intervensi berbasis data dan akar masalah terverifikasi.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800">
                   {localFollowUps.filter((f) => f.status !== 'COMPLETED').length} Tindak Lanjut Aktif
                 </span>
+                <button
+                  onClick={() => handleOpenAiRtl()}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-[#0753A5] hover:opacity-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer group"
+                  title="Susun RTL dengan Rekomendasi Asisten AI Berbasis Data Rombel"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
+                  <span>Bantuan AI RTL</span>
+                </button>
                 <button
                   onClick={() => setIsRtlModalOpen(true)}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
@@ -2555,9 +3564,29 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
             <div className="space-y-4">
               {localFollowUps.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500">
-                  <p className="font-semibold text-xs text-slate-700">Belum ada Rencana Tindak Lanjut (RTL)</p>
-                  <p className="text-[11px] text-slate-400 mt-1">Gunakan tombol "Tambah RTL Baru" untuk menyusun intervensi berbasis data.</p>
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 space-y-3">
+                  <div>
+                    <p className="font-semibold text-xs text-slate-700">Belum ada Rencana Tindak Lanjut (RTL)</p>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Gunakan tombol "Bantuan AI RTL" untuk rekomendasi otomatis berbasis data rombel terkini atau "Tambah RTL Baru" untuk input manual.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleOpenAiRtl()}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold hover:opacity-95 shadow-xs cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Susun RTL dengan AI</span>
+                    </button>
+                    <button
+                      onClick={() => setIsRtlModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Tambah Manual</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 localFollowUps.map((rtl) => (
@@ -2735,127 +3764,319 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         onOpenReportModal={onOpenReportModal}
       />
 
-      {/* Modal Tambah RTL Baru */}
+      {/* Modal Tambah RTL Baru dengan Bantuan AI */}
       {isRtlModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#0753A5] flex items-center justify-center font-bold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-100 space-y-4 my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#0753A5] flex items-center justify-center font-bold text-base">
                   📋
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Tambah RTL Kelas Baru</h3>
+                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <span>Tambah RTL Kelas Baru</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-[#0753A5]">
+                      {activeRombel.name}
+                    </span>
+                  </h3>
                   <p className="text-[11px] text-slate-500">Rencana Tindak Lanjut berbasis fakta & hipotesis terverifikasi</p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsRtlModalOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextState = !isAiRtlAssistantOpen;
+                    setIsAiRtlAssistantOpen(nextState);
+                    if (nextState && !aiRtlGeneratedSuggestion) {
+                      handleGenerateAiRtl();
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                    isAiRtlAssistantOpen
+                      ? 'bg-purple-50 text-purple-700 border-purple-200 shadow-xs'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200'
+                  }`}
+                  title="Buka / Tutup Asisten AI RTL"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                  <span>{isAiRtlAssistantOpen ? 'Sembunyikan AI' : 'Bantuan AI RTL'}</span>
+                </button>
+                <button
+                  onClick={() => setIsRtlModalOpen(false)}
+                  className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleCreateRtl} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Indikator Temuan / Isu Pembiasaan *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: 3 siswa sering terlambat bangun pagi pada hari Senin"
-                  value={newRtlFinding}
-                  onChange={(e) => setNewRtlFinding(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
-                />
-              </div>
+            {/* Scrollable Modal Content */}
+            <div className="overflow-y-auto pr-1 space-y-4 text-xs flex-1">
+              {/* Asisten AI Box */}
+              {isAiRtlAssistantOpen && (
+                <div className="bg-gradient-to-br from-indigo-50/90 via-purple-50/50 to-blue-50/60 border border-indigo-200/90 rounded-2xl p-4 space-y-3 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100/80 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-xs text-indigo-950">Asisten AI: Rekomendasi Rencana Tindak Lanjut</h4>
+                        <p className="text-[10px] text-indigo-700/80">
+                          Analisis data pembiasaan rombel {activeRombel.name} ({averageCompleteness}% kelengkapan, {averageConsistency}% konsistensi)
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80 text-indigo-800 border border-indigo-200/60">
+                      Non-Punitive • 7KAIH
+                    </span>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Tipe Akar Masalah</label>
-                  <select
-                    value={newRtlRootCauseType}
-                    onChange={(e) => setNewRtlRootCauseType(e.target.value as any)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
-                  >
-                    <option value="FACT">Fakta Terverifikasi</option>
-                    <option value="HYPOTHESIS_TO_VERIFY">Hipotesis (Perlu Verifikasi)</option>
-                  </select>
+                  {/* Focus Habit Selector & Action */}
+                  <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                      <div className="flex-1">
+                        <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+                          Fokus Isu / Kebiasaan Intervensi:
+                        </label>
+                        <select
+                          value={aiRtlFocusHabit}
+                          onChange={(e) => setAiRtlFocusHabit(e.target.value)}
+                          className="w-full px-3 py-1.5 rounded-xl border border-indigo-200 bg-white text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="AUTO">🎯 Otomatis: Rekomendasi Analisis AI (Kebiasaan Kritis)</option>
+                          <option value="SLEEP_EARLY">🌙 Tidur Cepat / Tepat Waktu (Batas Gawai)</option>
+                          <option value="HEALTHY_EATING">🥗 Makan Sehat & Bergizi (Sarapan Bersama)</option>
+                          <option value="WAKE_UP_EARLY">🌅 Bangun Pagi Mandiri & Ceria</option>
+                          <option value="STUDY_DILIGENTLY">📚 Gemar Belajar & Literasi 15 Menit</option>
+                          <option value="EXERCISE">🏃 Berolahraga & Aktivitas Fisik</option>
+                          <option value="WORSHIP">🕌 Keteraturan Beribadah Ceria</option>
+                          <option value="SOCIAL_HELP">🤝 Berbuat Kebaikan & Kepedulian</option>
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateAiRtl()}
+                        disabled={isGeneratingAiRtl}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-[#0753A5] hover:opacity-95 text-white font-bold text-xs transition-all shadow-xs disabled:opacity-60 cursor-pointer"
+                      >
+                        {isGeneratingAiRtl ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Menyusun RTL...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                            <span>Hasilkan Draf AI</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Quick presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="text-[10px] text-indigo-700 font-semibold">Pilihan Cepat:</span>
+                      {[
+                        { label: '🛌 Jam Istirahat & Gawai', code: 'SLEEP_EARLY' },
+                        { label: '🥗 Sarapan Bergizi', code: 'HEALTHY_EATING' },
+                        { label: '📖 Pojok Literasi', code: 'STUDY_DILIGENTLY' },
+                        { label: '🌅 Bangun Ceria', code: 'WAKE_UP_EARLY' },
+                        { label: '🏃 Senam Ceria', code: 'EXERCISE' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.code}
+                          type="button"
+                          onClick={() => {
+                            setAiRtlFocusHabit(preset.code);
+                            handleGenerateAiRtl(preset.code);
+                          }}
+                          className="text-[10px] font-medium px-2 py-0.5 rounded-lg bg-white/90 hover:bg-white text-indigo-900 border border-indigo-200/80 hover:border-indigo-400 transition-all cursor-pointer"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* AI Suggestion Card Display */}
+                  {aiRtlGeneratedSuggestion && (
+                    <div className="bg-white rounded-xl p-3.5 border border-indigo-200 space-y-2.5 shadow-xs animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between border-b border-indigo-50 pb-2">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-indigo-800">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Draf Rekomendasi AI Siap Diadopsi</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAiRtl()}
+                          disabled={isGeneratingAiRtl}
+                          className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isGeneratingAiRtl ? 'animate-spin' : ''}`} />
+                          <span>Variasi Lain</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-2 text-slate-800 text-[11px]">
+                        <div>
+                          <span className="font-bold text-slate-600">🎯 Indikator Temuan: </span>
+                          <span className="font-medium text-slate-900">{aiRtlGeneratedSuggestion.finding}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-600">
+                            🔍 Akar Masalah ({aiRtlGeneratedSuggestion.rootCauseType === 'FACT' ? 'Fakta Terverifikasi' : 'Hipotesis'}):{' '}
+                          </span>
+                          <span className="font-medium text-slate-900">{aiRtlGeneratedSuggestion.rootCause}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-600">💡 Rencana Aksi Positif: </span>
+                          <span className="font-medium text-indigo-900">{aiRtlGeneratedSuggestion.actionPlan}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                          <span><strong>Sasaran:</strong> {aiRtlGeneratedSuggestion.target || 'Peserta Didik & Orang Tua'}</span>
+                          <span><strong>Tenggat:</strong> {aiRtlGeneratedSuggestion.recommendedDeadline}</span>
+                          <span><strong>PIC:</strong> {aiRtlGeneratedSuggestion.owner || `Wali Kelas & Paguyuban`}</span>
+                        </div>
+                        {aiRtlGeneratedSuggestion.reasoning && (
+                          <p className="text-[10px] text-slate-600 bg-indigo-50/50 p-2 rounded-lg border border-indigo-100 italic">
+                            💬 <strong>Alasan Pedagogis:</strong> {aiRtlGeneratedSuggestion.reasoning}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleApplyAiRtlSuggestion()}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs transition-all shadow-xs cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                        <span>Terapkan Draf AI ke Formulir di Bawah</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {aiRtlAppliedSuccess && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Draf AI berhasil dimasukkan ke formulir! Anda dapat meninjau atau mengedit sebelum menyimpan.</span>
+                    </div>
+                  )}
                 </div>
+              )}
+
+              {/* Formulir RTL (Dapat Diisi Manual atau Diisi Otomatis oleh AI) */}
+              <form onSubmit={handleCreateRtl} className="space-y-3.5 pt-1">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Tenggat Target</label>
-                  <input
-                    type="date"
-                    value={newRtlDeadline}
-                    onChange={(e) => setNewRtlDeadline(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Akar Masalah</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Penggunaan gawai malam hari di atas jam 21.00 saat akhir pekan"
-                  value={newRtlRootCause}
-                  onChange={(e) => setNewRtlRootCause(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Rencana Aksi & Intervensi *</label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="Contoh: Dialog kolaboratif dengan orang tua mengenai batas layar & kesepakatan tidur pukul 20.45"
-                  value={newRtlActionPlan}
-                  onChange={(e) => setNewRtlActionPlan(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Penanggung Jawab (PIC)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700">Indikator Temuan / Isu Pembiasaan *</label>
+                    {newRtlFinding && (
+                      <span className="text-[10px] text-slate-400">Siap disimpan</span>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    value={newRtlOwner}
-                    onChange={(e) => setNewRtlOwner(e.target.value)}
+                    required
+                    placeholder="Contoh: Keteraturan tidur tepat waktu rombel belum optimal"
+                    value={newRtlFinding}
+                    onChange={(e) => setNewRtlFinding(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs transition-all"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Tipe Akar Masalah</label>
+                    <select
+                      value={newRtlRootCauseType}
+                      onChange={(e) => setNewRtlRootCauseType(e.target.value as any)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
+                    >
+                      <option value="FACT">Fakta Terverifikasi (Data/Observasi Nyata)</option>
+                      <option value="HYPOTHESIS_TO_VERIFY">Hipotesis (Perlu Konfirmasi Paguyuban)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Tenggat Target RTL</label>
+                    <input
+                      type="date"
+                      value={newRtlDeadline}
+                      onChange={(e) => setNewRtlDeadline(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Akar Masalah yang Mendasari</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Penggunaan gawai malam hari di atas jam 21.00 saat hari sekolah"
+                    value={newRtlRootCause}
+                    onChange={(e) => setNewRtlRootCause(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
                   />
                 </div>
+
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Progres Awal: {newRtlProgress}%</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="5"
-                    value={newRtlProgress}
-                    onChange={(e) => setNewRtlProgress(Number(e.target.value))}
-                    className="w-full mt-2 accent-[#0753A5]"
+                  <label className="font-bold text-slate-700 block mb-1">Rencana Aksi & Intervensi Positif *</label>
+                  <textarea
+                    required
+                    rows={2}
+                    placeholder="Contoh: Dialog kolaboratif bersama orang tua mengenai batas layar & kesepakatan tidur pukul 20.45"
+                    value={newRtlActionPlan}
+                    onChange={(e) => setNewRtlActionPlan(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs resize-none"
                   />
                 </div>
-              </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsRtlModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold transition-all cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white font-bold transition-all shadow-xs cursor-pointer"
-                >
-                  Simpan RTL
-                </button>
-              </div>
-            </form>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Penanggung Jawab (PIC)</label>
+                    <input
+                      type="text"
+                      value={newRtlOwner}
+                      onChange={(e) => setNewRtlOwner(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="font-bold text-slate-700">Progres Awal: {newRtlProgress}%</label>
+                      <span className="text-[10px] text-slate-400">Tahap Inisiasi</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={newRtlProgress}
+                      onChange={(e) => setNewRtlProgress(Number(e.target.value))}
+                      className="w-full mt-2 accent-[#0753A5]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsRtlModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold transition-all cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white font-bold transition-all shadow-xs cursor-pointer"
+                  >
+                    Simpan RTL
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -2973,6 +4194,197 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================ */}
+      {/* MODAL REKAP DETAIL HARIAN JURNAL */}
+      {/* ============================================================================ */}
+      {selectedDayDetailModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-3xl w-full border border-slate-200 shadow-2xl p-6 sm:p-7 space-y-5 my-8 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-[#0753A5] flex items-center justify-center shrink-0">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Rekap Jurnal Harian: {selectedDayDetailModal.fullDateLabel}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Rombel {activeRombel.name} ({activeRombel.phase || 'Fase D'}) • {modalDateStudents.filter((m) => m.hasJournal).length} dari {totalStudentsCount} Murid Mengisi
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedDayDetailModal(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Action & Filter Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={modalStudentFilterQuery}
+                  onChange={(e) => setModalStudentFilterQuery(e.target.value)}
+                  placeholder="Cari nama murid atau NISN..."
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-blue-500"
+                />
+              </div>
+
+              {modalDateStudents.some((m) => m.hasJournal && !m.isValidated) && (
+                <button
+                  type="button"
+                  onClick={handleValidateAllOnModalDate}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Validasi Semua Siswa Tanggal Ini</span>
+                </button>
+              )}
+            </div>
+
+            {/* Student List */}
+            <div className="overflow-y-auto space-y-3 flex-1 pr-1">
+              {filteredModalStudents.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  Tidak ada siswa yang sesuai dengan kata kunci pencarian.
+                </div>
+              ) : (
+                filteredModalStudents.map((item) => (
+                  <div
+                    key={item.student.id}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      item.hasJournal
+                        ? 'bg-white border-slate-200/90 shadow-2xs'
+                        : 'bg-slate-50/60 border-slate-200/60 opacity-80'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 rounded-xl font-black text-xs flex items-center justify-center shrink-0 ${
+                            item.hasJournal
+                              ? item.completedCount >= 6
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-200 text-slate-500'
+                          }`}
+                        >
+                          {item.student.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-bold text-slate-900">{item.student.name}</h4>
+                            <span className="text-[10px] text-slate-400 font-mono">NISN: {item.student.nisn}</span>
+                          </div>
+                          {item.hasJournal && item.savedAt && (
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              Disimpan: {item.savedAt}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {item.hasJournal ? (
+                          <>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                item.completedCount >= 6
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : item.completedCount >= 4
+                                  ? 'bg-sky-100 text-sky-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {item.completedCount}/7 Kebiasaan
+                            </span>
+
+                            {item.isValidated ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Valid</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleValidateStudent(item.student.id)}
+                                className="px-2.5 py-1 rounded-lg bg-[#0753A5] hover:bg-blue-700 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
+                              >
+                                Validasi
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDayDetailModal(null);
+                                openStudentDossier(item.student);
+                              }}
+                              className="px-2 py-1 rounded-lg border border-slate-200 hover:bg-blue-50 text-[#0753A5] font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>Dossier</span>
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[10px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                            Belum Ada Jurnal
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Habit Badges Breakdown */}
+                    {item.hasJournal && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
+                        {HABIT_LIST.map((h) => {
+                          const isDone = item.habitsBreakdown[h.code];
+                          return (
+                            <span
+                              key={h.code}
+                              className={`text-[9px] font-semibold px-2 py-0.5 rounded-md inline-flex items-center gap-1 ${
+                                isDone
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200 line-through'
+                              }`}
+                              title={`${h.name}: ${isDone ? 'Terlaksana' : 'Belum Terlaksana'}`}
+                            >
+                              {isDone ? '✓' : '✗'} {h.name}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-400">
+                *Klik tombol validasi untuk menyetujui jurnal peserta didik secara resmi.
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedDayDetailModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Tutup Rekap
+              </button>
+            </div>
           </div>
         </div>
       )}

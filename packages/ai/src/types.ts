@@ -19,9 +19,13 @@ export interface AIAnalysisRequest {
     | 'SchoolAnalysis'
     | 'SupervisorPortfolioAnalysis'
     | 'FollowUpGenerator'
+    | 'TEACHER_RTL_GENERATOR'
     | 'AI_CHAT_ASSISTANT'
     | 'TEACHER_CLASS_INSIGHT'
     | 'PRINCIPAL_SCHOOL_STRATEGY'
+    | 'PRINCIPAL_PROGRAM_RECOMMENDER'
+    | 'PRINCIPAL_DIRECTIVE_ASSISTANT'
+    | 'PRINCIPAL_RTL_SYNTHESIZER'
     | 'SUPERVISOR_REGIONAL_ANALYSIS';
   actorRole: string;
   context: Record<string, unknown>;

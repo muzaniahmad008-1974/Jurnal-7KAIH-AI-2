@@ -79,6 +79,9 @@ app.post('/api/ai/analyze', async (req: Request, res: Response) => {
       actionableRecommendations: result.recommendations || [],
       aiSuggestedTarget: result.recommendations?.[0] || 'Tingkatkan konsistensi kebiasaan secara bertahap.',
       reply: result.recommendations?.join('\n\n') || '',
+      programSuggestions: result.programSuggestions || [],
+      directiveDraft: result.directiveDraft || null,
+      rtlSynthesis: result.rtlSynthesis || null,
     };
 
     // Record AI Telemetry Audit
@@ -97,6 +100,21 @@ app.post('/api/ai/analyze', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: formattedResult });
   } catch (_error) {
+    const isRtl = req.body?.taskType === 'FollowUpGenerator' || req.body?.taskType === 'TEACHER_RTL_GENERATOR';
+    const fallbackRtl = isRtl
+      ? {
+          finding: 'Penguatan keteraturan waktu istirahat malam dan batas penggunaan gawai.',
+          rootCauseType: 'HYPOTHESIS_TO_VERIFY' as const,
+          rootCause: 'Aktivitas layar gawai malam hari menjelang jam tidur.',
+          actionPlan: 'Gerakan 1 jam bebas gawai sebelum tidur dan kesepakatan waktu istirahat bersama paguyuban.',
+          target: 'Peserta Didik & Orang Tua',
+          indicator: 'Peningkatan konsistensi tidur tepat waktu di atas 85%.',
+          owner: 'Wali Kelas & Paguyuban Rombel',
+          recommendedDeadline: new Date(Date.now() + 21 * 24 * 3600 * 1000).toISOString().split('T')[0],
+          reasoning: 'Kualitas istirahat malam menopang kebugaran fisik dan kesiapan fokus belajar esok hari.',
+        }
+      : undefined;
+
     // Graceful fallback response without printing raw error message
     res.json({
       success: true,
@@ -112,6 +130,7 @@ app.post('/api/ai/analyze', async (req: Request, res: Response) => {
         actionableRecommendations: ['Lanjutkan pemantauan dan penguatan pembiasaan secara konsisten.'],
         aiSuggestedTarget: 'Tingkatkan keteraturan pembiasaan secara bertahap.',
         reply: 'Terus jalankan 7 Kebiasaan Anak Indonesia Hebat dengan riang gembira bersama keluarga dan guru!',
+        rtlSuggestion: fallbackRtl,
       },
     });
   }

@@ -292,6 +292,48 @@ export interface AIFact {
   metricReferences: string[];
 }
 
+export interface AIRtlSuggestion {
+  finding: string;
+  rootCauseType: RootCauseType;
+  rootCause: string;
+  actionPlan: string;
+  target?: string;
+  indicator?: string;
+  owner?: string;
+  recommendedDeadline?: string;
+  reasoning?: string;
+}
+
+export interface AIProgramSuggestion {
+  id: string;
+  habitCode: string;
+  title: string;
+  description: string;
+  participantScope: string;
+  schedule: string;
+  pic: string;
+  reasoning?: string;
+  indicator?: string;
+}
+
+export interface AIDirectiveSuggestion {
+  focus: string;
+  title: string;
+  directiveText: string;
+  bulletPoints: string[];
+  callToAction: string;
+}
+
+export interface AIRtlSynthesis {
+  dominantIssue: string;
+  rootCauseCluster: string;
+  affectedScope: string;
+  recommendedPolicy: string;
+  strategicActionPlan: string;
+  targetMetric: string;
+  responsibleLead: string;
+}
+
 export interface AIAnalysisResult {
   facts: AIFact[];
   patterns: string[];
@@ -299,4 +341,8 @@ export interface AIAnalysisResult {
   hypothesesToVerify: string[];
   recommendations: string[];
   supportingMetrics: Record<string, string | number>;
+  rtlSuggestion?: AIRtlSuggestion;
+  programSuggestions?: AIProgramSuggestion[];
+  directiveDraft?: AIDirectiveSuggestion;
+  rtlSynthesis?: AIRtlSynthesis;
 }

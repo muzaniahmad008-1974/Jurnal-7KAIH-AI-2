@@ -33,6 +33,7 @@ import {
   Database,
   UserCheck,
   Clock,
+  TrendingUp,
 } from 'lucide-react';
 import { SSOModal } from './SSOModal';
 import { UserAvatar } from './UserAvatar';
@@ -124,6 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
           { id: 'dashboard', label: 'Dashboard Wilayah', icon: Compass },
           { id: 'schools-comparison', label: 'Perbandingan 4 Sekolah', icon: Building2 },
           { id: 'monitoring', label: 'Portofolio 7KAIH Wilayah', icon: Calendar },
+          { id: 'trends', label: 'Grafik Tren Bulanan', icon: TrendingUp },
           { id: 'rtl', label: 'RTL Pengawasan', icon: FileText },
           { id: 'ai-supervisor', label: 'AI Analysis Wilayah', icon: Sparkles },
           { id: 'account-settings', label: 'Pengaturan Akun', icon: Settings },

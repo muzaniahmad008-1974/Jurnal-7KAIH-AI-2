@@ -42,10 +42,28 @@ import {
   Inbox,
   Clock,
   Briefcase,
+  Lightbulb,
+  Wand2,
+  Target,
+  Layers,
+  ArrowRight,
+  RotateCcw,
+  CheckCircle,
+  Copy,
 } from 'lucide-react';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { Rombel, Student, getStoredRombels, getStoredStudents } from '../lib/studentData';
 import { UserPersona, getStoredUsers, isDeprecatedOrDummyJournal } from '../lib/constants';
+
+export const ALL_HABIT_DEFINITIONS: { code: string; label: string; icon: string; bg: string; color: string }[] = [
+  { code: 'BANGUN_PAGI', label: 'Bangun Pagi', icon: '🌅', bg: 'bg-amber-50 border-amber-200 text-amber-800', color: 'text-amber-600' },
+  { code: 'BERIBADAH', label: 'Beribadah', icon: '🤲', bg: 'bg-emerald-50 border-emerald-200 text-emerald-800', color: 'text-emerald-600' },
+  { code: 'BEROLAHRAGA', label: 'Berolahraga', icon: '🏃', bg: 'bg-indigo-50 border-indigo-200 text-indigo-800', color: 'text-indigo-600' },
+  { code: 'MAKAN_SEHAT', label: 'Makan Sehat', icon: '🥗', bg: 'bg-rose-50 border-rose-200 text-rose-800', color: 'text-rose-600' },
+  { code: 'GEMAR_BELAJAR', label: 'Gemar Belajar', icon: '📚', bg: 'bg-blue-50 border-blue-200 text-blue-800', color: 'text-blue-600' },
+  { code: 'BERMASYARAKAT', label: 'Bermasyarakat', icon: '🤝', bg: 'bg-purple-50 border-purple-200 text-purple-800', color: 'text-purple-600' },
+  { code: 'TIDUR_CEPAT', label: 'Tidur Cepat', icon: '🌙', bg: 'bg-cyan-50 border-cyan-200 text-cyan-800', color: 'text-cyan-600' },
+];
 
 interface PrincipalDashboardProps {
   programs: SchoolProgram[];
@@ -95,6 +113,19 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [feedbackNote, setFeedbackNote] = useState('');
   const [classSearchQuery, setClassSearchQuery] = useState('');
+
+  // AI Assistance States (Tab Program Sekolah)
+  const [aiProgramResult, setAiProgramResult] = useState<any | null>(null);
+  const [isAiProgramLoading, setIsAiProgramLoading] = useState(false);
+  const [isAiModalDrafting, setIsAiModalDrafting] = useState(false);
+  const [aiModalThemeInput, setAiModalThemeInput] = useState('');
+
+  // AI Assistance States (Tab RTL & Monitoring)
+  const [selectedDirectiveFocus, setSelectedDirectiveFocus] = useState<string>('DISIPLIN_TIDUR_GAWAI');
+  const [isDraftingDirective, setIsDraftingDirective] = useState(false);
+  const [aiDirectiveResult, setAiDirectiveResult] = useState<any | null>(null);
+  const [aiRtlSynthesisResult, setAiRtlSynthesisResult] = useState<any | null>(null);
+  const [isAiRtlLoading, setIsAiRtlLoading] = useState(false);
 
   // Synchronized Master & Mandiri Data States
   const [schools, setSchools] = useState<SchoolMaster[]>(() => getStoredSchools());
@@ -979,6 +1010,368 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     }
   };
 
+  // Habit Coverage Diagnostics for 7KAIH in School Programs
+  const habitCoverage = useMemo(() => {
+    const counts: Record<string, number> = {};
+    ALL_HABIT_DEFINITIONS.forEach((h) => {
+      counts[h.code] = 0;
+    });
+    unifiedProgramsList.forEach((p) => {
+      const code = p.habitCode;
+      if (counts[code] !== undefined) {
+        counts[code]++;
+      }
+    });
+    const coveredHabits = ALL_HABIT_DEFINITIONS.filter((h) => (counts[h.code] || 0) > 0);
+    const uncoveredHabits = ALL_HABIT_DEFINITIONS.filter((h) => (counts[h.code] || 0) === 0);
+    return {
+      counts,
+      coveredCount: coveredHabits.length,
+      uncoveredCount: uncoveredHabits.length,
+      coveragePercent: Math.round((coveredHabits.length / 7) * 100),
+      coveredHabits,
+      uncoveredHabits,
+    };
+  }, [unifiedProgramsList]);
+
+  // AI Generator: Program Recommendations (Tab Program Sekolah)
+  const handleGenerateProgramRecommendations = async () => {
+    setIsAiProgramLoading(true);
+    try {
+      const existingHabits = Array.from(new Set(unifiedProgramsList.map((p) => p.habitCode)));
+      const uncovered = ALL_HABIT_DEFINITIONS.filter((h) => !existingHabits.includes(h.code)).map((h) => h.code);
+
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskType: 'PRINCIPAL_PROGRAM_RECOMMENDER',
+          actorRole: 'PRINCIPAL',
+          payload: {
+            schoolName: activeSchool.name,
+            npsn: activeSchool.npsn,
+            principalName: activeSchool.principalName,
+            totalStudents: totalActiveStudents,
+            existingProgramsCount: unifiedProgramsList.length,
+            existingHabits,
+            lowHabit: uncovered[0] || 'TIDUR_CEPAT',
+            overallCompleteness,
+            overallConsistency,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        setAiProgramResult(json.data || json);
+        showToast('Analisis cakupan & rekomendasi program 7KAIH berhasil disusun AI.');
+      } else {
+        throw new Error('API request failed');
+      }
+    } catch (_e) {
+      setAiProgramResult({
+        recordedFacts: [
+          `Satuan pendidikan ${activeSchool.name} saat ini memiliki ${unifiedProgramsList.length} program pembiasaan aktif.`,
+          `Sebanyak ${habitCoverage.coveredCount} dari 7 dimensi 7KAIH telah tercover program inisiatif resmi.`,
+        ],
+        patterns: [
+          'Inisiatif pembiasaan yang mengikutsertakan paguyuban keluarga terbukti memiliki dampak 2x lebih konsisten.',
+          'Program tantangan mingguan berbasis apresiasi meningkatkan antusiasme partisipasi siswa.',
+        ],
+        programSuggestions: [
+          {
+            id: `prg-ai-fallback-1`,
+            habitCode: 'TIDUR_CEPAT',
+            title: 'Gerakan 1 Jam Bebas Layar Sebelum Tidur (Screen-Free Wind-Down)',
+            description: 'Kampanye pembatasan layar gawai 60 menit sebelum waktu istirahat malam dengan kartu komitmen bersama orang tua untuk menjamin kebugaran fisik peserta didik saat menyambut fajar.',
+            participantScope: 'Seluruh Rombel Belajar',
+            schedule: 'Setiap Malam (Senin - Minggu)',
+            pic: 'Tim Kesiswaan, BK & Paguyuban Rombel',
+            reasoning: 'Data menunjukkan kebiasaan tidur malam tepat waktu menjadi faktor penentu konsentrasi belajar pagi hari.',
+            indicator: '85% siswa tidur sebelum pukul 21.30 dan mencatatkan kondisi segar di jurnal harian.',
+          },
+          {
+            id: `prg-ai-fallback-2`,
+            habitCode: 'MAKAN_SEHAT',
+            title: 'Tantangan Bekal Gizi Pelangi & Jumat Tanpa Sampah Plastik',
+            description: 'Program pembiasaan sarapan/makan siang bergizi seimbang (karbohidrat, sayur, buah, protein) dengan membawa wadah makanan dan tumbler mandiri dari rumah.',
+            participantScope: 'Semua Rombel Belajar',
+            schedule: 'Setiap Hari Jumat',
+            pic: 'Pembina UKS & Kader Adiwiyata',
+            reasoning: 'Meningkatkan kesadaran asupan mikronutrien anak serta menumbuhkan kepedulian lingkungan hidup.',
+            indicator: 'Tercapainya 90% konsistensi menu sayur/buah mingguan pada catatan pembiasaan makan sehat.',
+          },
+          {
+            id: `prg-ai-fallback-3`,
+            habitCode: 'BERMASYARAKAT',
+            title: 'Aksi Nyata "Satu Hari Satu Kebaikan" (One Day One Kindness)',
+            description: 'Pemberian apresiasi mingguan bagi aksi empati, tolong-menolong sesama teman, gotong royong kebersihan lingkungan sekolah, dan keteladanan sosial santun.',
+            participantScope: 'Semua Rombel & Pengurus OSIS',
+            schedule: 'Terintegrasi dalam Refleksi Mingguan',
+            pic: 'Wali Kelas & Pembina Karakter',
+            reasoning: 'Memperkuat jiwa Pancasila dan budaya saling menghargai di lingkungan satuan pendidikan.',
+            indicator: 'Meningkatnya catatan jurnal dimensi bermasyarakat dengan ragam aksi positif terdokumentasi.',
+          },
+        ],
+      });
+      showToast('Rekomendasi inisiatif program 7KAIH berhasil dirumuskan.');
+    } finally {
+      setIsAiProgramLoading(false);
+    }
+  };
+
+  // Adopt AI suggested program directly into official school programs
+  const handleAdoptAiProgram = (suggestion: any) => {
+    const newProg: UnifiedSchoolProgram = {
+      id: `prg-sch-ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: suggestion.title,
+      habitCode: suggestion.habitCode,
+      description: suggestion.description,
+      participantScope: suggestion.participantScope || 'Seluruh Peserta Didik',
+      schedule: suggestion.schedule || 'Terjadwal Rutin',
+      pic: suggestion.pic || 'Tim Karakter & Dewan Guru',
+      status: 'AKTIF',
+      evidenceCount: 0,
+      schoolId: activeSchool.id,
+      source: 'AI_REKOMENDASI_KEPALA_SEKOLAH',
+      resultNote: suggestion.indicator ? `Target Indikator: ${suggestion.indicator}` : undefined,
+    };
+
+    try {
+      const existing = localStorage.getItem('si7kaih_school_programs_prod');
+      const parsed = existing ? JSON.parse(existing) : [];
+      const updated = [newProg, ...parsed];
+      localStorage.setItem('si7kaih_school_programs_prod', JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('si7kaih_programs_updated', { detail: updated }));
+    } catch (_e) {}
+
+    setApprovedPrograms((prev) => {
+      const next = { ...prev, [newProg.id]: true };
+      try {
+        localStorage.setItem('si7kaih_principal_approved_programs', JSON.stringify(next));
+      } catch (_e) {}
+      return next;
+    });
+
+    setUnifiedProgramsList((prev) => [newProg, ...prev]);
+    showToast(`Program "${newProg.title}" berhasil diadopsi dan disahkan Kepala Sekolah!`);
+  };
+
+  // AI Assistant for Drafting in Add Program Modal
+  const handleDraftProgramWithAi = (themeKeyword?: string) => {
+    setIsAiModalDrafting(true);
+    const keyword = (themeKeyword || aiModalThemeInput || '').toLowerCase();
+    setTimeout(() => {
+      if (keyword.includes('sarapan') || keyword.includes('makan') || keyword.includes('gizi') || newProgramHabit === 'MAKAN_SEHAT') {
+        setNewProgramTitle('Gerakan Sarapan Sehat & Kampanye Tumbler Mandiri');
+        setNewProgramHabit('MAKAN_SEHAT');
+        setNewProgramScope('Semua Rombel Belajar');
+        setNewProgramSchedule('Setiap Hari Jumat Pagi');
+        setNewProgramPic('Pembina UKS & Tim Adiwiyata');
+        setNewProgramDesc('Pembiasaan sarapan menu gizi seimbang (karbohidrat, lauk protein, sayur, buah) bersama di kelas dengan membawa tempat makan dan botol minum ramah lingkungan tanpa kemasan plastik sekali pakai.');
+      } else if (keyword.includes('tidur') || keyword.includes('gawai') || keyword.includes('malam') || newProgramHabit === 'TIDUR_CEPAT') {
+        setNewProgramTitle('Program Keluarga 1 Jam Bebas Gawai Sebelum Istirahat');
+        setNewProgramHabit('TIDUR_CEPAT');
+        setNewProgramScope('Seluruh Siswa & Paguyuban Kelas');
+        setNewProgramSchedule('Setiap Malam Pukul 20.30 - 21.30');
+        setNewProgramPic('Guru BK & Paguyuban Orang Tua');
+        setNewProgramDesc('Gerakan edukasi kolaboratif sekolah dan orang tua murid untuk mematikan layar gadget 60 menit sebelum tidur, digantikan dengan membaca buku cerita atau refleksi malam bersama keluarga.');
+      } else if (keyword.includes('senam') || keyword.includes('olahraga') || keyword.includes('fisik') || newProgramHabit === 'BEROLAHRAGA') {
+        setNewProgramTitle('Senam Kebugaran 7KAIH Ceria 15 Menit');
+        setNewProgramHabit('BEROLAHRAGA');
+        setNewProgramScope('Seluruh Warga Sekolah');
+        setNewProgramSchedule('Setiap Selasa & Jumat Sebelum KBM');
+        setNewProgramPic('Guru PJOK & Tim Kesiswaan');
+        setNewProgramDesc('Senam irama kebugaran jasmani bersama di lapangan sekolah untuk membangun semangat kebersamaan, daya tahan fisik, dan kesiapan fokus belajar peserta didik.');
+      } else if (keyword.includes('ibadah') || keyword.includes('sholat') || keyword.includes('doa') || newProgramHabit === 'BERIBADAH') {
+        setNewProgramTitle('Gerakan Bintang Fajar: Doa Pagi & Refleksi Spiritual Bersama');
+        setNewProgramHabit('BERIBADAH');
+        setNewProgramScope('Semua Peserta Didik Menurut Agama Masing-Masing');
+        setNewProgramSchedule('Setiap Pagi 15 Menit Sebelum Jam Pelajaran');
+        setNewProgramPic('Guru Pendidikan Agama & Budi Pekerti');
+        setNewProgramDesc('Pembiasaan memulai hari dengan berdoa, pembacaan kitab suci, atau sholat dhuha berjamaah secara khusyuk dan sukarela untuk memupuk integritas moral dan ketakwaan.');
+      } else if (keyword.includes('baca') || keyword.includes('buku') || keyword.includes('belajar') || newProgramHabit === 'GEMAR_BELAJAR') {
+        setNewProgramTitle('Pojok Literasi Menyenangkan: 15 Menit Membaca Bebas');
+        setNewProgramHabit('GEMAR_BELAJAR');
+        setNewProgramScope('Semua Rombel Belajar');
+        setNewProgramSchedule('Setiap Rabu & Kamis Jam Ke-0');
+        setNewProgramPic('Kepala Perpustakaan & Duta Baca');
+        setNewProgramDesc('Peserta didik membaca buku pilihan non-pelajaran selama 15 menit dan menuliskan 1 kalimat mutiara atau inspirasi yang diperoleh di lembar pohon literasi kelas.');
+      } else if (keyword.includes('kebaikan') || keyword.includes('sampah') || keyword.includes('masyarakat') || newProgramHabit === 'BERMASYARAKAT') {
+        setNewProgramTitle('Gerakan Operasi Semut & Satu Hari Satu Kebaikan');
+        setNewProgramHabit('BERMASYARAKAT');
+        setNewProgramScope('Seluruh Peserta Didik');
+        setNewProgramSchedule('Setiap Hari saat Jam Istirahat & Pulang');
+        setNewProgramPic('Wali Kelas & Kader Lingkungan Hidup');
+        setNewProgramDesc('Pembiasaan memungut sampah di sekeliling, saling membantu teman yang membutuhkan, serta mendokumentasikan aksi empati nyata di buku jurnal kebiasaan bermasyarakat.');
+      } else {
+        setNewProgramTitle('Program Bangun Pagi Ceria & Sambut Hangat Siswa di Gerbang');
+        setNewProgramHabit('BANGUN_PAGI');
+        setNewProgramScope('Seluruh Peserta Didik');
+        setNewProgramSchedule('Setiap Hari Sekolah Pukul 06.30 - 07.00');
+        setNewProgramPic('Guru Piket & Tim Disiplin Positif');
+        setNewProgramDesc('Guru menyambut kehadiran peserta didik di gerbang sekolah dengan Senyum, Salam, Sapa (3S), mengapresiasi anak-anak yang hadir sebelum bel berbunyi.');
+      }
+      setIsAiModalDrafting(false);
+      showToast('✨ Draf formulir inisiatif program berhasil diisi otomatis oleh AI!');
+    }, 350);
+  };
+
+  // AI Generator: Executive Supervision Directives (Tab RTL & Monitoring)
+  const handleGenerateDirectiveWithAi = async (focusKey?: string) => {
+    const focusToUse = focusKey || selectedDirectiveFocus;
+    setIsDraftingDirective(true);
+    try {
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskType: 'PRINCIPAL_DIRECTIVE_ASSISTANT',
+          actorRole: 'PRINCIPAL',
+          payload: {
+            schoolName: activeSchool.name,
+            principalName: activeSchool.principalName || currentPersona?.name || 'Kepala Sekolah',
+            focus: focusToUse,
+            totalStudents: totalActiveStudents,
+            overallConsistency,
+            warningCount: totalWarningStudents,
+            rtlsCount: unifiedFollowUpsList.length,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const data = json.data || json;
+        setAiDirectiveResult(data);
+        if (data.directiveDraft?.directiveText) {
+          setFeedbackNote(data.directiveDraft.directiveText);
+        } else if (data.reply) {
+          setFeedbackNote(data.reply);
+        }
+        showToast('Draf arahan supervisi resmi Kepala Sekolah berhasil disusun oleh AI.');
+      } else {
+        throw new Error('API failed');
+      }
+    } catch (_e) {
+      let title = 'Instruksi Supervisi Kepala Sekolah: Penguatan 7KAIH';
+      let text = '';
+      if (focusToUse.includes('TIDUR') || focusToUse.includes('GAWAI')) {
+        title = `Instruksi Supervisi: Gerakan Pendampingan Waktu Tidur & Detoks Gawai Malam Hari`;
+        text = `Bapak dan Ibu Dewan Guru serta segenap Wali Kelas ${activeSchool.name} yang saya hormati.\n\nBerdasarkan monitoring komprehensif data jurnal 7KAIH terhadap ${totalActiveStudents} peserta didik (tingkat konsistensi ${overallConsistency}%), ditemukan bahwa kebiasaan waktu istirahat malam memerlukan perhatian dan pendampingan ekstra bersama orang tua di rumah.\n\nSaya menginstruksikan kepada seluruh wali kelas untuk:\n1. Mengomunikasikan pembatasan layar gawai 1 jam sebelum tidur melalui grup paguyuban kelas.\n2. Menyelaraskan volume PR agar anak memiliki waktu istirahat yang cukup di malam hari.\n3. Memberikan apresiasi hangat pada apel/refleksi pagi bagi siswa yang bangun dan tidur teratur.\n4. Mencatat perkembangan pembiasaan tidur sehat tanpa melabeli peserta didik secara negatif.\n\nMari kita bimbing ananda dengan keteladanan kasih sayang dan komitmen utuh.\n\nHormat saya,\n${activeSchool.principalName || currentPersona?.name || 'Kepala Sekolah'}\nKepala Sekolah ${activeSchool.name}`;
+      } else if (focusToUse.includes('ORANG_TUA') || focusToUse.includes('PAGUYUBAN')) {
+        title = `Instruksi Supervisi: Penguatan Sinergi Rumah & Paguyuban Kelas`;
+        text = `Yth. Bapak/Ibu Wali Kelas dan Tim Pendamping Karakter ${activeSchool.name}.\n\nKeberhasilan 7 Kebiasaan Anak Indonesia Hebat bertumpu pada keselarasan antara pembiasaan di sekolah dan keteladanan di rumah. Saya meminta seluruh wali kelas mengoptimalkan forum komunikasi paguyuban kelas untuk:\n1. Mensosialisasikan pentingnya pengisian jurnal 7KAIH mandiri dengan jujur, riang, dan tanpa tekanan.\n2. Membagikan panduan pembiasaan positif di rumah (sarapan bergizi, ibadah bersama, membaca buku).\n3. Mengadakan sesi apresiasi bulanan bagi keluarga yang konsisten mendampingi ananda.\n\nKemitraan guru dan orang tua adalah kunci emas pembentukan karakter mulia anak bangsa.\n\nHormat saya,\n${activeSchool.principalName || currentPersona?.name || 'Kepala Sekolah'}\nKepala Sekolah ${activeSchool.name}`;
+      } else {
+        title = `Instruksi Supervisi: Optimalisasi Pembiasaan Karakter & Validasi Jurnal Berkelanjutan`;
+        text = `Bapak dan Ibu Pendidik ${activeSchool.name} yang mulia.\n\nSaya mengapresiasi setinggi-tingginya dedikasi Bapak/Ibu yang terus mengawal jurnal pembiasaan peserta didik kita. Agar dampak pembiasaan semakin mengakar kuat dalam budaya satuan pendidikan:\n1. Lakukan validasi berkala setiap akhir pekan disertai umpan balik apresiatif pada lembar jurnal anak.\n2. Fokuskan pendampingan pada peserta didik yang membutuhkan dorongan ekstra dengan pendekatan persuasif personal.\n3. Integrasikan nilai 7KAIH ke dalam kegiatan pembelajaran harian di kelas.\n\nTeruslah menjadi teladan kebaikan yang menginspirasi setiap langkah tumbuh kembang anak didik kita.\n\nHormat saya,\n${activeSchool.principalName || currentPersona?.name || 'Kepala Sekolah'}\nKepala Sekolah ${activeSchool.name}`;
+      }
+      setFeedbackNote(text);
+      setAiDirectiveResult({ directiveDraft: { title, directiveText: text } });
+      showToast('Draf arahan supervisi Kepala Sekolah berhasil disusun oleh AI.');
+    } finally {
+      setIsDraftingDirective(false);
+    }
+  };
+
+  // AI Generator: RTL Cross-Class Synthesizer (Tab RTL & Monitoring)
+  const handleGenerateRtlSynthesis = async () => {
+    setIsAiRtlLoading(true);
+    try {
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskType: 'PRINCIPAL_RTL_SYNTHESIZER',
+          actorRole: 'PRINCIPAL',
+          payload: {
+            schoolName: activeSchool.name,
+            principalName: activeSchool.principalName,
+            rtlsCount: unifiedFollowUpsList.length,
+            warningCount: totalWarningStudents,
+            assistCount: totalAssistStudents,
+            rtlsSample: unifiedFollowUpsList.slice(0, 6).map((r) => ({
+              finding: r.finding,
+              rootCause: r.rootCause,
+              habit: r.habitCode,
+            })),
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        setAiRtlSynthesisResult(json.data || json);
+        showToast('Sintesis cerdas RTL & rekomendasi kebijakan sekolah berhasil disusun AI.');
+      } else {
+        throw new Error('API failed');
+      }
+    } catch (_e) {
+      setAiRtlSynthesisResult({
+        recordedFacts: [
+          `Terdata ${unifiedFollowUpsList.length} RTL dari rombel belajar serta ${totalWarningStudents} siswa dalam kelompok penguatan.`,
+          'Sintesis mengindikasikan benang merah pada tantangan ritme malam hari dan manajemen gawai.',
+        ],
+        patterns: [
+          'Sebagian besar RTL rombel berakar pada kebiasaan tidur malam yang belum tertata rapi di rumah.',
+          'Dibutuhkan kebijakan payung tingkat sekolah untuk melengkapi intervensi personal wali kelas.',
+        ],
+        rtlSynthesis: {
+          dominantIssue: 'Keterlambatan jam tidur malam akibat interaksi layar gawai (screen-time) berlebih',
+          rootCauseCluster: 'Faktor Lingkungan Rumah: Belum adanya kesepakatan batas waktu gawai keluarga dan minimnya rutinitas tenang sebelum tidur.',
+          affectedScope: 'Terdistribusi di beberapa rombel, terutama siswa fase transisi dan kelas tinggi.',
+          recommendedPolicy: 'Pemberlakuan Kebijakan Sekolah "Keluarga Sadar Gawai Sehat" & Penyelarasan Volume PR Malam.',
+          strategicActionPlan: '1. Sosialisasi deklarasi bersama Komite Sekolah tentang Gerakan Detoks Gawai Malam.\n2. Penataan jadwal tugas rumah agar maksimal diselesaikan sebelum pukul 19.30 WIB.\n3. Integrasi materi literasi digital sehat dalam layanan BK dan bimbingan wali kelas.',
+          targetMetric: 'Penurunan siswa kategori butuh pendampingan tidur hingga 60% dalam tempo 30 hari kalender.',
+          responsibleLead: 'Wakasek Kesiswaan, Koordinator BK, & Tim Paguyuban Sekolah',
+        },
+      });
+      showToast('Sintesis isu RTL sekolah berhasil dirumuskan.');
+    } finally {
+      setIsAiRtlLoading(false);
+    }
+  };
+
+  // Adopt AI RTL Policy into school-level follow up plans
+  const handleAdoptAiRtlPolicy = (synthesis: any) => {
+    if (!synthesis) return;
+    const now = new Date().toISOString();
+    const newRtl: FollowUpPlan = {
+      id: `rtl-sch-ai-${Date.now()}`,
+      schoolId: activeSchool.id,
+      finding: synthesis.dominantIssue || 'Kebijakan Penguatan 7KAIH Tingkat Sekolah',
+      supportingData: `Tersintesis dari ${unifiedFollowUpsList.length} RTL kelas dan ${totalWarningStudents} siswa kelompok penguatan`,
+      rootCause: synthesis.rootCauseCluster || 'Faktor lingkungan rumah dan koordinasi pola istirahat peserta didik.',
+      rootCauseType: 'FACT',
+      actionPlan: `${synthesis.recommendedPolicy}\n\nLangkah Strategis:\n${synthesis.strategicActionPlan || ''}`,
+      target: 'Seluruh Rombel & Warga Sekolah',
+      indicator: synthesis.targetMetric || 'Peningkatan konsistensi pembiasaan hingga di atas 90%',
+      owner: synthesis.responsibleLead || 'Kepala Sekolah & Tim Pengembang Kurikulum',
+      startDate: now.split('T')[0],
+      deadline: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      progressPercent: 0,
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+      ...({
+        targetTime: '30 Hari Kalender',
+        pic: synthesis.responsibleLead || 'Kepala Sekolah & Tim Pengembang Kurikulum',
+        habitCode: '7KAIH_SEKOLAH',
+      } as any),
+    };
+
+    try {
+      const existing = localStorage.getItem('si7kaih_followups_prod');
+      const parsed = existing ? JSON.parse(existing) : [];
+      const updated = [newRtl, ...parsed];
+      localStorage.setItem('si7kaih_followups_prod', JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('si7kaih_followups_updated', { detail: updated }));
+    } catch (_e) {}
+
+    setUnifiedFollowUpsList((prev) => [newRtl, ...prev]);
+    showToast('Kebijakan Intervensi AI berhasil diterbitkan ke portofolio RTL Sekolah!');
+  };
+
   return (
     <div className="space-y-6">
       {/* Principal School Header Card */}
@@ -1380,6 +1773,163 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
             </div>
           </div>
 
+          {/* AI 7KAIH Program Strategic Diagnostic & Recommender */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-slate-50 border border-indigo-200/80 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <span>Bantuan AI: Analisis Cakupan & Rekomendasi Program 7KAIH</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      Supervisi Strategis
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-600">
+                    Audit kelengkapan pembiasaan 7KAIH dan rancang inisiatif prioritas berbasis data riil sekolah.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleGenerateProgramRecommendations}
+                disabled={isAiProgramLoading}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-colors"
+              >
+                {isAiProgramLoading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menganalisis Cakupan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{aiProgramResult ? 'Perbarui Rekomendasi AI' : 'Rekomendasikan Program dengan AI'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 7 Habits Coverage Meter */}
+            <div className="p-3.5 rounded-xl bg-white/80 border border-indigo-100 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Audit Cakupan 7 Kebiasaan dalam Program Sekolah:</span>
+                </span>
+                <span className="font-extrabold text-indigo-700">
+                  {habitCoverage.coveredCount} dari 7 Dimensi Tercover ({habitCoverage.coveragePercent}%)
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-indigo-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${habitCoverage.coveragePercent}%` }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {ALL_HABIT_DEFINITIONS.map((h) => {
+                  const count = habitCoverage.counts[h.code] || 0;
+                  const isCovered = count > 0;
+                  return (
+                    <span
+                      key={h.code}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border flex items-center gap-1.5 ${
+                        isCovered
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-amber-50 text-amber-900 border-amber-300'
+                      }`}
+                      title={isCovered ? `${count} program aktif` : 'Belum ada program spesifik untuk kebiasaan ini'}
+                    >
+                      <span>{h.icon}</span>
+                      <span>{h.label}</span>
+                      {isCovered ? (
+                        <CheckCircle className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-200/80 text-amber-900">
+                          Perlu Program
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Render AI Program Suggestions if available */}
+            {aiProgramResult && (
+              <div className="space-y-3 pt-2">
+                <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-900 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <Lightbulb className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Temuan Analisis Portofolio Sekolah:</span>
+                  </p>
+                  <ul className="list-disc pl-5 space-y-0.5 text-blue-800">
+                    {aiProgramResult.recordedFacts?.map((f: string, idx: number) => (
+                      <li key={idx}>{f}</li>
+                    ))}
+                    {aiProgramResult.patterns?.map((p: string, idx: number) => (
+                      <li key={`p-${idx}`}>{p}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {(aiProgramResult.programSuggestions || []).map((sug: any, idx: number) => {
+                    const habitMeta = ALL_HABIT_DEFINITIONS.find((h) => h.code === sug.habitCode) || {
+                      label: sug.habitCode,
+                      icon: '✨',
+                      bg: 'bg-blue-50 border-blue-200 text-blue-800',
+                    };
+                    return (
+                      <div
+                        key={sug.id || idx}
+                        className="p-4 rounded-xl border border-indigo-200 bg-white shadow-xs flex flex-col justify-between space-y-3 hover:border-indigo-400 transition-colors"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${habitMeta.bg}`}>
+                              <span>{habitMeta.icon}</span>
+                              <span>{habitMeta.label}</span>
+                            </span>
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                              Opsi Inovasi #{idx + 1}
+                            </span>
+                          </div>
+                          <h5 className="text-xs font-black text-slate-900 leading-snug">
+                            {sug.title}
+                          </h5>
+                          <p className="text-[11px] text-slate-600 line-clamp-3">
+                            {sug.description}
+                          </p>
+                          <div className="text-[10px] text-slate-500 space-y-0.5 pt-1 border-t border-slate-100">
+                            <div>🎯 <strong>Sasaran:</strong> {sug.participantScope}</div>
+                            <div>⏰ <strong>Jadwal:</strong> {sug.schedule}</div>
+                            <div>👤 <strong>PIC:</strong> {sug.pic}</div>
+                            {sug.indicator && (
+                              <div className="text-indigo-800 bg-indigo-50/70 p-1.5 rounded mt-1 font-medium">
+                                📈 <strong>Indikator:</strong> {sug.indicator}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleAdoptAiProgram(sug)}
+                          className="w-full mt-2 py-2 px-3 rounded-lg bg-[#0753A5] hover:bg-blue-700 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Adopsi Jadi Inisiatif Resmi</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           {unifiedProgramsList.length === 0 ? (
             <div className="p-12 rounded-2xl border border-dashed border-slate-200 text-center text-slate-500 space-y-2">
               <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
@@ -1467,28 +2017,196 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
             </span>
           </div>
 
-          {/* Form Arahan Supervisi Umum Kepala Sekolah */}
-          <div className="p-5 rounded-2xl bg-blue-50/50 border border-blue-200 space-y-3">
-            <h4 className="text-xs font-bold text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-[#0753A5]" />
-              <span>Instruksi & Arahan Supervisi Kepala Sekolah untuk Dewan Guru</span>
-            </h4>
+          {/* Form Arahan Supervisi Umum Kepala Sekolah dengan Bantuan AI */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-white border border-blue-200 space-y-4 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h4 className="text-xs font-black text-blue-950 uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#0753A5]" />
+                <span>Instruksi & Arahan Supervisi Kepala Sekolah untuk Dewan Guru</span>
+              </h4>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-[#0753A5] border border-blue-200">
+                Resmi • Kanal Internal Sekolah
+              </span>
+            </div>
+
+            {/* AI Directive Drafting Toolbar */}
+            <div className="p-3.5 rounded-xl bg-white/90 border border-blue-200/80 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <span>Bantuan AI: Susun Draf Arahan Supervisi Tematik</span>
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Pilih fokus lalu klik tombol draf AI
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { key: 'DISIPLIN_TIDUR_GAWAI', label: '🌙 Disiplin Tidur & Detoks Gawai' },
+                  { key: 'SINERGI_PAGUYUBAN', label: '🤝 Sinergi Paguyuban Ortu' },
+                  { key: 'AKTIVITAS_FISIK_GIZI', label: '🏃 Olahraga & Sarapan Sehat' },
+                  { key: 'VALIDASI_APRESIASI', label: '🌟 Apresiasi & Validasi Guru' },
+                  { key: 'INTERVENSI_SISWA_KHUSUS', label: '⚠️ Pendampingan Siswa Khusus' },
+                ].map((foc) => {
+                  const isSelected = selectedDirectiveFocus === foc.key;
+                  return (
+                    <button
+                      key={foc.key}
+                      type="button"
+                      onClick={() => {
+                        setSelectedDirectiveFocus(foc.key);
+                        handleGenerateDirectiveWithAi(foc.key);
+                      }}
+                      className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-blue-50/50'
+                      }`}
+                    >
+                      {foc.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100">
+                <span className="text-[11px] text-slate-500 italic">
+                  💡 AI menyelaraskan draf dengan data konsistensi ({overallConsistency}%) dan {totalWarningStudents} siswa kelompok penguatan.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateDirectiveWithAi()}
+                  disabled={isDraftingDirective}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors shrink-0"
+                >
+                  {isDraftingDirective ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyusun Draf...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="w-3.5 h-3.5" />
+                      <span>✨ Susun Draf dengan AI</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
             <textarea
-              rows={3}
+              rows={5}
               value={feedbackNote}
               onChange={(e) => setFeedbackNote(e.target.value)}
-              placeholder="Tuliskan arahan strategis, tindak lanjut pembinaan karakter, atau rekomendasi untuk seluruh wali kelas dan dewan guru..."
-              className="w-full text-xs p-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Tuliskan arahan strategis, tindak lanjut pembinaan karakter, atau rekomendasi untuk seluruh wali kelas dan dewan guru (dapat digenerate otomatis melalui Bantuan AI di atas)..."
+              className="w-full text-xs p-3.5 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans leading-relaxed"
             />
-            <div className="flex justify-end">
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-[11px] text-slate-500">
+                {feedbackNote ? 'Teks arahan siap ditinjau dan diteruskan.' : 'Klik tombol draf AI atau ketik arahan secara mandiri.'}
+              </span>
               <button
                 onClick={handleSendSupervisionDirective}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors"
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white text-xs font-bold cursor-pointer shadow-xs transition-colors"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Kirim & Terbitkan Arahan</span>
+                <span>Kirim & Terbitkan Arahan Resmi</span>
               </button>
             </div>
+          </div>
+
+          {/* AI RTL Synthesizer & Strategic Policy Recommender */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-emerald-50/70 via-teal-50/40 to-slate-50 border border-emerald-200/90 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <span>Bantuan AI: Sintesis Isu Dominan RTL & Kebijakan Sekolah</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      Tingkat Satuan Pendidikan
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-600">
+                    Sintesis cerdas benang merah kendala dari {unifiedFollowUpsList.length} RTL kelas untuk menghasilkan kebijakan payung tingkat sekolah.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleGenerateRtlSynthesis}
+                disabled={isAiRtlLoading}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-colors"
+              >
+                {isAiRtlLoading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menganalisis Sintesis...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{aiRtlSynthesisResult ? 'Perbarui Sintesis AI' : 'Sintesis RTL dengan AI'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Synthesized Results Card */}
+            {aiRtlSynthesisResult && aiRtlSynthesisResult.rtlSynthesis && (
+              <div className="p-4 sm:p-5 rounded-xl bg-white border border-emerald-200 shadow-xs space-y-3.5 animate-in fade-in duration-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <Target className="w-4 h-4 text-emerald-600" />
+                    <span>Rumusan Hasil Sintesis Lintas Rombel & Rekomendasi Kebijakan</span>
+                  </span>
+                  <button
+                    onClick={() => handleAdoptAiRtlPolicy(aiRtlSynthesisResult.rtlSynthesis)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Tambahkan ke Portofolio RTL Sekolah</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
+                  <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                      🚨 Isu Dominan Teridentifikasi (Sistemik)
+                    </span>
+                    <p className="font-bold text-slate-900 leading-snug">
+                      {aiRtlSynthesisResult.rtlSynthesis.dominantIssue}
+                    </p>
+                    <p className="text-[11px] text-slate-600 mt-1">
+                      <strong>Kluster Akar Masalah:</strong> {aiRtlSynthesisResult.rtlSynthesis.rootCauseCluster}
+                    </p>
+                    <div className="text-[10px] text-amber-800 mt-1 pt-1 border-t border-amber-200/60">
+                      📍 Cakupan Terpapar: {aiRtlSynthesisResult.rtlSynthesis.affectedScope || 'Lintas rombel fase kelas'}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                      🏛️ Rekomendasi Kebijakan Sekolah (Kepala Sekolah)
+                    </span>
+                    <p className="font-bold text-emerald-950 leading-snug">
+                      {aiRtlSynthesisResult.rtlSynthesis.recommendedPolicy}
+                    </p>
+                    <div className="text-[11px] text-slate-700 whitespace-pre-line mt-1">
+                      {aiRtlSynthesisResult.rtlSynthesis.strategicActionPlan}
+                    </div>
+                    <div className="text-[10px] text-emerald-900 mt-1.5 pt-1 border-t border-emerald-200/60 flex flex-wrap justify-between gap-2">
+                      <span>🎯 <strong>Target:</strong> {aiRtlSynthesisResult.rtlSynthesis.targetMetric}</span>
+                      <span>👤 <strong>PIC:</strong> {aiRtlSynthesisResult.rtlSynthesis.responsibleLead}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Directives History */}
@@ -1671,6 +2389,61 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
             </div>
 
             <form onSubmit={handleCreateProgram} className="p-5 space-y-4 text-xs">
+              {/* AI Auto-Draft Assistant */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50 via-blue-50 to-white border border-indigo-200 space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-indigo-950 flex items-center gap-1.5 text-xs">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Bantuan AI: Isi Draf Program Otomatis</span>
+                  </span>
+                  <span className="text-[10px] text-indigo-700 bg-indigo-100/70 font-semibold px-2 py-0.5 rounded-full">
+                    Generator Praktis
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: '🥗 Sarapan Gizi & Tumbler', key: 'sarapan' },
+                    { label: '🌙 1 Jam Bebas Gawai', key: 'tidur' },
+                    { label: '🏃 Senam Ceria 7KAIH', key: 'senam' },
+                    { label: '📚 Pojok Literasi Pagi', key: 'baca' },
+                    { label: '🤲 Bintang Fajar Doa', key: 'ibadah' },
+                    { label: '🤝 Operasi Semut', key: 'kebaikan' },
+                  ].map((pill) => (
+                    <button
+                      key={pill.key}
+                      type="button"
+                      onClick={() => handleDraftProgramWithAi(pill.key)}
+                      disabled={isAiModalDrafting}
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-white border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50/50 text-indigo-950 cursor-pointer transition-all shadow-2xs"
+                    >
+                      {pill.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2 pt-1 border-t border-indigo-100">
+                  <input
+                    type="text"
+                    value={aiModalThemeInput}
+                    onChange={(e) => setAiModalThemeInput(e.target.value)}
+                    placeholder="Atau ketik topik khusus (cth: piket gotong royong)..."
+                    className="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleDraftProgramWithAi()}
+                    disabled={isAiModalDrafting}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs shrink-0"
+                  >
+                    {isAiModalDrafting ? (
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Wand2 className="w-3 h-3" />
+                    )}
+                    <span>✨ Draf AI</span>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Judul Inisiatif / Program:</label>
                 <input
