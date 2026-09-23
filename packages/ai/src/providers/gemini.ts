@@ -32,13 +32,45 @@ export class GeminiAIProvider implements AIProvider {
     }
 
     const isRtlTask = request.taskType === 'FollowUpGenerator' || request.taskType === 'TEACHER_RTL_GENERATOR';
-    const isProgramTask = request.taskType === 'PRINCIPAL_PROGRAM_RECOMMENDER';
+    const isTeacherProgramTask = request.taskType === 'TEACHER_CLASS_PROGRAM_RECOMMENDER';
+    const isPrincipalProgramTask = request.taskType === 'PRINCIPAL_PROGRAM_RECOMMENDER';
+    const isProgramTask = isPrincipalProgramTask || isTeacherProgramTask;
     const isDirectiveTask = request.taskType === 'PRINCIPAL_DIRECTIVE_ASSISTANT';
     const isRtlSynthesizerTask = request.taskType === 'PRINCIPAL_RTL_SYNTHESIZER';
 
     let prompt = '';
 
-    if (isProgramTask) {
+    if (isTeacherProgramTask) {
+      prompt = `
+${SYSTEM_GUARDRAIL_INSTRUCTIONS}
+
+Tugas: Perumusan Program Pembiasaan Terstruktur Tingkat Kelas (Rombel) Berbasis 7KAIH untuk Wali Kelas & Dewan Guru.
+Peran Pemohon: ${request.actorRole} (Wali Kelas / Guru Pendamping)
+Konteks Rombel Belajar & Capaian Murid:
+${JSON.stringify(request.context, null, 2)}
+
+Instruksi Khusus:
+1. Analisis data capaian konsistensi 7 dimensi pembiasaan rombel dan identifikasi kebiasaan prioritas yang membutuhkan inisiatif terstruktur di kelas.
+2. Rancang 2-3 usulan Program Pembiasaan Terstruktur Tingkat Kelas yang ramah anak, partisipatif, sesuai fase usia peserta didik, dan melibatkan paguyuban orang tua / keluarga murid.
+3. Hasilkan output JSON terstruktur dengan properti:
+   - facts: fakta capaian rombel dan kebiasaan yang teridentifikasi
+   - patterns: pola pembiasaan murid di kelas
+   - limitations: keterbatasan data pencatatan jurnal kelas
+   - hypothesesToVerify: hal yang perlu dikonfirmasi kepada murid atau orang tua
+   - recommendations: rekomendasi pedagogis untuk wali kelas
+   - supportingMetrics: metrik pendukung
+   - programSuggestions: array objek program pembiasaan kelas, masing-masing berisi:
+     * id: string unik (misal "prg-cls-1", "prg-cls-2")
+     * habitCode: salah satu dari "WAKE_EARLY" | "WORSHIP" | "EXERCISE" | "HEALTHY_EATING" | "LEARNING" | "SOCIAL" | "SLEEP_EARLY"
+     * title: nama program kelas yang inspiratif, kreatif & memotivasi anak
+     * description: deskripsi langkah operasional kegiatan terstruktur di kelas & kolaborasi rumah
+     * participantScope: sasaran rombel (misal "Seluruh Peserta Didik Kelas 7A & Paguyuban Rombel")
+     * schedule: rutinitas/jadwal pelaksanaan (misal "Setiap Hari Rabu jam 06.45 - 07.15")
+     * pic: penanggung jawab (misal "Wali Kelas & Paguyuban Kelas")
+     * reasoning: alasan edukatif mengapa program ini efektif bagi kelas ini
+     * indicator: indikator ketercapaian pembiasaan yang realistis dan terukur
+`;
+    } else if (isProgramTask) {
       prompt = `
 ${SYSTEM_GUARDRAIL_INSTRUCTIONS}
 
@@ -644,6 +676,97 @@ Hasilkan output terstruktur dalam format JSON dengan properti:
           'Berikan panggung apresiasi bagi rombel dengan partisipasi terbaik setiap upacara bendera.',
         ],
         supportingMetrics: {
+          existingProgramsCount: existingCount,
+          recommendedProgramsCount: 3,
+        },
+        programSuggestions,
+      };
+    }
+
+    // 3b-2. Teacher Class Program Recommender
+    if (task === 'TEACHER_CLASS_PROGRAM_RECOMMENDER') {
+      const className = (ctx.className as string) || 'Rombel Belajar';
+      const focusHabit = (ctx.focusHabit as string) || (ctx.lowestHabit as string) || 'HEALTHY_EATING';
+      const totalStudents = Number(ctx.totalStudents ?? 28);
+      const existingCount = Number(ctx.existingProgramsCount ?? 0);
+
+      const programSuggestions = [
+        {
+          id: `prg-ai-cls-${Date.now()}-1`,
+          habitCode: focusHabit,
+          title:
+            focusHabit === 'HEALTHY_EATING' || focusHabit === 'MAKAN_SEHAT'
+              ? 'Gerakan "Jumat Bekal Pelangi & Tumbler Sehat"'
+              : focusHabit === 'SLEEP_EARLY' || focusHabit === 'TIDUR_CEPAT'
+              ? 'Tantangan Kelas "Malam Tenang & Bebas Layar Pukul 20.30"'
+              : focusHabit === 'EXERCISE' || focusHabit === 'BEROLAHRAGA'
+              ? 'Senam Kebugaran Ceria 15 Menit Sebelum Jam Pembelajaran'
+              : focusHabit === 'LEARNING' || focusHabit === 'GEMAR_BELAJAR'
+              ? 'Pojok Literasi Asyik & Jurnal Petualangan Ilmu'
+              : focusHabit === 'WORSHIP' || focusHabit === 'BERIBADAH'
+              ? 'Refleksi Syukur Fajar & Lingkaran Doa Sahabat Rombel'
+              : focusHabit === 'WAKE_EARLY' || focusHabit === 'BANGUN_PAGI'
+              ? 'Tantangan "Bintang Fajar": Apresiasi Hadir Ceria Sebelum Bel'
+              : 'Gerakan Satu Hari Satu Kebaikan Sahabat Rombel',
+          description: `Program pembiasaan kolaboratif kelas ${className} dengan pelibatan aktif orang tua untuk menguatkan dimensi ${focusHabit} melalui rutinitas harian yang menggembirakan dan terstruktur.`,
+          participantScope: `Seluruh Peserta Didik ${className} & Paguyuban Rombel`,
+          schedule: 'Setiap Hari Efektif Sekolah & Akhir Pekan',
+          pic: `Wali Kelas & Koordinator Paguyuban ${className}`,
+          reasoning: 'Inisiatif berbasis kelas dengan apresiasi positif menumbuhkan pembiasaan mandiri tanpa paksaan.',
+          indicator: 'Tercapainya konsistensi pengisian jurnal pembiasaan ≥85% pada dimensi ini.',
+        },
+        {
+          id: `prg-ai-cls-${Date.now()}-2`,
+          habitCode: 'LEARNING',
+          title: 'Pojok Membaca 15 Menit & Pohon Literasi Kelas',
+          description: 'Rutinitas membaca buku pilihan selama 15 menit setiap awal hari belajar, dilanjutkan dengan menempelkan daun intisari buku pada Pohon Literasi dinding kelas.',
+          participantScope: `Seluruh Murid ${className}`,
+          schedule: 'Setiap Selasa & Kamis Pagi (06.45 - 07.00)',
+          pic: 'Wali Kelas & Duta Literasi Kelas',
+          reasoning: 'Membangun kecintaan membaca secara sukarela dan melatih kemampuan merangkum makna secara visual.',
+          indicator: 'Setiap siswa menyelesaikan minimal 2 buku bacaan bermutu setiap bulan.',
+        },
+        {
+          id: `prg-ai-cls-${Date.now()}-3`,
+          habitCode: 'SOCIAL',
+          title: 'Aksi Nyata "Piket Sahabat Empati & Gotong Royong Rombel"',
+          description: 'Pembagian regu piket sahabat yang tidak hanya membersihkan ruang kelas namun juga bertugas menyambut teman, memastikan tidak ada yang terisolir, dan mengumpulkan donasi kepedulian sosial.',
+          participantScope: `Seluruh Murid ${className}`,
+          schedule: 'Setiap Hari Sekolah Saat Jam Istirahat',
+          pic: 'Wali Kelas & Pengurus Kelas',
+          reasoning: 'Menumbuhkan empati, kepekaan sosial, dan keterampilan kerjasama gotong royong antar siswa.',
+          indicator: 'Suasana kelas yang inklusif, rukun, bersih, dan bebas dari tindakan perundungan.',
+        },
+      ];
+
+      return {
+        facts: [
+          {
+            statement: `Rombel ${className} beranggotakan ${totalStudents} siswa saat ini memiliki ${existingCount} program pembiasaan aktif.`,
+            metricReferences: ['totalStudents', 'existingProgramsCount'],
+          },
+          {
+            statement: `Dimensi pembiasaan yang diprioritaskan untuk penguatan kelas adalah ${focusHabit}.`,
+            metricReferences: ['focusHabit'],
+          },
+        ],
+        patterns: [
+          'Inisiatif pembiasaan yang mengkombinasikan kegiatan kelas dan keterlibatan paguyuban orang tua menghasilkan konsistensi jurnal tertinggi.',
+          'Format pembiasaan berbasis tantangan tim kecil sebaya lebih disukai dan meningkatkan kebersamaan siswa.',
+        ],
+        limitations: [
+          'Tingkat keberhasilan dipantau berkesinambungan melalui rekapitulasi jurnal harian kelas.',
+        ],
+        hypothesesToVerify: [
+          'Apakah jadwal kegiatan terstruktur di kelas selaras dengan ritme dan waktu belajar siswa di rumah?',
+        ],
+        recommendations: [
+          'Terapkan satu program prioritas secara bertahap selama 21 hari pertama untuk membentuk kebiasaan menetap.',
+          'Sosialisasikan teknis program kepada orang tua murid melalui grup komunikasi paguyuban kelas.',
+          'Berikan apresiasi bintang pembiasaan mingguan untuk menjaga semangat dan motivasi intrinsik murid.',
+        ],
+        supportingMetrics: {
+          totalStudents,
           existingProgramsCount: existingCount,
           recommendedProgramsCount: 3,
         },

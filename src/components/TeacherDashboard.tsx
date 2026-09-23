@@ -11,6 +11,7 @@ import {
   FollowUpPlan,
   EarlyWarningCategory,
   AIRtlSuggestion,
+  AIProgramSuggestion,
 } from '../../packages/types/src/index';
 import {
   HABIT_LIST,
@@ -56,6 +57,11 @@ import {
   User,
   CalendarDays,
   HelpCircle,
+  Target,
+  Award,
+  Zap,
+  CheckCheck,
+  ArrowRight,
 } from 'lucide-react';
 import { StudentDossierModal, StudentDossierData } from './StudentDossierModal';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
@@ -69,6 +75,19 @@ import {
   formatRealtimeSaveTime,
   formatTimeOnly,
 } from '../lib/dateUtils';
+
+const getHabitEmoji = (code: string): string => {
+  const map: Record<string, string> = {
+    WAKE_EARLY: '⏰',
+    WORSHIP: '🤲',
+    EXERCISE: '🏃',
+    HEALTHY_EATING: '🥗',
+    LEARNING: '📚',
+    SOCIAL: '🤝',
+    SLEEP_EARLY: '🌙',
+  };
+  return map[code] || '🌟';
+};
 
 interface TeacherDashboardProps {
   journals: DailyJournal[];
@@ -759,6 +778,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [aiRtlGeneratedSuggestion, setAiRtlGeneratedSuggestion] = useState<AIRtlSuggestion | null>(null);
   const [aiRtlAppliedSuccess, setAiRtlAppliedSuccess] = useState(false);
 
+  // AI Class Program Assistance state
+  const [isAiProgramAssistantOpen, setIsAiProgramAssistantOpen] = useState(true);
+  const [isGeneratingAiProgram, setIsGeneratingAiProgram] = useState(false);
+  const [aiProgramFocusHabit, setAiProgramFocusHabit] = useState<string>('AUTO');
+  const [aiClassProgramSuggestions, setAiClassProgramSuggestions] = useState<AIProgramSuggestion[] | null>(null);
+  const [appliedProgramId, setAppliedProgramId] = useState<string | null>(null);
+  const [aiProgramThemeKeyword, setAiProgramThemeKeyword] = useState('');
+
   // New Program form state
   const [newProgTitle, setNewProgTitle] = useState('');
   const [newProgHabit, setNewProgHabit] = useState<HabitCode>('HEALTHY_EATING');
@@ -1161,6 +1188,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     return sortedHabits[sortedHabits.length - 2];
   }, [sortedHabits, hasJournalData]);
 
+  // Audit habit coverage across current class programs
+  const classHabitCoverage = useMemo(() => {
+    const coveredMap = new Map<string, number>();
+    localPrograms.forEach((p) => {
+      const code = p.habitCode;
+      coveredMap.set(code, (coveredMap.get(code) || 0) + 1);
+    });
+
+    const coveredCodes = new Set(coveredMap.keys());
+    const uncoveredCodes = HABIT_LIST.filter((h) => !coveredCodes.has(h.code as any));
+    const coveragePercentage = Math.round((coveredCodes.size / HABIT_LIST.length) * 100);
+
+    return {
+      coveredMap,
+      coveredCount: coveredCodes.size,
+      uncoveredCount: uncoveredCodes.length,
+      uncoveredHabits: uncoveredCodes,
+      coveragePercentage,
+    };
+  }, [localPrograms]);
+
   // Open real Student Dossier with true data or structured empty state
   const openStudentDossier = (s: StudentClassRow) => {
     const sJournals = syncedJournals.filter((j) => {
@@ -1460,6 +1508,261 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         handleGenerateAiRtl('AUTO');
       }
     }
+  };
+
+  // Generate structured class program suggestions with AI
+  const handleGenerateAiClassPrograms = async (customFocus?: string) => {
+    setIsGeneratingAiProgram(true);
+    try {
+      const sortedByLowest = [...classHabitStats].sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
+      const lowestHabitObj = sortedByLowest[0];
+      const lowestHabitCode = (lowestHabitObj?.code as string) || 'HEALTHY_EATING';
+
+      const chosenFocus = customFocus || (aiProgramFocusHabit === 'AUTO' ? lowestHabitCode : aiProgramFocusHabit);
+
+      const res = await fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskType: 'TEACHER_CLASS_PROGRAM_RECOMMENDER',
+          actorRole: 'TEACHER',
+          payload: {
+            className: `${activeRombel.name} (${activeRombel.phase || 'Fase D'})`,
+            schoolName: activeSchool.name,
+            teacherName: currentPersona?.name || 'Wali Kelas',
+            focusHabit: chosenFocus,
+            lowestHabit: lowestHabitCode,
+            completenessRate: averageCompleteness,
+            consistencyRate: averageConsistency,
+            totalStudents: totalStudentsCount,
+            existingProgramsCount: localPrograms.length,
+            stats: classHabitStats,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data?.programSuggestions && json.data.programSuggestions.length > 0) {
+          setAiClassProgramSuggestions(json.data.programSuggestions);
+          showToast('✨ Usulan Program Pembiasaan Kelas berhasil dirumuskan oleh AI!');
+        } else {
+          throw new Error('No program suggestions in response');
+        }
+      } else {
+        throw new Error('API failed');
+      }
+    } catch (_err) {
+      // Local fallback suggestions
+      const defaultSuggestions: AIProgramSuggestion[] = [
+        {
+          id: `prg-ai-cls-${Date.now()}-1`,
+          habitCode: aiProgramFocusHabit === 'AUTO' ? 'HEALTHY_EATING' : aiProgramFocusHabit,
+          title: 'Gerakan "Jumat Bekal Pelangi & Tumbler Sehat"',
+          description: `Siswa ${activeRombel.name} membawa bekal sehat gizi seimbang dengan wadah ramah lingkungan dan makan bersama didampingi wali kelas.`,
+          participantScope: `Seluruh Siswa ${activeRombel.name} & Paguyuban`,
+          schedule: 'Setiap Jumat Pagi (06.45 - 07.15 WIB)',
+          pic: `Wali Kelas & Paguyuban ${activeRombel.name}`,
+          reasoning: 'Membiasakan sarapan gizi seimbang dan hidrasi sehat sebelum KBM dimulai.',
+          indicator: '≥85% siswa membawa bekal bergizi seimbang setiap pekan.',
+        },
+        {
+          id: `prg-ai-cls-${Date.now()}-2`,
+          habitCode: 'LEARNING',
+          title: 'Pojok Baca Ceria & Pohon Inspirasi Buku',
+          description: 'Membaca buku non-pelajaran 15 menit sebelum pembelajaran inti dan membagikan intisari inspiratif pada dinding pohon literasi kelas.',
+          participantScope: `Seluruh Siswa ${activeRombel.name}`,
+          schedule: 'Setiap Hari Selasa & Kamis Pagi',
+          pic: `Wali Kelas & Tim Literasi Kelas`,
+          reasoning: 'Meningkatkan kecintaan membaca sukarela dan melatih daya analisis sejak dini.',
+          indicator: 'Setiap siswa merangkum minimal 2 buku per bulan.',
+        },
+        {
+          id: `prg-ai-cls-${Date.now()}-3`,
+          habitCode: 'SOCIAL',
+          title: 'Aksi Nyata "Piket Sahabat Empati & Gotong Royong Rombel"',
+          description: 'Regu piket bergilir yang menyambut teman, memastikan kebersihan ruang, dan mempraktikkan aksi tolong-menolong sesama warga kelas.',
+          participantScope: `Seluruh Siswa ${activeRombel.name}`,
+          schedule: 'Setiap Hari Sekolah Saat Jam Istirahat',
+          pic: `Wali Kelas & Pengurus Kelas`,
+          reasoning: 'Menumbuhkan budaya gotong royong, empati, dan iklim kelas yang inklusif.',
+          indicator: 'Terciptanya suasana kelas yang kondusif, rukun, dan bersih.',
+        },
+      ];
+      setAiClassProgramSuggestions(defaultSuggestions);
+      showToast('✨ Usulan Program Kelas dirumuskan oleh Asisten AI!');
+    } finally {
+      setIsGeneratingAiProgram(false);
+    }
+  };
+
+  // Adopt AI Program Suggestion directly into the class programs list
+  const handleAdoptAiProgramDirectly = (suggestion: AIProgramSuggestion) => {
+    const validHabitCodes: HabitCode[] = [
+      'WAKE_EARLY',
+      'WORSHIP',
+      'EXERCISE',
+      'HEALTHY_EATING',
+      'LEARNING',
+      'SOCIAL',
+      'SLEEP_EARLY',
+    ];
+    let habit: HabitCode = 'HEALTHY_EATING';
+    const rawCode = (suggestion.habitCode || '').toUpperCase();
+    if (validHabitCodes.includes(rawCode as HabitCode)) {
+      habit = rawCode as HabitCode;
+    } else if (rawCode.includes('BANGUN') || rawCode.includes('WAKE')) habit = 'WAKE_EARLY';
+    else if (rawCode.includes('IBADAH') || rawCode.includes('WORSHIP')) habit = 'WORSHIP';
+    else if (rawCode.includes('OLAHRAGA') || rawCode.includes('EXERCISE')) habit = 'EXERCISE';
+    else if (rawCode.includes('MAKAN') || rawCode.includes('HEALTHY') || rawCode.includes('EAT')) habit = 'HEALTHY_EATING';
+    else if (rawCode.includes('BELAJAR') || rawCode.includes('BACA') || rawCode.includes('LEARN')) habit = 'LEARNING';
+    else if (rawCode.includes('MASYARAKAT') || rawCode.includes('SOSIAL') || rawCode.includes('SOCIAL')) habit = 'SOCIAL';
+    else if (rawCode.includes('TIDUR') || rawCode.includes('SLEEP')) habit = 'SLEEP_EARLY';
+
+    const newProg: SchoolProgram = {
+      id: `prog-ai-${Date.now()}`,
+      schoolId: activeSchool.id,
+      title: suggestion.title,
+      description: suggestion.description,
+      habitCode: habit,
+      participantScope: suggestion.participantScope || `Seluruh Siswa ${activeRombel.name}`,
+      schedule: suggestion.schedule || 'Terjadwal Rutin',
+      pic: suggestion.pic || `Wali Kelas & Paguyuban ${activeRombel.name}`,
+      startDate: new Date().toISOString().split('T')[0],
+      evidenceCount: 0,
+      isActive: true,
+    };
+
+    const updated = [newProg, ...localPrograms];
+    setLocalPrograms(updated);
+    try {
+      localStorage.setItem(PROGRAMS_STORAGE_KEY, JSON.stringify(updated));
+    } catch (_e) {}
+
+    setAppliedProgramId(suggestion.id);
+    setTimeout(() => setAppliedProgramId(null), 4000);
+    showToast(`🌟 Inisiatif "${suggestion.title}" berhasil diterapkan ke Program Kelas!`);
+
+    fetch('/api/audit-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actorId: currentPersona?.id || 'usr-teacher-01',
+        actorRole: 'TEACHER',
+        action: 'ADOPT_AI_PROGRAM',
+        targetEntity: 'school_programs',
+        targetId: newProg.id,
+        metadata: { title: newProg.title, habitCode: newProg.habitCode },
+      }),
+    }).catch(() => {});
+  };
+
+  // Transfer AI Program Suggestion to the Modal Form for manual teacher refinement
+  const handleApplyAiProgramToModal = (suggestion: AIProgramSuggestion) => {
+    const validHabitCodes: HabitCode[] = [
+      'WAKE_EARLY',
+      'WORSHIP',
+      'EXERCISE',
+      'HEALTHY_EATING',
+      'LEARNING',
+      'SOCIAL',
+      'SLEEP_EARLY',
+    ];
+    let habit: HabitCode = 'HEALTHY_EATING';
+    const rawCode = (suggestion.habitCode || '').toUpperCase();
+    if (validHabitCodes.includes(rawCode as HabitCode)) {
+      habit = rawCode as HabitCode;
+    } else if (rawCode.includes('BANGUN') || rawCode.includes('WAKE')) habit = 'WAKE_EARLY';
+    else if (rawCode.includes('IBADAH') || rawCode.includes('WORSHIP')) habit = 'WORSHIP';
+    else if (rawCode.includes('OLAHRAGA') || rawCode.includes('EXERCISE')) habit = 'EXERCISE';
+    else if (rawCode.includes('MAKAN') || rawCode.includes('HEALTHY') || rawCode.includes('EAT')) habit = 'HEALTHY_EATING';
+    else if (rawCode.includes('BELAJAR') || rawCode.includes('BACA') || rawCode.includes('LEARN')) habit = 'LEARNING';
+    else if (rawCode.includes('MASYARAKAT') || rawCode.includes('SOSIAL') || rawCode.includes('SOCIAL')) habit = 'SOCIAL';
+    else if (rawCode.includes('TIDUR') || rawCode.includes('SLEEP')) habit = 'SLEEP_EARLY';
+
+    setNewProgTitle(suggestion.title);
+    setNewProgHabit(habit);
+    setNewProgDesc(suggestion.description);
+    setNewProgSchedule(suggestion.schedule || 'Setiap Pekan');
+    setNewProgPic(suggestion.pic || `Wali Kelas & Paguyuban ${activeRombel.name}`);
+    setNewProgScope(suggestion.participantScope || `Seluruh Siswa ${activeRombel.name}`);
+    setIsProgramModalOpen(true);
+    showToast('✨ Formulir program telah diisi otomatis oleh AI. Silakan tinjau dan sesuaikan!');
+  };
+
+  // Quick preset loader inside the Program Modal
+  const handleQuickDraftModalProgram = (theme: string) => {
+    const rombelName = activeRombel.name;
+    const presets: Record<
+      string,
+      { title: string; habit: HabitCode; desc: string; schedule: string; pic: string; scope: string }
+    > = {
+      SARAPAN_SEHAT: {
+        title: 'Gerakan "Jumat Bekal Pelangi & Tumbler Sehat"',
+        habit: 'HEALTHY_EATING',
+        desc: `Peserta didik membawa bekal bergizi seimbang dari rumah dengan wadah ramah lingkungan dan makan bersama didampingi wali kelas.`,
+        schedule: 'Setiap Jumat Pagi (06.45 - 07.15 WIB)',
+        pic: `Wali Kelas & Paguyuban ${rombelName}`,
+        scope: `Seluruh Siswa ${rombelName} & Paguyuban`,
+      },
+      BEBAS_GAWAI: {
+        title: 'Tantangan Rombel "Malam Tenang & 1 Jam Bebas Gawai 20.30"',
+        habit: 'SLEEP_EARLY',
+        desc: `Komitmen keluarga untuk menonaktifkan layar gawai 60 menit sebelum tidur demi menjaga kualitas istirahat malam dan kebugaran pagi.`,
+        schedule: 'Setiap Hari (Senin - Minggu Pukul 20.30)',
+        pic: `Wali Kelas & Orang Tua Murid ${rombelName}`,
+        scope: `Seluruh Siswa ${rombelName} & Keluarga`,
+      },
+      SENAM_CERIA: {
+        title: 'Senam Ceria 15 Menit & Kebugaran Bersama',
+        habit: 'EXERCISE',
+        desc: `Gerakan pemanasan dan senam irama sederhana di selasar/lapangan kelas sebelum pembelajaran pertama dimulai untuk mengaktifkan konsentrasi.`,
+        schedule: 'Setiap Selasa & Kamis Pagi (06.45 - 07.00 WIB)',
+        pic: `Wali Kelas & Guru PJOK`,
+        scope: `Seluruh Siswa ${rombelName}`,
+      },
+      POJOK_LITERASI: {
+        title: 'Pojok Membaca 15 Menit & Pohon Literasi Kelas',
+        habit: 'LEARNING',
+        desc: `Membaca buku non-pelajaran pilihan selama 15 menit dan membagikan intisari inspiratif pada kartu daun pohon literasi di dinding kelas.`,
+        schedule: 'Setiap Rabu & Jumat Pagi',
+        pic: `Wali Kelas & Duta Baca Rombel`,
+        scope: `Seluruh Siswa ${rombelName}`,
+      },
+      BINTANG_FAJAR: {
+        title: 'Tantangan "Bintang Fajar" & Apresiasi Hadir Tepat Waktu',
+        habit: 'WAKE_EARLY',
+        desc: `Pembiasaan bangun fajar dan hadir di kelas sebelum bel berbunyi dengan pemberian stiker bintang pembiasaan ceria di papan apresiasi rombel.`,
+        schedule: 'Setiap Hari Efektif Sekolah',
+        pic: `Wali Kelas & Pengurus Kelas`,
+        scope: `Seluruh Siswa ${rombelName}`,
+      },
+      REFLEKSI_SYUKUR: {
+        title: 'Lingkaran Refleksi Doa Pagi & Jurnal Syukur Rombel',
+        habit: 'WORSHIP',
+        desc: `Membaca doa bersama dan menuliskan 1 hal baik yang disyukuri setiap pagi sebelum KBM untuk memupuk kepekaan spiritual dan ketenangan hati.`,
+        schedule: 'Setiap Pagi Sebelum Jam Ke-1',
+        pic: `Wali Kelas & Tim Spiritual Rombel`,
+        scope: `Seluruh Siswa ${rombelName}`,
+      },
+      SAHABAT_PEDULI: {
+        title: 'Aksi Nyata "Piket Sahabat Empati & Gotong Royong Rombel"',
+        habit: 'SOCIAL',
+        desc: `Piket kebersihan bersama dengan misi menyapa teman, tolong-menolong berbagi alat belajar, dan apresiasi empati mingguan.`,
+        schedule: 'Setiap Hari Sekolah Saat Jam Istirahat',
+        pic: `Wali Kelas & Pengurus Kelas`,
+        scope: `Seluruh Siswa ${rombelName}`,
+      },
+    };
+
+    const chosen = presets[theme] || presets['SARAPAN_SEHAT'];
+    setNewProgTitle(chosen.title);
+    setNewProgHabit(chosen.habit);
+    setNewProgDesc(chosen.desc);
+    setNewProgSchedule(chosen.schedule);
+    setNewProgPic(chosen.pic);
+    setNewProgScope(chosen.scope);
+    showToast(`✨ Draf program "${chosen.title}" berhasil diisikan ke formulir!`);
   };
 
   const filteredStudents = studentsList.filter((s) => {
@@ -3467,63 +3770,411 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       )}
 
       {activeTab === 'PROGRAMS' && (
-        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-base font-black text-slate-900">
-                Program Pembiasaan Terstruktur {activeRombel.name} ({activeRombel.phase || 'Fase D'})
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Kegiatan pembiasaan terpadu yang dijalankan bersama dewan guru dan paguyuban kelas.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-[#0753A5]">
-                {localPrograms.length} Program Terjadwal
-              </span>
-              <button
-                onClick={() => setIsProgramModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Usulkan Inisiatif</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {localPrograms.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 col-span-2">
-                <p className="font-semibold text-xs text-slate-700">Belum ada Program Pembiasaan Terdaftar</p>
-                <p className="text-[11px] text-slate-400 mt-1">Klik tombol "Usulkan Inisiatif" untuk menambahkan program kelas.</p>
-              </div>
-            ) : (
-              localPrograms.map((prog) => (
-                <div
-                  key={prog.id}
-                  className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-[#0753A5]">
-                        {prog.habitCode}
-                      </span>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                        Aktif Berjalan
-                      </span>
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-900">{prog.title}</h4>
-                    <p className="text-xs text-slate-600 leading-relaxed">{prog.description}</p>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-200/60 text-[11px] text-slate-500 space-y-1">
-                    <div>⏰ Jadwal: <strong className="text-slate-800">{prog.schedule}</strong></div>
-                    <div>👤 Penanggung Jawab: <strong className="text-slate-800">{prog.pic}</strong></div>
-                    <div>🎯 Sasaran: <strong className="text-slate-800">{prog.participantScope}</strong></div>
+        <div className="space-y-6">
+          {/* Main Card */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
+            {/* Header & Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-2 rounded-xl bg-indigo-50 text-indigo-700">
+                    <Target className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Program Pembiasaan Terstruktur {activeRombel.name} ({activeRombel.phase || 'Fase D'})
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Inisiatif pembiasaan terpadu yang dirancang sesuai fase tumbuh kembang murid dan kolaborasi paguyuban rombel.
+                    </p>
                   </div>
                 </div>
-              ))
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-blue-50 text-[#0753A5] border border-blue-200/60">
+                  {localPrograms.length} Program Aktif
+                </span>
+                <button
+                  onClick={() => {
+                    setIsAiProgramAssistantOpen(true);
+                    if (!aiClassProgramSuggestions) {
+                      handleGenerateAiClassPrograms();
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-[#0753A5] hover:opacity-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer group"
+                  title="Rancang Inisiatif Program Kelas dengan Bantuan AI Berbasis Data Rombel"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
+                  <span>Bantuan AI Program Kelas</span>
+                </button>
+                <button
+                  onClick={() => setIsProgramModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Usulkan Inisiatif</span>
+                </button>
+              </div>
+            </div>
+
+            {/* AI Assistant Section */}
+            {isAiProgramAssistantOpen && (
+              <div className="rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-blue-50/50 p-5 sm:p-6 space-y-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                      <Sparkles className="w-5 h-5 text-amber-300" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-black text-slate-900">
+                          Asisten AI: Perumusan Program Pembiasaan Terstruktur Rombel
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider">
+                          Berbasis Data Riil
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
+                        Menganalisis capaian 7KAIH rombel {activeRombel.name} ({totalStudentsCount} siswa) dan merekomendasikan program pembiasaan ramah anak dengan rutinitas terjadwal serta keterlibatan paguyuban orang tua.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsAiProgramAssistantOpen(false)}
+                    className="text-xs font-semibold text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-white/80 cursor-pointer transition-colors"
+                  >
+                    Tutup Panel AI
+                  </button>
+                </div>
+
+                {/* Audit Cakupan 7 Dimensi Kebiasaan Rombel */}
+                <div className="bg-white/80 backdrop-blur-xs rounded-xl p-4 border border-indigo-100 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Compass className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs font-bold text-slate-800">
+                        Audit Cakupan Dimensi 7 Kebiasaan di Rombel {activeRombel.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-indigo-700">
+                        {classHabitCoverage.coveredCount} dari 7 Dimensi Tercover ({classHabitCoverage.coveragePercentage}%)
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          classHabitCoverage.uncoveredCount === 0
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {classHabitCoverage.uncoveredCount === 0
+                          ? '✓ Seluruh Dimensi Terpenuhi'
+                          : `! ${classHabitCoverage.uncoveredCount} Dimensi Perlu Program`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Visual Progress Bar */}
+                  <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-[#0753A5] via-indigo-600 to-purple-600 h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(classHabitCoverage.coveragePercentage, 5)}%` }}
+                    />
+                  </div>
+
+                  {/* 7 Dimensi Chips Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 pt-1">
+                    {HABIT_LIST.map((h) => {
+                      const progCount = classHabitCoverage.coveredMap.get(h.code) || 0;
+                      const stat = classHabitStats.find((s) => s.code === h.code);
+                      const pct = stat?.percentage ?? 0;
+                      const isLowest = lowestHabit?.code === h.code;
+
+                      return (
+                        <button
+                          key={h.code}
+                          type="button"
+                          onClick={() => {
+                            setAiProgramFocusHabit(h.code);
+                            handleGenerateAiClassPrograms(h.code);
+                          }}
+                          className={`p-2 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                            aiProgramFocusHabit === h.code
+                              ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-200'
+                              : progCount > 0
+                              ? 'bg-emerald-50/50 border-emerald-200/80 hover:bg-emerald-50'
+                              : 'bg-amber-50/40 border-amber-200/80 hover:bg-amber-50'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className="text-base">{getHabitEmoji(h.code)}</span>
+                              {progCount > 0 ? (
+                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800">
+                                  {progCount} Prog
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800">
+                                  Kosong
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] font-bold text-slate-800 leading-tight truncate">
+                              {h.name}
+                            </div>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/40">
+                            <span className="font-semibold text-slate-700">{pct}%</span>
+                            {isLowest && (
+                              <span className="text-[8px] font-extrabold text-red-600 uppercase">
+                                Terendah
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* AI Configuration Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-white/70 p-3 rounded-xl border border-indigo-100">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-slate-700">Fokus Rombel:</span>
+                    <select
+                      value={aiProgramFocusHabit}
+                      onChange={(e) => setAiProgramFocusHabit(e.target.value)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="AUTO">
+                        ⚡ Otomatis (Prioritas Kebiasaan Terendah: {lowestHabit?.name || 'Makan Sehat'} - {lowestHabit?.percentage || 0}%)
+                      </option>
+                      {HABIT_LIST.map((h) => {
+                        const stat = classHabitStats.find((s) => s.code === h.code);
+                        return (
+                          <option key={h.code} value={h.code}>
+                            {getHabitEmoji(h.code)} {h.name} (Capaian: {stat?.percentage ?? 0}%)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => handleGenerateAiClassPrograms()}
+                    disabled={isGeneratingAiProgram}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+                  >
+                    {isGeneratingAiProgram ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Merumuskan Inisiatif Terstruktur...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Rancang Usulan dengan AI</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* AI Suggestions Results */}
+                {isGeneratingAiProgram ? (
+                  <div className="p-8 text-center bg-white/90 rounded-2xl border border-indigo-100 space-y-3">
+                    <div className="inline-block p-3 rounded-2xl bg-indigo-50 text-indigo-600 animate-pulse">
+                      <Sparkles className="w-6 h-6 animate-spin" />
+                    </div>
+                    <h5 className="text-xs font-bold text-slate-800">
+                      Asisten AI Sedang Mengolah Data Pembiasaan Rombel {activeRombel.name}...
+                    </h5>
+                    <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                      Menyelaraskan profil kebiasaan, fase tumbuh kembang siswa, dan strategi pelibatan paguyuban orang tua menjadi program terstruktur.
+                    </p>
+                  </div>
+                ) : aiClassProgramSuggestions && aiClassProgramSuggestions.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-500" />
+                        <h5 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                          Rekomendasi Inisiatif Program Kelas Berbasis 7KAIH ({aiClassProgramSuggestions.length} Usulan)
+                        </h5>
+                      </div>
+                      <span className="text-[11px] text-slate-500">
+                        Klik "Terapkan Langsung" atau "Sesuaikan di Formulir"
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {aiClassProgramSuggestions.map((item, idx) => {
+                        const habitMeta = HABIT_LIST.find((h) => h.code === item.habitCode) || {
+                          name: item.habitCode,
+                          icon: '🌟',
+                          color: 'blue',
+                        };
+                        const isApplied = appliedProgramId === item.id;
+
+                        return (
+                          <div
+                            key={item.id || idx}
+                            className="bg-white rounded-2xl border border-indigo-200/80 p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-indigo-300 hover:shadow-md transition-all group"
+                          >
+                            <div className="space-y-3">
+                              {/* Habit Tag */}
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800">
+                                  <span>{getHabitEmoji(item.habitCode)}</span>
+                                  <span>{habitMeta.name}</span>
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                                  Usulan #{idx + 1}
+                                </span>
+                              </div>
+
+                              {/* Title & Desc */}
+                              <div>
+                                <h4 className="text-sm font-black text-slate-900 leading-snug group-hover:text-[#0753A5] transition-colors">
+                                  {item.title}
+                                </h4>
+                                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                                  {item.description}
+                                </p>
+                              </div>
+
+                              {/* Structured Metadata Box */}
+                              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] space-y-1.5 text-slate-600">
+                                <div>
+                                  <span className="font-semibold text-slate-500">⏰ Rutinitas: </span>
+                                  <strong className="text-slate-800">{item.schedule}</strong>
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-slate-500">👤 Penanggung Jawab: </span>
+                                  <strong className="text-slate-800">{item.pic}</strong>
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-slate-500">🎯 Sasaran: </span>
+                                  <strong className="text-slate-800">{item.participantScope}</strong>
+                                </div>
+                                {item.indicator && (
+                                  <div>
+                                    <span className="font-semibold text-slate-500">📊 Indikator Target: </span>
+                                    <strong className="text-emerald-700">{item.indicator}</strong>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Reasoning */}
+                              {item.reasoning && (
+                                <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100/60 text-[11px] text-indigo-950 leading-relaxed">
+                                  <span className="font-bold">💡 Alasan Pedagogis: </span>
+                                  <span>{item.reasoning}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleAdoptAiProgramDirectly(item)}
+                                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                                  isApplied
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-[#0753A5] hover:bg-blue-700 text-white shadow-xs'
+                                }`}
+                              >
+                                {isApplied ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Tersimpan!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap className="w-3.5 h-3.5 text-amber-300" />
+                                    <span>Terapkan</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleApplyAiProgramToModal(item)}
+                                className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Sesuaikan</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             )}
+
+            {/* List of Registered Programs */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  Daftar Program Pembiasaan Aktif ({localPrograms.length})
+                </h4>
+                <span className="text-[11px] text-slate-500">
+                  Dikelola oleh Tim Guru Rombel {activeRombel.name}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {localPrograms.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 col-span-2 space-y-2">
+                    <p className="font-bold text-xs text-slate-700">Belum ada Program Pembiasaan Terdaftar di Kelas Ini</p>
+                    <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                      Gunakan tombol "Bantuan AI Program Kelas" di atas untuk menghasilkan inisiatif otomatis berbasis data, atau klik "Usulkan Inisiatif".
+                    </p>
+                  </div>
+                ) : (
+                  localPrograms.map((prog) => {
+                    const habitInfo = HABIT_LIST.find((h) => h.code === prog.habitCode) || {
+                      name: prog.habitCode,
+                    };
+
+                    return (
+                      <div
+                        key={prog.id}
+                        className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3 flex flex-col justify-between hover:border-slate-300 transition-colors"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-blue-100 text-[#0753A5] inline-flex items-center gap-1">
+                              <span>{getHabitEmoji(prog.habitCode)}</span>
+                              <span>{habitInfo.name}</span>
+                            </span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                              Aktif Berjalan
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900">{prog.title}</h4>
+                          <p className="text-xs text-slate-600 leading-relaxed">{prog.description}</p>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-200/60 text-[11px] text-slate-500 space-y-1">
+                          <div>
+                            ⏰ Jadwal: <strong className="text-slate-800">{prog.schedule}</strong>
+                          </div>
+                          <div>
+                            👤 Penanggung Jawab: <strong className="text-slate-800">{prog.pic}</strong>
+                          </div>
+                          <div>
+                            🎯 Sasaran: <strong className="text-slate-800">{prog.participantScope}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -4103,7 +4754,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateProgram} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateProgram} className="space-y-3.5 text-xs">
+              {/* Quick AI Template Drafting Box */}
+              <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-3.5 rounded-2xl border border-indigo-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                    <span className="text-[11px] font-extrabold text-indigo-950">
+                      Asisten AI: Draf Cepat Template Inisiatif
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-indigo-600 font-semibold">
+                    Klik untuk mengisi formulir otomatis
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { key: 'SARAPAN_SEHAT', label: '🥗 Jumat Bekal Sehat', habit: 'Makan Sehat' },
+                    { key: 'BEBAS_GAWAI', label: '🌙 Bebas Gawai 20.30', habit: 'Tidur Cepat' },
+                    { key: 'SENAM_CERIA', label: '🏃 Senam Ceria 15 Mnt', habit: 'Olahraga' },
+                    { key: 'POJOK_LITERASI', label: '📚 Pohon Literasi Kelas', habit: 'Belajar' },
+                    { key: 'BINTANG_FAJAR', label: '⏰ Apresiasi Bintang Fajar', habit: 'Bangun Pagi' },
+                    { key: 'REFLEKSI_SYUKUR', label: '🤲 Lingkaran Doa Pagi', habit: 'Ibadah' },
+                    { key: 'SAHABAT_PEDULI', label: '🤝 Piket Sahabat Empati', habit: 'Sosial' },
+                  ].map((tpl) => (
+                    <button
+                      key={tpl.key}
+                      type="button"
+                      onClick={() => handleQuickDraftModalProgram(tpl.key)}
+                      className="px-2.5 py-1 rounded-lg bg-white/90 hover:bg-white text-indigo-900 border border-indigo-200/80 hover:border-indigo-400 text-[11px] font-semibold transition-all shadow-2xs cursor-pointer flex items-center gap-1 hover:scale-102"
+                    >
+                      <span>{tpl.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Nama Program Inisiatif *</label>
                 <input

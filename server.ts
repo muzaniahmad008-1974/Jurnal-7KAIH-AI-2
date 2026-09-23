@@ -101,6 +101,7 @@ app.post('/api/ai/analyze', async (req: Request, res: Response) => {
     res.json({ success: true, data: formattedResult });
   } catch (_error) {
     const isRtl = req.body?.taskType === 'FollowUpGenerator' || req.body?.taskType === 'TEACHER_RTL_GENERATOR';
+    const isProgram = req.body?.taskType === 'PRINCIPAL_PROGRAM_RECOMMENDER' || req.body?.taskType === 'TEACHER_CLASS_PROGRAM_RECOMMENDER';
     const fallbackRtl = isRtl
       ? {
           finding: 'Penguatan keteraturan waktu istirahat malam dan batas penggunaan gawai.',
@@ -114,6 +115,33 @@ app.post('/api/ai/analyze', async (req: Request, res: Response) => {
           reasoning: 'Kualitas istirahat malam menopang kebugaran fisik dan kesiapan fokus belajar esok hari.',
         }
       : undefined;
+
+    const fallbackPrograms = isProgram
+      ? [
+          {
+            id: `prg-fb-${Date.now()}-1`,
+            habitCode: 'HEALTHY_EATING',
+            title: 'Gerakan "Jumat Bekal Pelangi & Tumbler Sehat"',
+            description: 'Siswa membawa bekal sehat gizi seimbang dengan wadah ramah lingkungan dan makan bersama didampingi wali kelas.',
+            participantScope: 'Seluruh Siswa Rombel',
+            schedule: 'Setiap Jumat Pagi (06.45 - 07.15)',
+            pic: 'Wali Kelas & Paguyuban Rombel',
+            reasoning: 'Membiasakan sarapan gizi seimbang sebelum memulai aktivitas pembelajaran.',
+            indicator: '≥85% siswa membawa bekal bergizi seimbang setiap pekan.',
+          },
+          {
+            id: `prg-fb-${Date.now()}-2`,
+            habitCode: 'LEARNING',
+            title: 'Pojok Baca Ceria & Pohon Inspirasi Buku',
+            description: 'Membaca buku non-pelajaran 15 menit sebelum KBM dan membagikan refleksi singkat pada dinding pohon literasi.',
+            participantScope: 'Seluruh Siswa Rombel',
+            schedule: 'Selasa & Kamis Pagi',
+            pic: 'Wali Kelas & Tim Literasi',
+            reasoning: 'Meningkatkan minat baca dan daya analisis peserta didik sejak dini.',
+            indicator: 'Setiap siswa merangkum minimal 2 buku per bulan.',
+          },
+        ]
+      : [];
 
     // Graceful fallback response without printing raw error message
     res.json({
@@ -131,6 +159,7 @@ app.post('/api/ai/analyze', async (req: Request, res: Response) => {
         aiSuggestedTarget: 'Tingkatkan keteraturan pembiasaan secara bertahap.',
         reply: 'Terus jalankan 7 Kebiasaan Anak Indonesia Hebat dengan riang gembira bersama keluarga dan guru!',
         rtlSuggestion: fallbackRtl,
+        programSuggestions: fallbackPrograms,
       },
     });
   }
