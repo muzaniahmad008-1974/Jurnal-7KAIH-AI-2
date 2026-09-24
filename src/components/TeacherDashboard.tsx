@@ -4734,137 +4734,139 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       {/* Modal Tambah Program Inisiatif */}
       {isProgramModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-100 space-y-4 my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-base">
                   🌟
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Usulkan Program Inisiatif Kelas</h3>
+                  <h3 className="text-sm font-black text-slate-900">Program Inisiatif Pembiasaan Kelas</h3>
                   <p className="text-[11px] text-slate-500">Program pembiasaan kolaboratif sekolah & keluarga</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsProgramModalOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateProgram} className="space-y-3.5 text-xs">
-              {/* Quick AI Template Drafting Box */}
-              <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-3.5 rounded-2xl border border-indigo-100 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
-                    <span className="text-[11px] font-extrabold text-indigo-950">
-                      Asisten AI: Draf Cepat Template Inisiatif
+            <form onSubmit={handleCreateProgram} className="flex flex-col flex-1 overflow-hidden text-xs">
+              <div className="overflow-y-auto pr-1.5 space-y-3.5 flex-1">
+                {/* Quick AI Template Drafting Box */}
+                <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-3.5 rounded-2xl border border-indigo-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                      <span className="text-[11px] font-extrabold text-indigo-950">
+                        Asisten AI: Draf Cepat Template Inisiatif
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-indigo-600 font-semibold">
+                      Klik untuk mengisi formulir otomatis
                     </span>
                   </div>
-                  <span className="text-[10px] text-indigo-600 font-semibold">
-                    Klik untuk mengisi formulir otomatis
-                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { key: 'SARAPAN_SEHAT', label: '🥗 Jumat Bekal Sehat', habit: 'Makan Sehat' },
+                      { key: 'BEBAS_GAWAI', label: '🌙 Bebas Gawai 20.30', habit: 'Tidur Cepat' },
+                      { key: 'SENAM_CERIA', label: '🏃 Senam Ceria 15 Mnt', habit: 'Olahraga' },
+                      { key: 'POJOK_LITERASI', label: '📚 Pohon Literasi Kelas', habit: 'Belajar' },
+                      { key: 'BINTANG_FAJAR', label: '⏰ Apresiasi Bintang Fajar', habit: 'Bangun Pagi' },
+                      { key: 'REFLEKSI_SYUKUR', label: '🤲 Lingkaran Doa Pagi', habit: 'Ibadah' },
+                      { key: 'SAHABAT_PEDULI', label: '🤝 Piket Sahabat Empati', habit: 'Sosial' },
+                    ].map((tpl) => (
+                      <button
+                        key={tpl.key}
+                        type="button"
+                        onClick={() => handleQuickDraftModalProgram(tpl.key)}
+                        className="px-2.5 py-1 rounded-lg bg-white/90 hover:bg-white text-indigo-900 border border-indigo-200/80 hover:border-indigo-400 text-[11px] font-semibold transition-all shadow-2xs cursor-pointer flex items-center gap-1 hover:scale-102"
+                      >
+                        <span>{tpl.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { key: 'SARAPAN_SEHAT', label: '🥗 Jumat Bekal Sehat', habit: 'Makan Sehat' },
-                    { key: 'BEBAS_GAWAI', label: '🌙 Bebas Gawai 20.30', habit: 'Tidur Cepat' },
-                    { key: 'SENAM_CERIA', label: '🏃 Senam Ceria 15 Mnt', habit: 'Olahraga' },
-                    { key: 'POJOK_LITERASI', label: '📚 Pohon Literasi Kelas', habit: 'Belajar' },
-                    { key: 'BINTANG_FAJAR', label: '⏰ Apresiasi Bintang Fajar', habit: 'Bangun Pagi' },
-                    { key: 'REFLEKSI_SYUKUR', label: '🤲 Lingkaran Doa Pagi', habit: 'Ibadah' },
-                    { key: 'SAHABAT_PEDULI', label: '🤝 Piket Sahabat Empati', habit: 'Sosial' },
-                  ].map((tpl) => (
-                    <button
-                      key={tpl.key}
-                      type="button"
-                      onClick={() => handleQuickDraftModalProgram(tpl.key)}
-                      className="px-2.5 py-1 rounded-lg bg-white/90 hover:bg-white text-indigo-900 border border-indigo-200/80 hover:border-indigo-400 text-[11px] font-semibold transition-all shadow-2xs cursor-pointer flex items-center gap-1 hover:scale-102"
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Nama Program Inisiatif *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Gerakan Sarapan Sehat Bersama (Isi Piringku)"
+                    value={newProgTitle}
+                    onChange={(e) => setNewProgTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Dimensi 7 Kebiasaan</label>
+                    <select
+                      value={newProgHabit}
+                      onChange={(e) => setNewProgHabit(e.target.value as HabitCode)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
                     >
-                      <span>{tpl.label}</span>
-                    </button>
-                  ))}
+                      <option value="WAKE_EARLY">1. Bangun Pagi</option>
+                      <option value="WORSHIP">2. Taat Beribadah</option>
+                      <option value="EXERCISE">3. Rajin Berolahraga</option>
+                      <option value="HEALTHY_EATING">4. Makan Makanan Sehat</option>
+                      <option value="LEARNING">5. Gemar Membaca & Belajar</option>
+                      <option value="SOCIAL">6. Bermasyarakat</option>
+                      <option value="SLEEP_EARLY">7. Tidur Tepat Waktu</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Jadwal Pelaksanaan</label>
+                    <input
+                      type="text"
+                      value={newProgSchedule}
+                      onChange={(e) => setNewProgSchedule(e.target.value)}
+                      placeholder="Contoh: Setiap Hari Rabu"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Nama Program Inisiatif *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Gerakan Sarapan Sehat Bersama (Isi Piringku)"
-                  value={newProgTitle}
-                  onChange={(e) => setNewProgTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Dimensi 7 Kebiasaan</label>
-                  <select
-                    value={newProgHabit}
-                    onChange={(e) => setNewProgHabit(e.target.value as HabitCode)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
-                  >
-                    <option value="WAKE_EARLY">1. Bangun Pagi</option>
-                    <option value="WORSHIP">2. Taat Beribadah</option>
-                    <option value="EXERCISE">3. Rajin Berolahraga</option>
-                    <option value="HEALTHY_EATING">4. Makan Makanan Sehat</option>
-                    <option value="LEARNING">5. Gemar Membaca & Belajar</option>
-                    <option value="SOCIAL">6. Bermasyarakat</option>
-                    <option value="SLEEP_EARLY">7. Tidur Tepat Waktu</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Jadwal Pelaksanaan</label>
-                  <input
-                    type="text"
-                    value={newProgSchedule}
-                    onChange={(e) => setNewProgSchedule(e.target.value)}
-                    placeholder="Contoh: Setiap Hari Rabu"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs bg-white"
+                  <label className="font-bold text-slate-700 block mb-1">Deskripsi Kegiatan *</label>
+                  <textarea
+                    required
+                    rows={3}
+                    placeholder="Contoh: Siswa membawa bekal makanan bergizi seimbang dari rumah dan makan bersama di kelas didampingi guru"
+                    value={newProgDesc}
+                    onChange={(e) => setNewProgDesc(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs resize-none"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Deskripsi Kegiatan *</label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="Contoh: Siswa membawa bekal makanan bergizi seimbang dari rumah dan makan bersama di kelas didampingi guru"
-                  value={newProgDesc}
-                  onChange={(e) => setNewProgDesc(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Penanggung Jawab (PIC)</label>
-                  <input
-                    type="text"
-                    value={newProgPic}
-                    onChange={(e) => setNewProgPic(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Sasaran Peserta</label>
-                  <input
-                    type="text"
-                    value={newProgScope}
-                    onChange={(e) => setNewProgScope(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Penanggung Jawab (PIC)</label>
+                    <input
+                      type="text"
+                      value={newProgPic}
+                      onChange={(e) => setNewProgPic(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Sasaran Peserta</label>
+                    <input
+                      type="text"
+                      value={newProgScope}
+                      onChange={(e) => setNewProgScope(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0753A5] text-xs"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 mt-3 border-t border-slate-100 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsProgramModalOpen(false)}
