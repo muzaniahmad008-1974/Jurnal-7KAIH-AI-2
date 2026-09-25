@@ -227,16 +227,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const raw = localStorage.getItem('si7kaih_journals_prod');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
       }
     } catch (_e) {}
-    return journals || [];
+    return (journals || []).filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
   });
   const [liveSyncToast, setLiveSyncToast] = useState<{ studentName: string; time: string; count: number; className?: string } | null>(null);
 
   useEffect(() => {
-    if (Array.isArray(journals) && journals.length > 0) {
-      setSyncedJournals(journals);
+    let freshJournals: DailyJournal[] = [];
+    try {
+      const raw = localStorage.getItem('si7kaih_journals_prod');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          freshJournals = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
+    } catch (_e) {}
+
+    if (freshJournals.length > 0) {
+      setSyncedJournals(freshJournals);
+    } else if (Array.isArray(journals) && journals.length > 0) {
+      setSyncedJournals(journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
     }
   }, [journals]);
 
@@ -280,10 +295,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         } catch (_e) {}
       }
       if (Array.isArray(updatedList)) {
-        setSyncedJournals(updatedList);
+        const cleaned = updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        setSyncedJournals(cleaned);
         setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
-        const latest = updatedList[0];
+        const latest = cleaned[0];
         if (latest) {
           const sName = latest.studentName || 'Peserta Didik';
           const completedCount = typeof latest.completedCount === 'number'
@@ -310,7 +326,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         e.key === 'si7kaih_rombels_prod' ||
         e.key === 'si7kaih_schools_prod' ||
         e.key === 'si7kaih_users_prod' ||
-        e.key === VALIDATIONS_STORAGE_KEY
+        e.key === VALIDATIONS_STORAGE_KEY ||
+        e.key === FOLLOWUPS_STORAGE_KEY ||
+        e.key === PROGRAMS_STORAGE_KEY
       ) {
         handleUpdate();
       }
@@ -332,7 +350,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               } catch (_e) {}
             }
             if (Array.isArray(updatedList)) {
-              setSyncedJournals(updatedList);
+              const cleaned = updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+              setSyncedJournals(cleaned);
             }
             setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
             if (ev.data.latestJournal) {
@@ -356,7 +375,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             ev.data.type === 'USERS_UPDATED' ||
             ev.data.type === 'USERS_SAVED' ||
             ev.data.type === 'SCHOOLS_UPDATED' ||
-            ev.data.type === 'SUPER_ADMIN_MASTER_SYNC'
+            ev.data.type === 'SUPER_ADMIN_MASTER_SYNC' ||
+            ev.data.type === 'PROGRAMS_UPDATED' ||
+            ev.data.type === 'FOLLOWUPS_UPDATED'
           ) {
             handleUpdate();
           }
@@ -369,6 +390,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     window.addEventListener('si7kaih_schools_updated', handleUpdate);
     window.addEventListener('si7kaih_users_updated', handleUpdate);
     window.addEventListener('si7kaih_journals_updated', handleJournalUpdate);
+    window.addEventListener('si7kaih_programs_updated', handleUpdate);
+    window.addEventListener('si7kaih_followups_updated', handleUpdate);
+    window.addEventListener('si7kaih_supervision_updated', handleUpdate);
     window.addEventListener('storage', handleStorageEvent);
 
     return () => {
@@ -378,6 +402,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       window.removeEventListener('si7kaih_schools_updated', handleUpdate);
       window.removeEventListener('si7kaih_users_updated', handleUpdate);
       window.removeEventListener('si7kaih_journals_updated', handleJournalUpdate);
+      window.removeEventListener('si7kaih_programs_updated', handleUpdate);
+      window.removeEventListener('si7kaih_followups_updated', handleUpdate);
+      window.removeEventListener('si7kaih_supervision_updated', handleUpdate);
       window.removeEventListener('storage', handleStorageEvent);
     };
   }, []);
@@ -395,13 +422,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       try {
         const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
         if (storedJournalsStr) {
-          setSyncedJournals(JSON.parse(storedJournalsStr));
+          const parsed = JSON.parse(storedJournalsStr);
+          if (Array.isArray(parsed)) {
+            setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          }
         }
       } catch (_e) {}
-      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
-      showToast('Data dashboard wali kelas berhasil disinkronkan dengan isian jurnal murid & data sekolah.');
+      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      showToast('Data dashboard wali kelas berhasil disinkronkan dengan isian jurnal murid terkini & data sekolah.');
     } finally {
-      setTimeout(() => setIsSyncing(false), 500);
+      setTimeout(() => setIsSyncing(false), 450);
     }
   };
 
@@ -1084,6 +1114,198 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const hasJournalData = useMemo(() => {
     return classJournals.length > 0;
   }, [classJournals]);
+
+  // ==========================================================================
+  // STATISTIK PERSENTASE MURID MENGISI JURNAL DALAM RENTANG DATA HARI TERISI
+  // Sinkronisasi otomatis dengan entri jurnal mandiri murid terupdate
+  // ==========================================================================
+  const [rangeViewFilter, setRangeViewFilter] = useState<'ALL_ACTIVE' | 'RECENT_7' | 'THIS_MONTH'>('ALL_ACTIVE');
+  const [isRangeExpanded, setIsRangeExpanded] = useState<boolean>(true);
+
+  const journalRangeStats = useMemo(() => {
+    // 1. Kumpulkan semua tanggal unik yang memiliki entri data jurnal pada rombel ini
+    const dateMap = new Map<string, DailyJournal[]>();
+    classJournals.forEach((j) => {
+      const dStr = j.journalDate || (j as any).date;
+      if (dStr && typeof dStr === 'string' && dStr.trim()) {
+        const cleanDate = dStr.trim();
+        if (!dateMap.has(cleanDate)) {
+          dateMap.set(cleanDate, []);
+        }
+        dateMap.get(cleanDate)!.push(j);
+      }
+    });
+
+    // Urutkan seluruh tanggal unik yang memiliki data jurnal secara kronologis
+    const allActiveDatesSorted = Array.from(dateMap.keys()).sort((a, b) => a.localeCompare(b));
+    const totalStudents = studentsList.length;
+    const now = new Date();
+    const todayStr = getLocalDateString(now);
+
+    if (allActiveDatesSorted.length === 0 || totalStudents === 0) {
+      return {
+        hasData: false,
+        totalActiveDaysCount: 0,
+        filteredActiveDaysCount: 0,
+        startDate: null,
+        endDate: null,
+        startDateFormatted: '-',
+        endDateFormatted: '-',
+        rangeLabel: 'Belum ada hari yang terisi data jurnal',
+        totalRegisteredStudents: totalStudents,
+        uniqueStudentsFilledCount: 0,
+        uniqueStudentsPercentage: 0,
+        avgDailyFilledCount: 0,
+        avgDailyFilledPercentage: 0,
+        todayFilledCount: 0,
+        todayFilledPercentage: 0,
+        dailyBreakdown: [],
+        totalJournalEntries: 0,
+        totalCompletedHabits: 0,
+        activeDatesSorted: [],
+      };
+    }
+
+    const startDateStr = allActiveDatesSorted[0];
+    const endDateStr = allActiveDatesSorted[allActiveDatesSorted.length - 1];
+
+    const formatStrDate = (dStr: string) => {
+      try {
+        const [y, m, d] = dStr.split('-').map(Number);
+        if (y && m && d) {
+          const dateObj = new Date(y, m - 1, d);
+          return formatIndonesianShortDate(dateObj);
+        }
+      } catch (_e) {}
+      return dStr;
+    };
+
+    const startDateFormatted = formatStrDate(startDateStr);
+    const endDateFormatted = formatStrDate(endDateStr);
+    const rangeLabel = startDateStr === endDateStr
+      ? `${startDateFormatted} (1 Hari Terisi Data)`
+      : `${startDateFormatted} s.d. ${endDateFormatted} (${allActiveDatesSorted.length} Hari Terisi Data Jurnal)`;
+
+    // Filter tanggal aktif sesuai pilihan tampilan guru
+    let selectedActiveDates = allActiveDatesSorted;
+    if (rangeViewFilter === 'RECENT_7') {
+      selectedActiveDates = allActiveDatesSorted.slice(-7);
+    } else if (rangeViewFilter === 'THIS_MONTH') {
+      const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const filtered = allActiveDatesSorted.filter((d) => d.startsWith(currentMonthPrefix));
+      selectedActiveDates = filtered.length > 0 ? filtered : allActiveDatesSorted;
+    }
+
+    // Hitung partisipasi siswa unik di dalam rentang tanggal terpilih
+    const uniqueStudentsSet = new Set<string>();
+    let totalEntriesCount = 0;
+    let totalCompletedHabits = 0;
+
+    selectedActiveDates.forEach((dateStr) => {
+      const jList = dateMap.get(dateStr) || [];
+      jList.forEach((j) => {
+        const sKey = j.studentId || j.studentNisn || (j.studentName ? j.studentName.toLowerCase().trim() : '');
+        if (sKey) uniqueStudentsSet.add(sKey);
+        totalEntriesCount++;
+
+        let count = 0;
+        if (typeof j.completedCount === 'number') count = j.completedCount;
+        else if (j.entries) count = Object.values(j.entries).filter((e: any) => !!e?.completed).length;
+        else if ((j as any).habits) count = Object.values((j as any).habits).filter((e: any) => !!e?.completed).length;
+        totalCompletedHabits += count;
+      });
+    });
+
+    const uniqueStudentsFilledCount = Math.min(totalStudents, uniqueStudentsSet.size);
+    const uniqueStudentsPercentage = Math.round((uniqueStudentsFilledCount / totalStudents) * 1000) / 10;
+
+    // Rincian per hari aktif data jurnal
+    let sumDailyFilledCount = 0;
+    let sumDailyPercentage = 0;
+
+    const dailyBreakdown = selectedActiveDates.slice().reverse().map((dateStr) => {
+      const dayJournals = dateMap.get(dateStr) || [];
+      const dayStudentSet = new Set<string>();
+      let dayTotalHabits = 0;
+      let dayValidatedCount = 0;
+
+      dayJournals.forEach((j) => {
+        const sKey = j.studentId || j.studentNisn || (j.studentName ? j.studentName.toLowerCase().trim() : '');
+        if (sKey) dayStudentSet.add(sKey);
+
+        let count = 0;
+        if (typeof j.completedCount === 'number') count = j.completedCount;
+        else if (j.entries) count = Object.values(j.entries).filter((e: any) => !!e?.completed).length;
+        else if ((j as any).habits) count = Object.values((j as any).habits).filter((e: any) => !!e?.completed).length;
+        dayTotalHabits += count;
+
+        if ((j as any).teacherValidated) dayValidatedCount++;
+      });
+
+      const filledCount = Math.min(totalStudents, dayStudentSet.size);
+      const uncompletedCount = Math.max(0, totalStudents - filledCount);
+      const percentage = Math.round((filledCount / totalStudents) * 1000) / 10;
+      const avgHabits = dayJournals.length > 0 ? Math.round((dayTotalHabits / dayJournals.length) * 10) / 10 : 0;
+
+      sumDailyFilledCount += filledCount;
+      sumDailyPercentage += percentage;
+
+      let dateObj: Date | null = null;
+      try {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        if (y && m && d) dateObj = new Date(y, m - 1, d);
+      } catch (_e) {}
+
+      const formattedLabel = dateObj ? formatIndonesianFullDate(dateObj) : dateStr;
+      const shortLabel = dateObj ? formatIndonesianShortDate(dateObj) : dateStr;
+      const dayName = dateObj ? dateObj.toLocaleDateString('id-ID', { weekday: 'long' }) : '';
+
+      return {
+        dateStr,
+        formattedLabel,
+        shortLabel,
+        dayName,
+        journalsCount: dayJournals.length,
+        filledCount,
+        uncompletedCount,
+        totalStudents,
+        percentage,
+        avgHabits,
+        validatedCount,
+        isToday: dateStr === todayStr,
+      };
+    });
+
+    const activeCount = selectedActiveDates.length;
+    const avgDailyFilledCount = activeCount > 0 ? Math.round((sumDailyFilledCount / activeCount) * 10) / 10 : 0;
+    const avgDailyFilledPercentage = activeCount > 0 ? Math.round((sumDailyPercentage / activeCount) * 10) / 10 : 0;
+
+    const todayEntry = dailyBreakdown.find((d) => d.dateStr === todayStr);
+    const todayFilledCount = todayEntry ? todayEntry.filledCount : filledTodayCount;
+    const todayFilledPercentage = Math.round((todayFilledCount / totalStudents) * 1000) / 10;
+
+    return {
+      hasData: true,
+      totalActiveDaysCount: allActiveDatesSorted.length,
+      filteredActiveDaysCount: selectedActiveDates.length,
+      startDate: startDateStr,
+      endDate: endDateStr,
+      startDateFormatted,
+      endDateFormatted,
+      rangeLabel,
+      totalRegisteredStudents: totalStudents,
+      uniqueStudentsFilledCount,
+      uniqueStudentsPercentage,
+      avgDailyFilledCount,
+      avgDailyFilledPercentage,
+      todayFilledCount,
+      todayFilledPercentage,
+      dailyBreakdown,
+      totalJournalEntries: totalEntriesCount,
+      totalCompletedHabits,
+      activeDatesSorted: allActiveDatesSorted,
+    };
+  }, [classJournals, studentsList, filledTodayCount, rangeViewFilter]);
 
   const classHabitStats = useMemo(() => {
     const habitDefinitions = [
@@ -2168,6 +2390,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
                   Sinkronisasi Isian Jurnal Aktif
                 </span>
+                {journalRangeStats.hasData && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-indigo-500" />
+                    Partisipasi Rentang Jurnal: {journalRangeStats.uniqueStudentsPercentage}% ({journalRangeStats.uniqueStudentsFilledCount}/{totalStudentsCount} Siswa)
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                 <span>Wali Kelas: <strong className="text-slate-700 font-semibold">{activeRombel.teacher}</strong></span>
@@ -2304,33 +2532,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         <div className="space-y-6">
           {/* 4 Metric Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Kelengkapan Jurnal Kelas
-              </span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-[#0753A5]">{averageCompleteness}%</span>
-                <span className={`text-xs font-semibold ${averageCompleteness > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                  {averageCompleteness > 0 ? `${averageCompleteness}% Lengkap` : 'Belum Ada Data'}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Partisipasi Rentang Data Jurnal
                 </span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-2xl font-black text-emerald-700">{journalRangeStats.uniqueStudentsPercentage}%</span>
+                  <span className="text-xs font-semibold text-slate-500">
+                    {journalRangeStats.uniqueStudentsFilledCount}/{totalStudentsCount} Siswa
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, journalRangeStats.uniqueStudentsPercentage)}%` }}
+                  />
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {filledTodayCount} dari {totalStudentsCount} siswa sudah mengisi hari ini
-              </p>
+              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                <span>{filledTodayCount} siswa mengisi hari ini</span>
+                <span className="font-bold text-slate-700">{journalRangeStats.totalActiveDaysCount} hari aktif</span>
+              </div>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Rata-Rata Konsistensi
+                Kelengkapan & Konsistensi
               </span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-slate-900">{averageConsistency}%</span>
+                <span className="text-2xl font-black text-[#0753A5]">{averageCompleteness}%</span>
                 <span className={`text-xs font-semibold ${averageConsistency >= 80 ? 'text-emerald-600' : averageConsistency > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-                  {averageConsistency >= 80 ? 'Terbiasa' : averageConsistency > 0 ? 'Perlu Penguatan' : 'Belum Ada Data'}
+                  {averageConsistency}% Konsisten
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
-                Dihitung dari {studentsList.length} siswa rombel {activeRombel.name}
+                Rerata {classAvgHabitsPerEntry}/7 kebiasaan tuntas per entri ({totalStudentsCount} siswa)
               </p>
             </div>
 
@@ -2398,6 +2635,336 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
 
           {/* ============================================================================ */}
+          {/* INFO UPDATE PERSENTASE MURID MENGISI JURNAL DALAM RENTANG DATA HARI TERISI */}
+          {/* ============================================================================ */}
+          <div className="bg-gradient-to-br from-white via-blue-50/20 to-indigo-50/20 rounded-3xl border border-blue-200/80 shadow-sm p-6 space-y-6 transition-all">
+            {/* Header Section */}
+            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-blue-100">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#0753A5] to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                  <CalendarDays className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-slate-900">
+                      Info Update Partisipasi Pengisian Jurnal Murid
+                    </h3>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-[#0753A5] border border-blue-300 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                      <span>Data Jurnal Murid Terupdate</span>
+                    </span>
+                    {journalRangeStats.hasData && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{journalRangeStats.totalActiveDaysCount} Hari Terisi Data</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Statistik komprehensif keikutsertaan murid rombel <strong className="text-slate-800 font-semibold">{activeRombel.name}</strong> dalam rentang tanggal yang sudah memiliki riwayat pengisian jurnal 7KAIH.
+                  </p>
+                </div>
+              </div>
+
+              {/* Range Badge & Action */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="bg-white border border-blue-200 rounded-2xl px-3.5 py-1.5 text-xs shadow-2xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                    Rentang Hari Terisi Data
+                  </span>
+                  <span className="font-extrabold text-[#0753A5]">
+                    {journalRangeStats.rangeLabel}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsRangeExpanded(!isRangeExpanded)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                >
+                  {isRangeExpanded ? 'Sembunyikan Rincian' : 'Lihat Rincian Hari'}
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Stat Highlights Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Persentase Siswa Mengisi dalam Rentang Hari */}
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs relative overflow-hidden group hover:border-blue-300 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Partisipasi dalam Rentang
+                  </span>
+                  <span className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-3xl font-black text-emerald-700">
+                    {journalRangeStats.uniqueStudentsPercentage}%
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">
+                    ({journalRangeStats.uniqueStudentsFilledCount}/{totalStudentsCount} Siswa)
+                  </span>
+                </div>
+                {/* Visual Progress Bar */}
+                <div className="w-full bg-slate-100 rounded-full h-2 mt-3 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, journalRangeStats.uniqueStudentsPercentage)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  {journalRangeStats.uniqueStudentsFilledCount} dari {totalStudentsCount} siswa telah mengisi minimal 1 entri jurnal di rentang hari ini.
+                </p>
+              </div>
+
+              {/* Card 2: Rata-Rata Partisipasi per Hari Terisi */}
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs relative overflow-hidden group hover:border-blue-300 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Rerata Partisipasi Harian
+                  </span>
+                  <span className="w-7 h-7 rounded-xl bg-blue-50 text-[#0753A5] flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4" />
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-3xl font-black text-[#0753A5]">
+                    {journalRangeStats.avgDailyFilledPercentage}%
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">
+                    (~{journalRangeStats.avgDailyFilledCount} Siswa/Hari)
+                  </span>
+                </div>
+                {/* Visual Progress Bar */}
+                <div className="w-full bg-slate-100 rounded-full h-2 mt-3 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-[#0753A5] to-blue-400 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, journalRangeStats.avgDailyFilledPercentage)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Rata-rata persentase siswa yang mengisi per tanggal aktif ({journalRangeStats.filteredActiveDaysCount} hari aktif data).
+                </p>
+              </div>
+
+              {/* Card 3: Pengisian Jurnal Hari Ini */}
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs relative overflow-hidden group hover:border-blue-300 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Pengisian Hari Ini
+                  </span>
+                  <span className="w-7 h-7 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+                    <Clock className="w-4 h-4" />
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-3xl font-black text-slate-900">
+                    {journalRangeStats.todayFilledPercentage}%
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">
+                    ({journalRangeStats.todayFilledCount}/{totalStudentsCount} Siswa)
+                  </span>
+                </div>
+                {/* Visual Progress Bar */}
+                <div className="w-full bg-slate-100 rounded-full h-2 mt-3 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-amber-500 to-emerald-500 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, journalRangeStats.todayFilledPercentage)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  {totalStudentsCount - journalRangeStats.todayFilledCount > 0
+                    ? `${totalStudentsCount - journalRangeStats.todayFilledCount} siswa belum mengisi jurnal hari ini.`
+                    : 'Seluruh siswa kelas telah mengisi jurnal hari ini!'}
+                </p>
+              </div>
+
+              {/* Card 4: Total Entri & Konsistensi Tuntas */}
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs relative overflow-hidden group hover:border-blue-300 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Total Entri & Rerata Kebiasaan
+                  </span>
+                  <span className="w-7 h-7 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                    <Target className="w-4 h-4" />
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-3xl font-black text-purple-900">
+                    {journalRangeStats.totalJournalEntries}
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">
+                    Entri Jurnal
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-slate-100">
+                  <Award className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="text-xs font-bold text-slate-700">
+                    Rerata: {classAvgHabitsPerEntry} / 7 Kebiasaan Tuntas
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Total akumulasi jurnal murid yang tersimpan dalam rentang hari aktif.
+                </p>
+              </div>
+            </div>
+
+            {/* Interactive Daily Breakdown (Daftar Hari yang Sudah Terisi Data Jurnal) */}
+            {isRangeExpanded && (
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-5 space-y-4 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-[#0753A5]" />
+                    <h4 className="text-sm font-black text-slate-900">
+                      Rincian Persentase Siswa Mengisi per Tanggal (Rentang Hari yang Sudah Terisi Data)
+                    </h4>
+                  </div>
+
+                  {/* Filter selector */}
+                  <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setRangeViewFilter('ALL_ACTIVE')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        rangeViewFilter === 'ALL_ACTIVE' ? 'bg-white text-[#0753A5] font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Semua Hari Terisi ({journalRangeStats.totalActiveDaysCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRangeViewFilter('RECENT_7')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        rangeViewFilter === 'RECENT_7' ? 'bg-white text-[#0753A5] font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      7 Hari Terakhir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRangeViewFilter('THIS_MONTH')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        rangeViewFilter === 'THIS_MONTH' ? 'bg-white text-[#0753A5] font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Bulan Berjalan
+                    </button>
+                  </div>
+                </div>
+
+                {journalRangeStats.dailyBreakdown.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs">
+                    Belum ada data jurnal murid yang terisi pada rentang ini.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                    {journalRangeStats.dailyBreakdown.map((item) => (
+                      <div
+                        key={item.dateStr}
+                        className={`p-3.5 rounded-2xl border transition-all flex flex-wrap items-center justify-between gap-3 ${
+                          item.isToday
+                            ? 'bg-blue-50/70 border-blue-200 ring-1 ring-blue-300'
+                            : 'bg-slate-50/50 border-slate-200/80 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
+                      >
+                        {/* Left: Date & Status */}
+                        <div className="flex items-center gap-3 min-w-[200px]">
+                          <div className={`w-9 h-9 rounded-xl flex flex-col items-center justify-center font-black text-xs shrink-0 ${
+                            item.isToday ? 'bg-[#0753A5] text-white' : 'bg-white text-slate-800 border border-slate-200 shadow-2xs'
+                          }`}>
+                            <span className="text-[9px] uppercase font-bold tracking-tighter opacity-80">
+                              {item.dayName.slice(0, 3)}
+                            </span>
+                            <span>
+                              {item.dateStr.split('-')[2]}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-900">
+                                {item.formattedLabel}
+                              </span>
+                              {item.isToday && (
+                                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-[#0753A5] text-white">
+                                  Hari Ini
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              {item.filledCount} dari {item.totalStudents} siswa mengisi ({item.uncompletedCount} belum)
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Middle: Progress Bar & Percentage */}
+                        <div className="flex-1 min-w-[180px] max-w-xs space-y-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-extrabold text-slate-800">
+                              {item.percentage}% Siswa Mengisi
+                            </span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                              item.percentage >= 85
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : item.percentage >= 70
+                                ? 'bg-blue-100 text-blue-800'
+                                : item.percentage >= 50
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {item.percentage >= 85 ? 'Partisipasi Tinggi' : item.percentage >= 70 ? 'Partisipasi Baik' : item.percentage >= 50 ? 'Cukup' : 'Perlu Dorongan'}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-2 rounded-full transition-all duration-300 ${
+                                item.percentage >= 85
+                                  ? 'bg-emerald-500'
+                                  : item.percentage >= 70
+                                  ? 'bg-[#0753A5]'
+                                  : item.percentage >= 50
+                                  ? 'bg-amber-500'
+                                  : 'bg-rose-500'
+                              }`}
+                              style={{ width: `${Math.min(100, item.percentage)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Right: Rerata Kebiasaan & Action */}
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <span className="text-xs font-bold text-slate-700 block">
+                              {item.avgHabits}/7 Kebiasaan
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              Rerata Tuntas
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedDayDetailModal({
+                                dateStr: item.dateStr,
+                                fullDateLabel: item.formattedLabel,
+                              })
+                            }
+                            className="px-3 py-1.5 rounded-xl border border-blue-200 bg-white hover:bg-blue-50 text-[#0753A5] text-xs font-bold transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Lihat Siswa</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ============================================================================ */}
           {/* 1. REKAP LINIMASA PEMBIASAAN SEPEKAN TERAKHIR MURID */}
           {/* ============================================================================ */}
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-5 transition-all">
@@ -2415,6 +2982,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                       <span>Sinkron Data Terkini</span>
                     </span>
+                    {journalRangeStats.hasData && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-2xs">
+                        <span>Partisipasi Rentang: <strong className="text-indigo-900">{journalRangeStats.uniqueStudentsPercentage}%</strong></span>
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Rekap 7 hari kalender pembiasaan murid di rombel {activeRombel.name} • Klik tanggal untuk detail isian & validasi cepat.

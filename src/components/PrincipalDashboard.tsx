@@ -50,6 +50,15 @@ import {
   RotateCcw,
   CheckCircle,
   Copy,
+  Activity,
+  Heart,
+  Flame,
+  Sun,
+  Moon,
+  Utensils,
+  BookMarked,
+  UserCheck2,
+  ChevronRight,
 } from 'lucide-react';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { Rombel, Student, getStoredRombels, getStoredStudents } from '../lib/studentData';
@@ -113,6 +122,10 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [feedbackNote, setFeedbackNote] = useState('');
   const [classSearchQuery, setClassSearchQuery] = useState('');
+  const [inspectedStudent, setInspectedStudent] = useState<{
+    student: any;
+    journals: DailyJournal[];
+  } | null>(null);
 
   // AI Assistance States (Tab Program Sekolah)
   const [aiProgramResult, setAiProgramResult] = useState<any | null>(null);
@@ -430,12 +443,39 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
   useEffect(() => {
     const handleSync = () => syncAllData();
 
-    window.addEventListener('storage', handleSync);
+    const handleJournalsEvent = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        const cleaned = e.detail.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        setSyncedJournals(cleaned);
+        setLastSyncTime(
+          new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        );
+      } else {
+        syncAllData();
+      }
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'si7kaih_journals_prod' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+            setLastSyncTime(
+              new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            );
+          }
+        } catch (_err) {}
+      }
+      syncAllData();
+    };
+
+    window.addEventListener('storage', handleStorageEvent);
     window.addEventListener('si7kaih_schools_updated', handleSync);
     window.addEventListener('si7kaih_students_updated', handleSync);
     window.addEventListener('si7kaih_rombels_updated', handleSync);
     window.addEventListener('si7kaih_users_updated', handleSync);
-    window.addEventListener('si7kaih_journals_updated', handleSync);
+    window.addEventListener('si7kaih_journals_updated', handleJournalsEvent);
     window.addEventListener('si7kaih_programs_updated', handleSync);
     window.addEventListener('si7kaih_followups_updated', handleSync);
     window.addEventListener('si7kaih_supervision_updated', handleSync);
@@ -444,17 +484,26 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
         bc = new BroadcastChannel('si7kaih_sync_channel');
-        bc.onmessage = () => syncAllData();
+        bc.onmessage = (event) => {
+          if (event.data?.journals && Array.isArray(event.data.journals)) {
+            setSyncedJournals(event.data.journals.filter((j: any) => !isDeprecatedOrDummyJournal(j)));
+            setLastSyncTime(
+              new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            );
+          } else {
+            syncAllData();
+          }
+        };
       } catch (_e) {}
     }
 
     return () => {
-      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('storage', handleStorageEvent);
       window.removeEventListener('si7kaih_schools_updated', handleSync);
       window.removeEventListener('si7kaih_students_updated', handleSync);
       window.removeEventListener('si7kaih_rombels_updated', handleSync);
       window.removeEventListener('si7kaih_users_updated', handleSync);
-      window.removeEventListener('si7kaih_journals_updated', handleSync);
+      window.removeEventListener('si7kaih_journals_updated', handleJournalsEvent);
       window.removeEventListener('si7kaih_programs_updated', handleSync);
       window.removeEventListener('si7kaih_followups_updated', handleSync);
       window.removeEventListener('si7kaih_supervision_updated', handleSync);
@@ -472,9 +521,21 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
   }, [initialFollowUps]);
 
   useEffect(() => {
-    if (initialJournals && initialJournals.length > 0) {
-      const cleaned = initialJournals.filter((j) => !isDeprecatedOrDummyJournal(j));
-      setSyncedJournals(cleaned);
+    let freshJournals: DailyJournal[] = [];
+    try {
+      const raw = localStorage.getItem('si7kaih_journals_prod');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          freshJournals = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
+    } catch (_e) {}
+
+    if (freshJournals.length > 0) {
+      setSyncedJournals(freshJournals);
+    } else if (initialJournals) {
+      setSyncedJournals(initialJournals.filter((j) => !isDeprecatedOrDummyJournal(j)));
     }
   }, [initialJournals]);
 
@@ -518,6 +579,19 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     };
   }, [schools, selectedSchoolId, currentPersona]);
 
+  const normalizeClassName = (name?: string) => {
+    if (!name) return '';
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/^kelas\s+/, '')
+      .replace(/^rombel\s+/, '')
+      .replace(/[-_\s]/g, '')
+      .replace(/^vii([a-z0-9])/i, '7$1')
+      .replace(/^viii([a-z0-9])/i, '8$1')
+      .replace(/^ix([a-z0-9])/i, '9$1');
+  };
+
   // Scoped Rombels for active school (No cross-school leakage)
   const schoolScopedRombels = useMemo(() => {
     const scoped = rombels.filter((r) => {
@@ -559,6 +633,126 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     }
     return scoped;
   }, [students, activeSchool, schools]);
+
+  // Scoped Journals strictly for active school
+  const schoolScopedJournals = useMemo(() => {
+    return syncedJournals.filter((j) => {
+      if (!j) return false;
+      // 1. School ID match
+      if (activeSchool.id && j.schoolId && j.schoolId.toLowerCase() === activeSchool.id.toLowerCase()) return true;
+      // 2. School Name match
+      if (activeSchool.name && j.schoolName && j.schoolName.trim().toLowerCase() === activeSchool.name.trim().toLowerCase()) return true;
+      // 3. Matched student in this school
+      const sId = j.studentId;
+      const sNisn = j.studentNisn;
+      const sName = (j.studentName || '').toLowerCase().trim();
+      if (schoolScopedStudents.some((s) => (s.id && s.id === sId) || (s.nisn && s.nisn === sNisn) || (sName && s.name.toLowerCase().trim() === sName))) {
+        return true;
+      }
+      // 4. Matched rombel in this school
+      const normJClass = normalizeClassName(j.className);
+      if (normJClass && schoolScopedRombels.some((r) => normalizeClassName(r.name) === normJClass || normalizeClassName(r.code) === normJClass)) {
+        return true;
+      }
+      // 5. Default when single school
+      if (schools.length <= 1) return true;
+      return false;
+    });
+  }, [syncedJournals, activeSchool, schoolScopedStudents, schoolScopedRombels, schools.length]);
+
+  // Today ISO Date string (YYYY-MM-DD)
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
+
+  // Today's journals for the school
+  const todaySchoolJournals = useMemo(() => {
+    return schoolScopedJournals.filter((j) => j.journalDate === todayStr);
+  }, [schoolScopedJournals, todayStr]);
+
+  // Unique students who filled today in this school
+  const todayFilledStudentsCount = useMemo(() => {
+    const set = new Set<string>();
+    todaySchoolJournals.forEach((j) => {
+      const key = j.studentNisn || j.studentId || j.studentName || j.id;
+      if (key) set.add(key.toLowerCase().trim());
+    });
+    return set.size;
+  }, [todaySchoolJournals]);
+
+  // Most recent journal submissions (Live Feed for Principal)
+  const recentSchoolJournals = useMemo(() => {
+    return [...schoolScopedJournals]
+      .sort((a, b) => {
+        const timeA = a.savedAt || a.updatedAt || a.createdAt || a.journalDate;
+        const timeB = b.savedAt || b.updatedAt || b.createdAt || b.journalDate;
+        return (timeB || '').localeCompare(timeA || '');
+      })
+      .slice(0, 8);
+  }, [schoolScopedJournals]);
+
+  // Parent Validation metrics across school
+  const parentValidationStats = useMemo(() => {
+    const validated = schoolScopedJournals.filter((j) => j.parentValidated === true);
+    const total = schoolScopedJournals.length;
+    const rate = total > 0 ? Math.round((validated.length / total) * 100) : 0;
+    return {
+      validatedCount: validated.length,
+      totalCount: total,
+      rate,
+    };
+  }, [schoolScopedJournals]);
+
+  // School-wide 7 Habits Realtime Analytics
+  const schoolHabitAnalytics = useMemo(() => {
+    const habitKeys: { code: string; label: string; icon: string; bg: string; color: string }[] = [
+      { code: 'WAKE_EARLY', label: 'Bangun Pagi', icon: '🌅', bg: 'bg-amber-50 text-amber-800 border-amber-200', color: 'text-amber-600' },
+      { code: 'WORSHIP', label: 'Beribadah', icon: '🤲', bg: 'bg-emerald-50 text-emerald-800 border-emerald-200', color: 'text-emerald-600' },
+      { code: 'EXERCISE', label: 'Berolahraga', icon: '🏃', bg: 'bg-indigo-50 text-indigo-800 border-indigo-200', color: 'text-indigo-600' },
+      { code: 'HEALTHY_EATING', label: 'Makan Sehat', icon: '🥗', bg: 'bg-rose-50 text-rose-800 border-rose-200', color: 'text-rose-600' },
+      { code: 'LEARNING', label: 'Gemar Belajar', icon: '📚', bg: 'bg-blue-50 text-blue-800 border-blue-200', color: 'text-blue-600' },
+      { code: 'BERMASYARAKAT', label: 'Bermasyarakat', icon: '🤝', bg: 'bg-purple-50 text-purple-800 border-purple-200', color: 'text-purple-600' },
+      { code: 'TIDUR_CEPAT', label: 'Tidur Cepat', icon: '🌙', bg: 'bg-cyan-50 text-cyan-800 border-cyan-200', color: 'text-cyan-600' },
+    ];
+
+    if (schoolScopedJournals.length === 0) {
+      return habitKeys.map((h) => ({
+        ...h,
+        percentage: activeSchool.habitCompletenessRate || 0,
+        completedCount: 0,
+        totalCount: 0,
+        todayCompleted: 0,
+        status: 'MENUNGGU_JURNAL',
+      }));
+    }
+
+    return habitKeys.map((h) => {
+      let completedCount = 0;
+      let todayCompleted = 0;
+      schoolScopedJournals.forEach((j) => {
+        const entry = (j.entries && (j.entries as any)[h.code]) || (j.habits && (j.habits as any)[h.code]);
+        if (entry && (entry.completed || entry.status === 'COMPLETED')) {
+          completedCount++;
+          if (j.journalDate === todayStr) todayCompleted++;
+        }
+      });
+
+      const pct = Math.min(100, Math.round((completedCount / schoolScopedJournals.length) * 100));
+      const status = pct >= 80 ? 'UNGGUL' : pct >= 60 ? 'KONSISTEN' : 'PERLU_PENGUATAN';
+      return {
+        ...h,
+        percentage: pct,
+        completedCount,
+        totalCount: schoolScopedJournals.length,
+        todayCompleted,
+        status,
+      };
+    });
+  }, [schoolScopedJournals, todayStr, activeSchool]);
 
   // Sync with Header navigation tabs
   useEffect(() => {
@@ -683,7 +877,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     showToast(`Inisiatif program "${newProg.title}" berhasil disahkan & diterbitkan.`);
   };
 
-  // Dynamic Class Breakdowns synthesized strictly from live Rombels & Students (NO default dummy class)
+  // Dynamic Class Breakdowns synthesized strictly from live Rombels, Students & Journals
   const classBreakdowns = useMemo(() => {
     if (!schoolScopedRombels || schoolScopedRombels.length === 0) {
       return [];
@@ -706,13 +900,12 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
       const matchedStudents = schoolScopedStudents.filter((s) => {
         const sClass = (s.className || '').toLowerCase().trim();
         if (sClass === normalizedRombelName) return true;
+        if (normalizeClassName(s.className) === normalizeClassName(r.name)) return true;
         if (sClass.includes(normalizedRombelName) || normalizedRombelName.includes(sClass)) return true;
         const rCode = r.code ? r.code.toLowerCase().replace('rombel-', '') : '';
         if (rCode && sClass.includes(rCode)) return true;
         return false;
       });
-
-      const studentCount = matchedStudents.length;
 
       // Check user accounts for teacher assigned to this rombel
       const assignedTeacherUser = userAccounts.find(
@@ -728,76 +921,132 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
       const studentNisns = new Set(matchedStudents.map((s) => s.nisn).filter(Boolean));
       const studentNames = new Set(matchedStudents.map((s) => s.name.toLowerCase().trim()));
 
-      const rombelJournals = syncedJournals.filter((j) => {
+      const rombelJournals = schoolScopedJournals.filter((j) => {
         if (studentIds.has(j.studentId)) return true;
         if (j.studentNisn && studentNisns.has(j.studentNisn)) return true;
         if (j.studentName && studentNames.has(j.studentName.toLowerCase().trim())) return true;
-        if (j.className && j.className.toLowerCase().trim() === normalizedRombelName) return true;
+        if (normalizeClassName(j.className) === normalizeClassName(r.name)) return true;
         return false;
       });
 
-      let completeness = 0;
-      let consistency = 0;
-      let good = 0;
-      let warning = 0;
-      let assist = 0;
-      let topHabit = '-';
-      let priorityHabit = '-';
+      // Merge students with journals into allRombelStudents if not yet in matchedStudents
+      const allRombelStudents = [...matchedStudents];
+      const existingStudentKeys = new Set(
+        matchedStudents.map((s) => (s.nisn || s.id || s.name).toLowerCase().trim())
+      );
 
-      if (rombelJournals.length > 0) {
-        // Calculate true habit metrics from live student journals
-        const habitStats = habitCodes.map((h) => {
-          let count = 0;
-          rombelJournals.forEach((j) => {
-            const entry = (j.entries && j.entries[h.code]) || (j.habits && (j.habits as any)[h.code]);
-            if (entry && (entry.completed || entry.status === 'COMPLETED')) count++;
-          });
-          const pct = Math.min(100, Math.round((count / rombelJournals.length) * 100));
-          return { ...h, percentage: pct };
-        });
+      rombelJournals.forEach((j) => {
+        const key = (j.studentNisn || j.studentId || j.studentName || '').toLowerCase().trim();
+        if (key && !existingStudentKeys.has(key)) {
+          existingStudentKeys.add(key);
+          allRombelStudents.push({
+            id: j.studentId || `std-${Math.random()}`,
+            nisn: j.studentNisn || '-',
+            name: j.studentName || 'Peserta Didik',
+            gender: 'L',
+            schoolId: activeSchool.id,
+            schoolName: activeSchool.name,
+            className: r.name,
+            status: 'AKTIF',
+          } as Student);
+        }
+      });
 
-        habitStats.sort((a, b) => b.percentage - a.percentage);
-        topHabit = `${habitStats[0].label} (${habitStats[0].percentage}%)`;
-        priorityHabit = `${habitStats[habitStats.length - 1].label} (${habitStats[habitStats.length - 1].percentage}%)`;
+      const studentCount = allRombelStudents.length;
 
-        const totalEntries = rombelJournals.length * 7;
-        const totalCompleted = habitStats.reduce((acc, h) => acc + (h.percentage / 100) * rombelJournals.length, 0);
-        completeness = totalEntries > 0 ? +((totalCompleted / totalEntries) * 100).toFixed(1) : 0;
-        consistency = completeness > 0 ? Math.max(0, +(completeness * 0.94).toFixed(1)) : 0;
-
-        // Categorize students
-        matchedStudents.forEach((st) => {
-          const studentJ = rombelJournals.filter(
-            (j) => j.studentId === st.id || (st.nisn && j.studentNisn === st.nisn)
-          );
-          if (studentJ.length === 0) {
-            warning++;
-          } else {
-            let stDone = 0;
-            studentJ.forEach((j) => {
-              habitCodes.forEach((h) => {
-                const entry = (j.entries && j.entries[h.code]) || (j.habits && (j.habits as any)[h.code]);
-                if (entry && (entry.completed || entry.status === 'COMPLETED')) stDone++;
-              });
-            });
-            const rate = (stDone / (studentJ.length * 7)) * 100;
-            if (rate >= 75) good++;
-            else if (rate >= 50) warning++;
-            else assist++;
+      // Calculate true habit metrics from live student journals
+      const habitStats = habitCodes.map((h) => {
+        let count = 0;
+        let todayCount = 0;
+        rombelJournals.forEach((j) => {
+          const entry = (j.entries && (j.entries as any)[h.code]) || (j.habits && (j.habits as any)[h.code]);
+          if (entry && (entry.completed || entry.status === 'COMPLETED')) {
+            count++;
+            if (j.journalDate === todayStr) todayCount++;
           }
         });
+        const pct = rombelJournals.length > 0 ? Math.min(100, Math.round((count / rombelJournals.length) * 100)) : 0;
+        return { ...h, percentage: pct, completedCount: count, todayCount };
+      });
+
+      const sortedHabitStats = [...habitStats].sort((a, b) => b.percentage - a.percentage);
+      const topHabit = rombelJournals.length > 0
+        ? `${sortedHabitStats[0].label} (${sortedHabitStats[0].percentage}%)`
+        : 'Menunggu Jurnal';
+      const priorityHabit = rombelJournals.length > 0
+        ? `${sortedHabitStats[sortedHabitStats.length - 1].label} (${sortedHabitStats[sortedHabitStats.length - 1].percentage}%)`
+        : 'Pengisian Awal';
+
+      // Synthesize individual student stats with real live journal data
+      const studentsDetail = allRombelStudents.map((st) => {
+        const studentJournals = rombelJournals.filter(
+          (j) =>
+            j.studentId === st.id ||
+            (st.nisn && j.studentNisn === st.nisn) ||
+            (j.studentName && st.name && j.studentName.toLowerCase().trim() === st.name.toLowerCase().trim())
+        );
+
+        const journalCount = studentJournals.length;
+        const todayJournal = studentJournals.find((j) => j.journalDate === todayStr);
+
+        let totalCompletedSlots = 0;
+        studentJournals.forEach((j) => {
+          habitCodes.forEach((h) => {
+            const entry = (j.entries && (j.entries as any)[h.code]) || (j.habits && (j.habits as any)[h.code]);
+            if (entry && (entry.completed || entry.status === 'COMPLETED')) totalCompletedSlots++;
+          });
+        });
+
+        const consistencyRate = journalCount > 0
+          ? Math.min(100, Math.round((totalCompletedSlots / (journalCount * 7)) * 100))
+          : 0;
+
+        let category: 'TERPANTAU_BAIK' | 'PERLU_PENGUATAN' | 'PERLU_PENDAMPINGAN';
+        if (consistencyRate >= 75) category = 'TERPANTAU_BAIK';
+        else if (consistencyRate >= 50) category = 'PERLU_PENGUATAN';
+        else category = 'PERLU_PENDAMPINGAN';
+
+        const isParentValidated = studentJournals.some((j) => j.parentValidated === true);
+        const sortedJ = [...studentJournals].sort((a, b) => (b.journalDate || '').localeCompare(a.journalDate || ''));
+        const latestJ = sortedJ[0];
+
+        return {
+          ...st,
+          journalCount,
+          isFilledToday: !!todayJournal,
+          todayHabitsCount: todayJournal ? (todayJournal.completedCount || 0) : 0,
+          consistencyRate,
+          category,
+          isParentValidated,
+          latestJournalDate: latestJ?.journalDate,
+          latestValidationNote: latestJ?.parentValidationNote,
+          studentJournals,
+        };
+      });
+
+      const good = studentsDetail.filter((s) => s.category === 'TERPANTAU_BAIK').length;
+      const warning = studentsDetail.filter((s) => s.category === 'PERLU_PENGUATAN').length;
+      const assist = studentsDetail.filter((s) => s.category === 'PERLU_PENDAMPINGAN').length;
+      const todayFilledCount = studentsDetail.filter((s) => s.isFilledToday).length;
+
+      let completeness = 0;
+      let consistency = 0;
+
+      if (rombelJournals.length > 0) {
+        const totalEntries = rombelJournals.length * 7;
+        const totalCompleted = habitStats.reduce((acc, h) => acc + h.completedCount, 0);
+        completeness = totalEntries > 0 ? +((totalCompleted / totalEntries) * 100).toFixed(1) : 0;
+
+        const activeStudentsWithJournals = studentsDetail.filter((s) => s.journalCount > 0);
+        if (activeStudentsWithJournals.length > 0) {
+          const sumConsistency = activeStudentsWithJournals.reduce((acc, s) => acc + s.consistencyRate, 0);
+          consistency = +(sumConsistency / activeStudentsWithJournals.length).toFixed(1);
+        } else {
+          consistency = completeness;
+        }
       } else if (studentCount > 0 && activeSchool.habitCompletenessRate > 0) {
-        // Fallback to configured target in school master if set
         completeness = activeSchool.habitCompletenessRate;
         consistency = activeSchool.habitConsistencyRate || activeSchool.habitCompletenessRate;
-        good = Math.round(studentCount * (completeness / 100));
-        warning = Math.round(studentCount * ((100 - completeness) / 100) * 0.7);
-        assist = Math.max(0, studentCount - good - warning);
-        topHabit = 'Menunggu Jurnal Siswa';
-        priorityHabit = 'Pengisian Jurnal Awal';
-      } else if (studentCount > 0) {
-        topHabit = 'Belum Ada Jurnal';
-        priorityHabit = 'Mulai Pencatatan';
       }
 
       return {
@@ -807,7 +1056,11 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
         teacher: teacherName,
         teacherNip: teacherNip,
         students: studentCount,
-        studentList: matchedStudents,
+        studentList: allRombelStudents,
+        studentsDetail,
+        totalJournals: rombelJournals.length,
+        todayFilledCount,
+        habitStats,
         completeness,
         consistency,
         good,
@@ -820,7 +1073,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
         phase: r.phase || 'Fase D',
       };
     });
-  }, [schoolScopedRombels, schoolScopedStudents, userAccounts, syncedJournals, activeSchool]);
+  }, [schoolScopedRombels, schoolScopedStudents, userAccounts, schoolScopedJournals, activeSchool, todayStr]);
 
   // Filtered Class Breakdowns based on Search Query
   const filteredClassBreakdowns = useMemo(() => {
@@ -834,7 +1087,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     );
   }, [classBreakdowns, classSearchQuery]);
 
-  // Aggregate stats derived strictly from live data (NO hardcoded fallback numbers like 186 or 24)
+  // Aggregate stats derived strictly from live data
   const totalActiveStudents = useMemo(() => {
     if (schoolScopedStudents.length > 0) {
       return schoolScopedStudents.length;
@@ -875,15 +1128,23 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     [classBreakdowns]
   );
 
-  // Overall school habit rates calculated from rombels or activeSchool master
+  // Overall school habit rates calculated strictly from live school journals
   const overallCompleteness = useMemo(() => {
+    if (schoolScopedJournals.length > 0) {
+      const totalEntries = schoolScopedJournals.length * 7;
+      let totalCompleted = 0;
+      schoolHabitAnalytics.forEach((h) => {
+        totalCompleted += h.completedCount;
+      });
+      return totalEntries > 0 ? +((totalCompleted / totalEntries) * 100).toFixed(1) : 0;
+    }
     const classesWithData = classBreakdowns.filter((c) => c.completeness > 0);
     if (classesWithData.length > 0) {
       const sum = classesWithData.reduce((acc, c) => acc + c.completeness, 0);
       return +(sum / classesWithData.length).toFixed(1);
     }
     return activeSchool.habitCompletenessRate || 0;
-  }, [classBreakdowns, activeSchool]);
+  }, [schoolScopedJournals, schoolHabitAnalytics, classBreakdowns, activeSchool]);
 
   const overallConsistency = useMemo(() => {
     const classesWithData = classBreakdowns.filter((c) => c.consistency > 0);
@@ -894,12 +1155,19 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
     return activeSchool.habitConsistencyRate || 0;
   }, [classBreakdowns, activeSchool]);
 
+  const todaySchoolCompletionPercentage = useMemo(() => {
+    if (totalActiveStudents === 0) return 0;
+    return Math.min(100, Math.round((todayFilledStudentsCount / totalActiveStudents) * 100));
+  }, [todayFilledStudentsCount, totalActiveStudents]);
+
   const handleExportSchoolCsv = () => {
     const headers = [
       'Nama Kelas',
       'Wali Kelas',
       'NIP Wali Kelas',
-      'Jumlah Siswa Terdaftar',
+      'Jumlah Siswa',
+      'Total Jurnal Murid',
+      'Mengisi Hari Ini',
       'Kelengkapan (%)',
       'Konsistensi (%)',
       'Terpantau Baik',
@@ -913,6 +1181,8 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
       `"${c.teacher}"`,
       `"${c.teacherNip}"`,
       c.students,
+      c.totalJournals || 0,
+      c.todayFilledCount || 0,
       c.completeness,
       c.consistency,
       c.good,
@@ -926,6 +1196,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
       [
         `"Rekap Eksekutif Satuan Pendidikan 7KAIH - ${activeSchool.name}"`,
         `"NPSN: ${activeSchool.npsn} - Kepala Sekolah: ${activeSchool.principalName} - Tanggal: ${new Date().toLocaleDateString('id-ID')}"`,
+        `"Total Jurnal Terdata: ${schoolScopedJournals.length} - Siswa Mengisi Hari Ini: ${todayFilledStudentsCount} (${todaySchoolCompletionPercentage}%)"`,
         '',
         headers.join(','),
         ...rows.map((r) => r.join(',')),
@@ -956,6 +1227,12 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
             principalName: activeSchool.principalName,
             totalStudents: totalActiveStudents,
             totalClasses: classBreakdowns.length,
+            totalJournals: schoolScopedJournals.length,
+            todayJournalsCount: todaySchoolJournals.length,
+            todayFilledStudentsCount: todayFilledStudentsCount,
+            parentValidatedCount: parentValidationStats.validatedCount,
+            topHabit: schoolHabitAnalytics[0]?.label || '-',
+            lowestHabit: schoolHabitAnalytics[schoolHabitAnalytics.length - 1]?.label || '-',
             overallCompleteness: overallCompleteness,
             overallConsistency: overallConsistency,
             activeProgramsCount: unifiedProgramsList.length,
@@ -977,15 +1254,18 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
       // Dynamic fallback based on real metrics
       setAiSchoolResult({
         recordedFacts: [
-          `Satuan pendidikan ${activeSchool.name} (NPSN: ${activeSchool.npsn}) mencatat ${totalActiveStudents} peserta didik terdata di ${classBreakdowns.length} rombel aktif.`,
-          `Rata-rata kelengkapan pengisian pembiasaan sekolah berada pada angka ${overallCompleteness}%, dengan tingkat konsistensi ${overallConsistency}%.`,
-          `Sebanyak ${unifiedProgramsList.length} program pembiasaan sekolah terdaftar dan divalidasi oleh Kepala Sekolah.`,
+          `Satuan pendidikan ${activeSchool.name} (NPSN: ${activeSchool.npsn}) mencatat ${totalActiveStudents} peserta didik di ${classBreakdowns.length} rombel aktif dengan total ${schoolScopedJournals.length} jurnal murid terkini tersimpan.`,
+          `Sebanyak ${todayFilledStudentsCount} siswa telah mengisi jurnal hari ini (${todaySchoolCompletionPercentage}%), dengan rata-rata kelengkapan sekolah ${overallCompleteness}% dan konsistensi ${overallConsistency}%.`,
+          `Sebanyak ${parentValidationStats.validatedCount} jurnal (${parentValidationStats.rate}%) telah divalidasi oleh orang tua murid.`,
           `Sebanyak ${totalGoodStudents} siswa terpantau baik, ${totalWarningStudents} memerlukan penguatan, dan ${totalAssistStudents} memerlukan pendampingan aktif.`,
         ],
         habitPatterns: [
-          classBreakdowns.length > 0 && classBreakdowns[0].topHabit !== '-'
-            ? `Pembiasaan paling konsisten teramati pada domain "${classBreakdowns[0].topHabit}".`
+          schoolHabitAnalytics.length > 0 && schoolHabitAnalytics[0].percentage > 0
+            ? `Pembiasaan paling konsisten teramati pada domain "${schoolHabitAnalytics[0].label}" (${schoolHabitAnalytics[0].percentage}% keterlaksanaan).`
             : 'Pola pembiasaan sedang dalam pemetaan awal menunggu akumulasi jurnal harian.',
+          schoolHabitAnalytics.length > 0 && schoolHabitAnalytics[schoolHabitAnalytics.length - 1].percentage < 70
+            ? `Domain "${schoolHabitAnalytics[schoolHabitAnalytics.length - 1].label}" (${schoolHabitAnalytics[schoolHabitAnalytics.length - 1].percentage}%) menjadi prioritas utama penguatan pembiasaan.`
+            : 'Seluruh domain pembiasaan 7KAIH terpantau seimbang.',
           totalWarningStudents > 0
             ? `Terdapat ${totalWarningStudents} siswa pada kelompok penguatan yang membutuhkan dorongan pembiasaan terarah.`
             : 'Seluruh peserta didik terpantau dalam kondisi pembiasaan positif.',
@@ -1416,14 +1696,14 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
               <button
                 onClick={() => {
                   syncAllData();
-                  showToast('Data dashboard berhasil diperbarui dengan data termutakhir!');
+                  showToast('Data dashboard berhasil disinkronkan dengan data jurnal murid terkini!');
                 }}
                 disabled={isSyncing}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0753A5] text-xs font-bold transition-all cursor-pointer disabled:opacity-50 border border-blue-200"
-                title="Sinkronkan data dengan pembaruan terkini"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0753A5] text-xs font-bold transition-all cursor-pointer disabled:opacity-50 border border-blue-200 shadow-2xs"
+                title="Sinkronkan data dashboard dengan pembaruan pengisian jurnal murid terkini"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'Menyinkronkan...' : 'Perbarui Data'}</span>
+                <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Data Jurnal'}</span>
               </button>
               <span className="text-[11px] text-slate-400">
                 Pembaruan: {lastSyncTime}
@@ -1484,6 +1764,59 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
       {/* OVERVIEW TAB */}
       {activeTab === 'OVERVIEW' && (
         <div className="space-y-6">
+          {/* Real-time Student Journal Synchronization Status Banner */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white shadow-md flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 text-xl shrink-0">
+                <Activity className="w-5 h-5 animate-pulse text-emerald-400" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black tracking-wide uppercase text-emerald-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                    Sinkronisasi Jurnal Murid Aktif
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/90 border border-white/10">
+                    Real-time Database
+                  </span>
+                </div>
+                <p className="text-xs text-slate-200 mt-0.5">
+                  Seluruh data analitik, rombel, dan pembiasaan otomatis terhubung langsung dengan entri jurnal harian terkini peserta didik.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 text-left">
+                <span className="text-[10px] text-slate-300 block">Jurnal Terdata</span>
+                <strong className="text-xs font-black text-white">{schoolScopedJournals.length} Jurnal</strong>
+              </div>
+              <div className="px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 text-left">
+                <span className="text-[10px] text-slate-300 block">Mengisi Hari Ini</span>
+                <strong className="text-xs font-black text-emerald-300">
+                  {todayFilledStudentsCount} Siswa ({todaySchoolCompletionPercentage}%)
+                </strong>
+              </div>
+              <div className="px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 text-left">
+                <span className="text-[10px] text-slate-300 block">Validasi Ortu</span>
+                <strong className="text-xs font-black text-amber-300">
+                  {parentValidationStats.validatedCount} ({parentValidationStats.rate}%)
+                </strong>
+              </div>
+              <button
+                onClick={() => {
+                  syncAllData();
+                  showToast('Data dashboard telah disinkronkan dengan pengisian jurnal murid terkini!');
+                }}
+                disabled={isSyncing}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs inline-flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Key School Metrics strictly synthesized from live data */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
@@ -1495,7 +1828,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                 <span className="text-xs font-bold text-slate-500">{classBreakdowns.length} Rombel</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
-                Dikelola oleh Admin Sekolah • {totalTeachersCount} Tenaga Pendidik
+                {schoolScopedJournals.length} total jurnal murid tersimpan • {totalTeachersCount} Pendidik
               </p>
             </div>
 
@@ -1510,6 +1843,12 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                 <span className="text-xs font-bold text-emerald-600">
                   {overallCompleteness >= 85 ? 'Memenuhi Target' : 'Perlu Didorong'}
                 </span>
+              </div>
+              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                <div
+                  className="bg-[#0753A5] h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, overallCompleteness)}%` }}
+                />
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
                 Target capaian satuan pendidikan: min. 85%
@@ -1527,6 +1866,12 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                 <span className="text-xs font-bold text-emerald-600">
                   {overallConsistency >= 80 ? 'Konsisten' : 'Tahap Awal'}
                 </span>
+              </div>
+              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
+                <div
+                  className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, overallConsistency)}%` }}
+                />
               </div>
               <p className="text-[11px] text-slate-500 mt-1">Rata-rata 7 kebiasaan peserta didik</p>
             </div>
@@ -1546,9 +1891,282 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                   {totalAssistStudents} Damping
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">*Monitoring internal satuan pendidikan</p>
+              <p className="text-[10px] text-slate-400 mt-2">*Berdasarkan akumulasi konsistensi jurnal siswa</p>
             </div>
           </div>
+
+          {/* 7 Habits School-wide Realtime Analytics Grid */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <span>Audit 7 Dimensi Kebiasaan Murid Tingkat Sekolah</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-[#0753A5]">
+                    Live dari {schoolScopedJournals.length} Jurnal
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Tingkat keterlaksanaan setiap dimensi kebiasaan terhitung otomatis dari seluruh lembar jurnal murid terkini.
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-slate-400">
+                Pembaruan: {lastSyncTime}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
+              {schoolHabitAnalytics.map((h) => (
+                <div
+                  key={h.code}
+                  className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between space-y-2 hover:border-blue-300 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xl">{h.icon}</span>
+                    <span
+                      className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                        h.status === 'UNGGUL'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : h.status === 'KONSISTEN'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {h.status === 'UNGGUL' ? 'Unggul' : h.status === 'KONSISTEN' ? 'Stabil' : 'Penguatan'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-800 leading-tight">{h.label}</h5>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className="text-lg font-black text-slate-900">{h.percentage}%</span>
+                      <span className="text-[10px] text-slate-500">tercapai</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                      <div
+                        className="bg-[#0753A5] h-full rounded-full transition-all duration-500"
+                        style={{ width: `${h.percentage}%` }}
+                      />
+                    </div>
+                    <div className="text-[10px] text-slate-500 flex items-center justify-between pt-0.5">
+                      <span>Hari Ini: <strong>{h.todayCompleted}</strong></span>
+                      <span>Total: <strong>{h.completedCount}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Live Recent Student Journals Feed */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <BookMarked className="w-4 h-4 text-[#0753A5]" />
+                  <span>Aktivitas Pengisian Jurnal Murid Terkini</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    Real-time Feed
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Daftar entri jurnal murid yang baru saja diisi atau diperbarui oleh siswa di lingkungan {activeSchool.name}.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-semibold">
+                  Menampilkan {recentSchoolJournals.length} Entri Terkini
+                </span>
+                <button
+                  onClick={() => setActiveTab('CLASSES')}
+                  className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                >
+                  Lihat Seluruh Rombel →
+                </button>
+              </div>
+            </div>
+
+            {recentSchoolJournals.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-dashed border-slate-200 text-center text-slate-500 space-y-2">
+                <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                <p className="text-xs font-bold text-slate-700">Belum Ada Catatan Jurnal Murid</p>
+                <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                  Entri jurnal harian yang diisi oleh siswa secara mandiri akan muncul secara langsung di sini.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                {recentSchoolJournals.map((j) => {
+                  const studentName = j.studentName || 'Peserta Didik';
+                  const studentClass = j.className || 'Rombel Belajar';
+                  const habitsCompletedCount = j.completedCount !== undefined
+                    ? j.completedCount
+                    : j.entries
+                    ? Object.values(j.entries).filter((e: any) => e?.completed).length
+                    : 0;
+
+                  return (
+                    <div
+                      key={j.id || `${j.studentId}-${j.journalDate}`}
+                      className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 hover:bg-white hover:border-blue-300 hover:shadow-xs transition-all flex flex-col justify-between space-y-3"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-slate-900 line-clamp-1">{studentName}</span>
+                          <span className="text-[10px] font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                            {studentClass}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-400" />
+                            <span>{j.journalDate}</span>
+                          </span>
+                          {j.parentValidated ? (
+                            <span className="text-emerald-700 font-bold flex items-center gap-0.5 bg-emerald-50 px-1.5 py-0.5 rounded">
+                              <CheckCircle className="w-3 h-3 text-emerald-600" />
+                              <span>Valid Ortu</span>
+                            </span>
+                          ) : (
+                            <span className="text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded">
+                              Menunggu Ortu
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Completed Habits Pills */}
+                        <div className="pt-1">
+                          <div className="flex items-center justify-between text-[10px] text-slate-600 mb-1">
+                            <span>Keterisian Pembiasaan:</span>
+                            <strong className="text-[#0753A5] font-bold">{habitsCompletedCount} / 7</strong>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {schoolHabitAnalytics.map((h) => {
+                              const entry = (j.entries && (j.entries as any)[h.code]) || (j.habits && (j.habits as any)[h.code]);
+                              const isDone = !!(entry && (entry.completed || entry.status === 'COMPLETED'));
+                              return (
+                                <span
+                                  key={h.code}
+                                  className={`text-[10px] w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                                    isDone
+                                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300 font-bold'
+                                      : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
+                                  }`}
+                                  title={`${h.label}: ${isDone ? 'Terlaksana' : 'Belum Terlaksana'}`}
+                                >
+                                  {h.icon}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Parent or Student Note snippet */}
+                        {j.parentValidationNote && (
+                          <div className="p-2 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[10px] text-emerald-900 italic line-clamp-2">
+                            "{j.parentValidationNote}"
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const studentObj = schoolScopedStudents.find(
+                            (s) => s.id === j.studentId || (j.studentNisn && s.nisn === j.studentNisn)
+                          ) || {
+                            id: j.studentId,
+                            nisn: j.studentNisn || '-',
+                            name: studentName,
+                            className: studentClass,
+                            gender: 'L',
+                            schoolId: activeSchool.id,
+                            status: 'AKTIF',
+                          };
+                          const studentJournals = schoolScopedJournals.filter(
+                            (item) =>
+                              item.studentId === j.studentId ||
+                              (j.studentNisn && item.studentNisn === j.studentNisn) ||
+                              (item.studentName && item.studentName.toLowerCase().trim() === studentName.toLowerCase().trim())
+                          );
+                          setInspectedStudent({
+                            student: studentObj,
+                            journals: studentJournals,
+                          });
+                        }}
+                        className="w-full py-1.5 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-300 text-[#0753A5] font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>Lihat Riwayat Jurnal Siswa</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Rombel Performance & Participation Comparison */}
+          {classBreakdowns.length > 0 && (
+            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Perbandingan Partisipasi Jurnal Lintas Rombel
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Monitoring keaktifan harian dan kelengkapan jurnal di setiap kelas secara komparatif.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('CLASSES')}
+                  className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                >
+                  Kelola Portofolio Kelas →
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {classBreakdowns.map((c) => (
+                  <div
+                    key={c.id || c.name}
+                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-blue-300 transition-all flex flex-col justify-between space-y-2.5 cursor-pointer"
+                    onClick={() => setSelectedClass(c)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-900">{c.name}</h4>
+                        <span className="text-[10px] text-slate-500">Wali: {c.teacher}</span>
+                      </div>
+                      <span className="text-xs font-black text-[#0753A5] bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
+                        {c.completeness}%
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] text-slate-600">
+                        <span>Konsistensi Rata-rata</span>
+                        <strong className="text-emerald-700">{c.consistency}%</strong>
+                      </div>
+                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${c.consistency}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
+                      <span>Hari Ini: <strong>{c.todayFilledCount}</strong> / {c.students} Anak</span>
+                      <span>Total Jurnal: <strong>{c.totalJournals}</strong></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* School Programs Quick Cards */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
@@ -1673,6 +2291,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                   <th className="py-3 px-3">Rombel / Fase</th>
                   <th className="py-3 px-3">Wali Kelas</th>
                   <th className="py-3 px-3">Siswa</th>
+                  <th className="py-3 px-3">Jurnal Murid</th>
                   <th className="py-3 px-3">Kelengkapan</th>
                   <th className="py-3 px-3">Konsistensi</th>
                   <th className="py-3 px-3">Terpantau Baik</th>
@@ -1684,7 +2303,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {filteredClassBreakdowns.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-500">
+                    <td colSpan={10} className="py-12 text-center text-slate-500">
                       <GraduationCap className="w-9 h-9 text-slate-300 mx-auto mb-2" />
                       <p className="font-bold text-slate-700 text-sm">
                         {classSearchQuery ? 'Rombel Tidak Ditemukan' : 'Belum Ada Rombongan Belajar Terdaftar'}
@@ -1712,6 +2331,12 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                         <div className="text-[10px] text-slate-400">{c.teacherNip}</div>
                       </td>
                       <td className="py-3 px-3 font-semibold text-slate-800">{c.students} Anak</td>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-900">{c.totalJournals || 0} Jurnal</div>
+                        <div className="text-[10px] text-emerald-700 font-semibold">
+                          {c.todayFilledCount || 0} mengisi hari ini
+                        </div>
+                      </td>
                       <td className="py-3 px-3 font-bold text-[#0753A5]">{c.completeness}%</td>
                       <td className="py-3 px-3 font-bold text-emerald-700">{c.consistency}%</td>
                       <td className="py-3 px-3">
@@ -2403,7 +3028,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { label: '🥗 Sarapan Gizi & Tumbler', key: 'sarapan' },
-                    { label: '🌙 1 Jam Bebas Gawai', key: 'tidur' },
+                    { label: '������ 1 Jam Bebas Gawai', key: 'tidur' },
                     { label: '🏃 Senam Ceria 7KAIH', key: 'senam' },
                     { label: '📚 Pojok Literasi Pagi', key: 'baca' },
                     { label: '🤲 Bintang Fajar Doa', key: 'ibadah' },
@@ -2539,19 +3164,24 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
         </div>
       )}
 
-      {/* Class Detail / Consultation Modal with Synchronized Student Roster */}
+      {/* Class Detail / Consultation Modal with Synchronized Student Roster & Live Journals */}
       {selectedClass && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-3xl max-h-[92vh] rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-[#0753A5] to-[#0A64C2] p-6 text-white flex items-center justify-between shrink-0">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full">
-                  Detail Portofolio Rombel Terintegrasi
-                </span>
-                <h3 className="text-lg font-black mt-1">{selectedClass.name}</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full">
+                    Detail Portofolio Rombel Terintegrasi
+                  </span>
+                  <span className="text-[10px] font-bold bg-emerald-400/30 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-full">
+                    {selectedClass.totalJournals || 0} Jurnal Terdata
+                  </span>
+                </div>
+                <h3 className="text-lg font-black mt-1.5">{selectedClass.name}</h3>
                 <p className="text-xs text-blue-100 mt-0.5">
-                  Wali Kelas: {selectedClass.teacher} ({selectedClass.teacherNip}) • {selectedClass.students} Siswa Terdaftar • {selectedClass.academicYear}
+                  Wali Kelas: <strong>{selectedClass.teacher}</strong> ({selectedClass.teacherNip}) • {selectedClass.students} Siswa Terdaftar • {selectedClass.academicYear}
                 </p>
               </div>
               <button
@@ -2567,77 +3197,138 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
               {/* Metrics Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="p-3 rounded-2xl bg-blue-50/70 border border-blue-100 text-center">
-                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Kelengkapan</span>
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Kelengkapan Jurnal</span>
                   <span className="text-base font-black text-[#0753A5]">{selectedClass.completeness}%</span>
                 </div>
                 <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100 text-center">
-                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Konsistensi</span>
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Konsistensi Pembiasaan</span>
                   <span className="text-base font-black text-emerald-700">{selectedClass.consistency}%</span>
                 </div>
-                <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-100 text-center">
-                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Penguatan</span>
-                  <span className="text-base font-black text-amber-700">{selectedClass.warning} Siswa</span>
+                <div className="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-100 text-center">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Mengisi Hari Ini</span>
+                  <span className="text-base font-black text-indigo-700">
+                    {selectedClass.todayFilledCount || 0} Siswa
+                  </span>
                 </div>
-                <div className="p-3 rounded-2xl bg-rose-50/70 border border-rose-100 text-center">
-                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Pendampingan</span>
-                  <span className="text-base font-black text-rose-700">{selectedClass.assist} Siswa</span>
-                </div>
-              </div>
-
-              {/* Habit Highlights */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                  Sorotan Pembiasaan Kelas
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div className="p-2.5 rounded-xl bg-white border border-slate-200">
-                    <span className="text-slate-500 text-[11px] block">⭐ Pembiasaan Paling Unggul:</span>
-                    <strong className="text-emerald-700 font-bold">{selectedClass.topHabit}</strong>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white border border-slate-200">
-                    <span className="text-slate-500 text-[11px] block">🎯 Sasaran Penguatan Prioritas:</span>
-                    <strong className="text-amber-700 font-bold">{selectedClass.priorityHabit}</strong>
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+                  <span className="text-[10px] text-slate-500 font-bold block uppercase">Distribusi Status</span>
+                  <div className="flex items-center justify-center gap-1 mt-1 text-xs font-bold">
+                    <span className="text-emerald-700">{selectedClass.good} B</span> •
+                    <span className="text-amber-700">{selectedClass.warning} P</span> •
+                    <span className="text-rose-700">{selectedClass.assist} D</span>
                   </div>
                 </div>
               </div>
 
-              {/* Synchronized Student Roster (from Admin Sekolah) */}
+              {/* 7 Habits Breakdown for this Rombel */}
+              {selectedClass.habitStats && selectedClass.habitStats.length > 0 && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Capaian 7 Dimensi Kebiasaan Rombel {selectedClass.rawName || selectedClass.name}
+                    </h4>
+                    <span className="text-[10px] text-slate-500">
+                      ⭐ Unggul: <strong>{selectedClass.topHabit}</strong> • 🎯 Prioritas: <strong>{selectedClass.priorityHabit}</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                    {selectedClass.habitStats.map((h: any) => (
+                      <div key={h.code} className="p-2 rounded-xl bg-white border border-slate-200 text-center">
+                        <span className="text-base">{h.label === 'Bangun Pagi' ? '🌅' : h.label === 'Beribadah' ? '🤲' : h.label === 'Berolahraga' ? '🏃' : h.label === 'Makan Sehat' ? '🥗' : h.label === 'Gemar Belajar' ? '📚' : h.label === 'Bermasyarakat' ? '🤝' : '🌙'}</span>
+                        <div className="text-[10px] font-bold text-slate-700 mt-0.5 truncate">{h.label}</div>
+                        <div className="text-xs font-black text-[#0753A5]">{h.percentage}%</div>
+                        <div className="text-[9px] text-slate-400">{h.completedCount} terisi</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Synchronized Student Roster With Real-time Journal Progress */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-[#0753A5]" />
-                    <span>Daftar Peserta Didik (Data dari Admin Sekolah)</span>
+                    <span>Daftar Peserta Didik & Progres Jurnal Terkini</span>
                   </h4>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-900">
-                    {selectedClass.studentList && selectedClass.studentList.length > 0
-                      ? `${selectedClass.studentList.length} Siswa Terdaftar`
-                      : `${selectedClass.students} Kuota Rombel`}
+                    {selectedClass.studentsDetail && selectedClass.studentsDetail.length > 0
+                      ? `${selectedClass.studentsDetail.length} Siswa Terdata`
+                      : `${selectedClass.students} Siswa`}
                   </span>
                 </div>
 
-                {selectedClass.studentList && selectedClass.studentList.length > 0 ? (
-                  <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-2xl">
+                {selectedClass.studentsDetail && selectedClass.studentsDetail.length > 0 ? (
+                  <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-2xl">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 text-slate-500 font-bold text-[10px] uppercase border-b border-slate-200 sticky top-0">
                         <tr>
-                          <th className="py-2 px-3">NISN</th>
-                          <th className="py-2 px-3">Nama Siswa</th>
-                          <th className="py-2 px-2 text-center">L/P</th>
-                          <th className="py-2 px-3">Orang Tua</th>
-                          <th className="py-2 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-3">NISN</th>
+                          <th className="py-2.5 px-3">Nama Siswa</th>
+                          <th className="py-2.5 px-2 text-center">Jurnal</th>
+                          <th className="py-2.5 px-2 text-center">Hari Ini</th>
+                          <th className="py-2.5 px-2 text-center">Konsistensi</th>
+                          <th className="py-2.5 px-2 text-center">Status</th>
+                          <th className="py-2.5 px-2 text-center">Validasi Ortu</th>
+                          <th className="py-2.5 px-3 text-center">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {selectedClass.studentList.map((s: Student) => (
-                          <tr key={s.id} className="hover:bg-slate-50/60">
-                            <td className="py-2 px-3 font-mono text-slate-600 text-[11px]">{s.nisn}</td>
-                            <td className="py-2 px-3 font-bold text-slate-900">{s.name}</td>
-                            <td className="py-2 px-2 text-center text-slate-600">{s.gender}</td>
-                            <td className="py-2 px-3 text-slate-600 text-[11px]">{s.parentName || '-'}</td>
-                            <td className="py-2 px-3 text-center">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                {s.status}
+                        {selectedClass.studentsDetail.map((s: any) => (
+                          <tr key={s.id || s.nisn} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-2.5 px-3 font-mono text-slate-600 text-[11px]">{s.nisn}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{s.name}</td>
+                            <td className="py-2.5 px-2 text-center font-semibold text-slate-700">
+                              {s.journalCount} Hari
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
+                              {s.isFilledToday ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                  ✓ ({s.todayHabitsCount}/7)
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">
+                                  Belum Isi
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-2 text-center font-black text-[#0753A5]">
+                              {s.consistencyRate}%
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  s.category === 'TERPANTAU_BAIK'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : s.category === 'PERLU_PENGUATAN'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-rose-100 text-rose-800'
+                                }`}
+                              >
+                                {s.category === 'TERPANTAU_BAIK' ? 'Baik' : s.category === 'PERLU_PENGUATAN' ? 'Penguatan' : 'Damping'}
                               </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
+                              {s.isParentValidated ? (
+                                <span className="text-[10px] font-bold text-emerald-700">✓ Valid</span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400">Menunggu</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <button
+                                onClick={() => {
+                                  setInspectedStudent({
+                                    student: s,
+                                    journals: s.studentJournals || [],
+                                  });
+                                }}
+                                className="px-2 py-1 rounded-md border border-slate-200 hover:bg-blue-50 hover:border-blue-300 text-[#0753A5] font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Lihat Jurnal</span>
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -2683,11 +3374,143 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
             {/* Modal Footer */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
               <span className="text-[11px] text-slate-500">
-                Portofolio disinkronkan otomatis dengan SIM Satuan Pendidikan.
+                Portofolio disinkronkan otomatis dengan SIM Satuan Pendidikan dan Jurnal Murid Terkini.
               </span>
               <button
                 onClick={() => setSelectedClass(null)}
                 className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Journal Inspection Modal (Detail Pengisian Jurnal Murid oleh Kepala Sekolah) */}
+      {inspectedStudent && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-indigo-700 to-blue-800 p-5 text-white flex items-center justify-between shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full">
+                    Inspeksi Jurnal Murid Terkini
+                  </span>
+                  <span className="text-[10px] font-bold bg-white/20 px-2 py-0.5 rounded-full">
+                    {inspectedStudent.journals.length} Entri Tersimpan
+                  </span>
+                </div>
+                <h3 className="text-base font-black mt-1">
+                  {inspectedStudent.student.name} ({inspectedStudent.student.className || selectedClass?.name || 'Rombel'})
+                </h3>
+                <p className="text-xs text-indigo-100 mt-0.5">
+                  NISN: <strong>{inspectedStudent.student.nisn || '-'}</strong> • Konsistensi: <strong>{inspectedStudent.student.consistencyRate || 0}%</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setInspectedStudent(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {inspectedStudent.journals.length === 0 ? (
+                <div className="p-8 rounded-2xl border border-dashed border-slate-200 text-center text-slate-500 space-y-2">
+                  <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                  <p className="text-xs font-bold text-slate-700">Belum Ada Catatan Jurnal</p>
+                  <p className="text-[11px] text-slate-400">
+                    Siswa ini belum mengisi jurnal harian 7KAIH secara mandiri.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {inspectedStudent.journals
+                    .sort((a, b) => (b.journalDate || '').localeCompare(a.journalDate || ''))
+                    .map((j) => {
+                      const completedCount = j.completedCount !== undefined
+                        ? j.completedCount
+                        : j.entries
+                        ? Object.values(j.entries).filter((e: any) => e?.completed).length
+                        : 0;
+
+                      return (
+                        <div
+                          key={j.id || j.journalDate}
+                          className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-2">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-blue-600" />
+                              <strong className="text-xs font-bold text-slate-900">{j.journalDate}</strong>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900">
+                                {completedCount} dari 7 Kebiasaan Terlaksana
+                              </span>
+                            </div>
+
+                            <div>
+                              {j.parentValidated ? (
+                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <Check className="w-3 h-3" />
+                                  <span>Divalidasi Orang Tua: {j.parentValidatorName || 'Orang Tua / Wali'}</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                                  Menunggu Validasi Orang Tua
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* 7 Habits Checkboxes Display */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                            {schoolHabitAnalytics.map((h) => {
+                              const entry = (j.entries && (j.entries as any)[h.code]) || (j.habits && (j.habits as any)[h.code]);
+                              const isDone = !!(entry && (entry.completed || entry.status === 'COMPLETED'));
+                              return (
+                                <div
+                                  key={h.code}
+                                  className={`p-2 rounded-xl border flex items-center gap-2 ${
+                                    isDone
+                                      ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950 font-semibold'
+                                      : 'bg-white border-slate-200 text-slate-400'
+                                  }`}
+                                >
+                                  <span className="text-base">{h.icon}</span>
+                                  <div className="text-[10px] leading-tight">
+                                    <div className="font-bold truncate">{h.label}</div>
+                                    <div>{isDone ? '✓ Terlaksana' : '—'}</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Validation Note or Reflection Note */}
+                          {j.parentValidationNote && (
+                            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900">
+                              💬 <strong>Catatan Orang Tua:</strong> {j.parentValidationNote}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-500">
+                Pencatatan pembiasaan bersifat formatif, apresiatif, dan non-komparatif.
+              </span>
+              <button
+                onClick={() => setInspectedStudent(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 cursor-pointer shadow-xs"
               >
                 Tutup
               </button>
