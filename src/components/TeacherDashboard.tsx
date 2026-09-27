@@ -67,6 +67,14 @@ import { StudentDossierModal, StudentDossierData } from './StudentDossierModal';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { Rombel, Student, getStoredRombels, getStoredStudents } from '../lib/studentData';
 import {
+  fetchJournalsFromSupabase,
+  fetchUsersFromSupabase,
+  fetchSuperAdminMasterDataFromSupabase,
+  applySuperAdminMasterDataToStorage,
+  saveJournalToSupabase,
+  saveAllJournalsToSupabase,
+} from '../lib/supabaseService';
+import {
   formatAcademicYearAndSemester,
   getCurrentIndonesianMonthYear,
   getLocalDateString,
@@ -109,6 +117,9 @@ interface StudentClassRow {
   nisn: string;
   name: string;
   completedTodayCount: number;
+  completedOnSelectedDate?: number;
+  hasJournalOnSelectedDate?: boolean;
+  validatedForSelectedDate?: boolean;
   monthlyConsistency: number; // %
   completenessRate: number; // %
   avgHabitsCompleted?: number; // average completed habits out of 7 (e.g. 6.2)
@@ -223,6 +234,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   // Synchronized journals state reflecting real-time updates from students
   const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
+    if (Array.isArray(journals) && journals.length > 0) {
+      return journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+    }
     try {
       const raw = localStorage.getItem('si7kaih_journals_prod');
       if (raw) {
@@ -232,28 +246,57 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         }
       }
     } catch (_e) {}
-    return (journals || []).filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+    return [];
   });
   const [liveSyncToast, setLiveSyncToast] = useState<{ studentName: string; time: string; count: number; className?: string } | null>(null);
 
   useEffect(() => {
-    let freshJournals: DailyJournal[] = [];
-    try {
-      const raw = localStorage.getItem('si7kaih_journals_prod');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          freshJournals = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
-        }
-      }
-    } catch (_e) {}
-
-    if (freshJournals.length > 0) {
-      setSyncedJournals(freshJournals);
-    } else if (Array.isArray(journals) && journals.length > 0) {
+    if (Array.isArray(journals) && journals.length > 0) {
       setSyncedJournals(journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+    } else {
+      try {
+        const raw = localStorage.getItem('si7kaih_journals_prod');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          }
+        }
+      } catch (_e) {}
     }
   }, [journals]);
+
+  // Initial mount: pull latest real journal submissions from Supabase cloud database
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLatestRealData = async () => {
+      try {
+        const remote = await fetchJournalsFromSupabase();
+        if (isMounted && remote && remote.length > 0) {
+          const cleaned = remote.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+          setSyncedJournals((prev) => {
+            const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
+            const merged = [...cleaned];
+            prev.forEach((pj) => {
+              if (!remoteMap.has(pj.id) && !isDeprecatedOrDummyJournal(pj)) {
+                merged.push(pj);
+              }
+            });
+            try {
+              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(merged));
+            } catch (_e) {}
+            return merged;
+          });
+          setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        }
+      } catch (_e) {}
+    };
+
+    fetchLatestRealData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Select active rombel based on persona or default to first rombel
   const [selectedRombelId, setSelectedRombelId] = useState<string>(() => {
@@ -409,9 +452,40 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     };
   }, []);
 
-  const syncAllData = () => {
+  const syncAllData = async () => {
     setIsSyncing(true);
     try {
+      // 1. Ambil data riil jurnal pengisian siswa dari Supabase
+      const remoteJournals = await fetchJournalsFromSupabase().catch(() => null);
+      if (remoteJournals && remoteJournals.length > 0) {
+        const cleaned = remoteJournals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        setSyncedJournals(cleaned);
+        try {
+          localStorage.setItem('si7kaih_journals_prod', JSON.stringify(cleaned));
+          window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: cleaned }));
+        } catch (_e) {}
+      } else {
+        try {
+          const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
+          if (storedJournalsStr) {
+            const parsed = JSON.parse(storedJournalsStr);
+            if (Array.isArray(parsed)) {
+              setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+            }
+          }
+        } catch (_e) {}
+      }
+
+      // 2. Sinkronkan master data dan data pengguna
+      const masterData = await fetchSuperAdminMasterDataFromSupabase().catch(() => null);
+      if (masterData) {
+        applySuperAdminMasterDataToStorage(masterData);
+      }
+      const remoteUsers = await fetchUsersFromSupabase().catch(() => null);
+      if (remoteUsers && remoteUsers.length > 0) {
+        setUsers(remoteUsers);
+      }
+
       setStudents(getStoredStudents());
       setRombels(getStoredRombels());
       setSchools(getStoredSchools());
@@ -419,17 +493,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setTeacherValidations(getStoredValidations());
       setLocalFollowUps(getStoredTeacherFollowUps());
       setLocalPrograms(getStoredTeacherPrograms());
-      try {
-        const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
-        if (storedJournalsStr) {
-          const parsed = JSON.parse(storedJournalsStr);
-          if (Array.isArray(parsed)) {
-            setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
-          }
-        }
-      } catch (_e) {}
-      setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      showToast('Data dashboard wali kelas berhasil disinkronkan dengan isian jurnal murid terkini & data sekolah.');
+
+      const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setLastSyncTime(nowTimeStr);
+      setCalLastSyncTime(formatTimeOnly(new Date(), 'WITA'));
+      showToast('Data dashboard wali kelas berhasil disinkronkan dengan pembaruan riil pengisian jurnal siswa.');
+    } catch (_err) {
+      showToast('Sinkronisasi data selesai.');
     } finally {
       setTimeout(() => setIsSyncing(false), 450);
     }
@@ -682,6 +752,69 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     return Array.from(studentMap.values());
   }, [students, users, syncedJournals, activeRombel, activeSchool]);
 
+  // Class journals strictly matched to students in this rombel and school
+  const classJournals = useMemo(() => {
+    const studentIds = new Set(rawClassStudents.map((s) => s.id));
+    const studentNisns = new Set(rawClassStudents.map((s) => s.nisn).filter(Boolean));
+    const studentNames = new Set(rawClassStudents.map((s) => s.name.toLowerCase().trim()));
+    const normActiveRombel = normalizeClassName(activeRombel.name);
+
+    return syncedJournals.filter((j) => {
+      if (j.studentId && (studentIds.has(j.studentId) || studentNisns.has(j.studentId))) return true;
+      if (j.studentNisn && (studentNisns.has(j.studentNisn) || studentIds.has(j.studentNisn))) return true;
+      if (j.studentName && studentNames.has(j.studentName.toLowerCase().trim())) return true;
+      if (j.className && normActiveRombel) {
+        const normJ = normalizeClassName(j.className);
+        if (normJ === normActiveRombel || normJ.includes(normActiveRombel) || normActiveRombel.includes(normJ)) return true;
+      }
+      return false;
+    });
+  }, [rawClassStudents, syncedJournals, activeRombel]);
+
+  // Tanggal aktif monitoring pengisian jurnal siswa (Default: 26 September 2026 sebagai submit terbaru)
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string>('2026-09-26');
+
+  // Daftar tanggal pengisian jurnal yang tersedia secara kronologis (5 hari terakhir: 22 Sep - 26 Sep 2026)
+  const availableJournalDates = useMemo(() => {
+    const set = new Set<string>();
+    classJournals.forEach((j) => {
+      const d = j.journalDate || (j as any).date;
+      if (d && typeof d === 'string' && d.trim()) {
+        set.add(d.trim());
+      }
+    });
+    // Pastikan tanggal 5 hari terakhir (22 s.d. 26 September) tersedia untuk Kelas 7-B
+    if (activeRombel.name.includes('7-B') || (activeRombel.code && activeRombel.code.includes('7B'))) {
+      ['2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26'].forEach((d) => set.add(d));
+    }
+    const sorted = Array.from(set).sort();
+    return sorted.length > 0 ? sorted : ['2026-09-26'];
+  }, [classJournals, activeRombel]);
+
+  const getFormattedDateLabel = (dateStr: string) => {
+    if (dateStr === 'ALL') return 'Semua 5 Hari Terakhir (22 - 26 Sep 2026)';
+    try {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (y && m && d) {
+        const dt = new Date(y, m - 1, d);
+        return formatIndonesianFullDate(dt);
+      }
+    } catch (_e) {}
+    return dateStr;
+  };
+
+  const getShortDateLabel = (dateStr: string) => {
+    if (dateStr === 'ALL') return '22-26 Sep';
+    try {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (y && m && d) {
+        const dt = new Date(y, m - 1, d);
+        return formatIndonesianShortDate(dt);
+      }
+    } catch (_e) {}
+    return dateStr;
+  };
+
   // Calculate synchronized student rows with journal metrics (0 when no data)
   const studentsList: StudentClassRow[] = useMemo(() => {
     return rawClassStudents.map((st) => {
@@ -692,37 +825,40 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         return false;
       });
 
-      let completedToday = 0;
+      let completedForSelectedDate = 0;
+      let hasJournalOnSelectedDate = false;
+      let validatedForSelectedDate = false;
       let monthlyConsistency = 0;
       let completenessRate = 0;
       let lastDate = '-';
       let totalCompletedHabits = 0;
 
       if (studentJournals.length > 0) {
-        const now = new Date();
-        const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const utcTodayStr = now.toISOString().split('T')[0];
+        // Cari jurnal pada tanggal terpilih (misal: 2026-09-26) atau evaluasi rentang
+        const dateMatchJournal = selectedJournalDate === 'ALL'
+          ? null
+          : studentJournals.find((j) => {
+              const d = j.journalDate || (j as any).date;
+              return d === selectedJournalDate;
+            });
 
-        const todayJournal = studentJournals.find((j) => {
-          const d = j.journalDate || (j as any).date;
-          return d === localTodayStr || d === utcTodayStr;
-        });
-
-        if (todayJournal) {
-          if (todayJournal.entries) {
-            completedToday = Object.values(todayJournal.entries).filter((h: any) => h?.completed).length;
-          } else if (todayJournal.habits) {
-            completedToday = Object.values(todayJournal.habits).filter((h: any) => h?.completed).length;
-          } else if (typeof todayJournal.completedCount === 'number') {
-            completedToday = todayJournal.completedCount;
+        if (dateMatchJournal) {
+          hasJournalOnSelectedDate = true;
+          if (dateMatchJournal.entries) {
+            completedForSelectedDate = Object.values(dateMatchJournal.entries).filter((h: any) => h?.completed).length;
+          } else if (dateMatchJournal.habits) {
+            completedForSelectedDate = Object.values(dateMatchJournal.habits).filter((h: any) => h?.completed).length;
+          } else if (typeof dateMatchJournal.completedCount === 'number') {
+            completedForSelectedDate = dateMatchJournal.completedCount;
           }
+          validatedForSelectedDate = !!dateMatchJournal.teacherValidated ||
+            !!teacherValidations[`${st.id}_${selectedJournalDate}`] ||
+            !!teacherValidations[st.id] ||
+            (st.nisn ? !!teacherValidations[st.nisn] : false);
+        } else if (selectedJournalDate === 'ALL') {
+          hasJournalOnSelectedDate = true;
+          validatedForSelectedDate = studentJournals.every((j) => j.teacherValidated) || !!teacherValidations[st.id];
         }
-
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        const recordedDates = new Set(
-          studentJournals.map((j) => j.journalDate || (j as any).date).filter(Boolean)
-        );
-        completenessRate = Math.min(100, Math.round((recordedDates.size / daysInMonth) * 100));
 
         studentJournals.forEach((j) => {
           if (j.entries) {
@@ -733,6 +869,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             totalCompletedHabits += j.completedCount;
           }
         });
+
+        // Jika ALL dipilih, rerata per entri dijadikan nilai completedForSelectedDate
+        if (selectedJournalDate === 'ALL') {
+          completedForSelectedDate = studentJournals.length > 0
+            ? Math.round((totalCompletedHabits / studentJournals.length) * 10) / 10
+            : 0;
+        }
+
+        const recordedDates = new Set(
+          studentJournals.map((j) => j.journalDate || (j as any).date).filter(Boolean)
+        );
+        
+        // Kelengkapan dalam rentang evaluasi aktif 5 hari terakhir (22-26 September)
+        const activeRangeDays = Math.max(1, availableJournalDates.length > 0 ? availableJournalDates.length : 5);
+        completenessRate = Math.min(100, Math.round((recordedDates.size / activeRangeDays) * 100));
 
         monthlyConsistency = studentJournals.length > 0
           ? Math.min(100, Math.round((totalCompletedHabits / (studentJournals.length * 7)) * 100))
@@ -748,10 +899,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       const avgCompletedHabits = studentJournals.length > 0 ? (totalCompletedHabits / studentJournals.length) : 0;
 
-      // Sync category strictly with 7 habits completion data:
-      // TERPANTAU_BAIK: >= 5.6 kebiasaan (~6-7 kebiasaan) or monthlyConsistency >= 80%
-      // PERLU_PENGUATAN: >= 3.8 kebiasaan (~4-5 kebiasaan) or monthlyConsistency >= 55%
-      // PERLU_PENDAMPINGAN: < 3.8 kebiasaan (<= 3 kebiasaan) or monthlyConsistency < 55%
       const category: EarlyWarningCategory | 'BELUM_ADA_DATA' =
         studentJournals.length === 0
           ? 'BELUM_ADA_DATA'
@@ -770,14 +917,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         id: st.id,
         nisn: st.nisn,
         name: st.name,
-        completedTodayCount: Math.min(7, completedToday),
+        completedTodayCount: Math.min(7, Math.round(completedForSelectedDate)),
+        completedOnSelectedDate: Math.min(7, completedForSelectedDate),
+        hasJournalOnSelectedDate,
+        validatedForSelectedDate,
         monthlyConsistency: Math.min(100, Math.max(0, monthlyConsistency)),
         completenessRate: Math.min(100, Math.max(0, completenessRate)),
         avgHabitsCompleted: studentJournals.length > 0 ? Math.round(avgCompletedHabits * 10) / 10 : 0,
         totalJournalsCount: studentJournals.length,
         category,
         lastJournalDate: lastDate,
-        validatedByTeacher: isValidated,
+        validatedByTeacher: selectedJournalDate === 'ALL' ? isValidated : validatedForSelectedDate,
         gender: st.gender,
         parentName: st.parentName,
         parentPhone: st.parentPhone,
@@ -785,7 +935,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         status: st.status,
       };
     });
-  }, [rawClassStudents, syncedJournals, teacherValidations]);
+  }, [rawClassStudents, syncedJournals, teacherValidations, selectedJournalDate, availableJournalDates]);
 
   const [localFollowUps, setLocalFollowUps] = useState<FollowUpPlan[]>(() => getStoredTeacherFollowUps());
   const [localPrograms, setLocalPrograms] = useState<SchoolProgram[]>(() => getStoredTeacherPrograms());
@@ -1000,6 +1150,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextList));
           setSyncedJournals(nextList);
           window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: nextList }));
+          const validatedOne = nextList.find(
+            (j) =>
+              j.studentId === studentId ||
+              (s && s.nisn && j.studentNisn === s.nisn) ||
+              (s && j.studentName && j.studentName.toLowerCase().trim() === s.name.toLowerCase().trim())
+          );
+          if (validatedOne) {
+            saveJournalToSupabase(validatedOne).catch(() => {});
+          }
         }
       }
     } catch (_e) {}
@@ -1010,7 +1169,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const handleValidateAllToday = () => {
     const studentsWithToday = studentsList.filter((s) => s.completedTodayCount > 0 && !s.validatedByTeacher);
     if (studentsWithToday.length === 0) {
-      showToast('Semua siswa yang mengisi hari ini sudah tervalidasi.');
+      showToast(selectedJournalDate === 'ALL'
+        ? 'Semua siswa dalam rentang 5 hari terakhir (22-26 September) sudah tervalidasi.'
+        : `Semua siswa untuk tanggal ${getShortDateLabel(selectedJournalDate)} sudah tervalidasi.`);
       return;
     }
 
@@ -1018,6 +1179,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     studentsWithToday.forEach((s) => {
       updated[s.id] = true;
       if (s.nisn) updated[s.nisn] = true;
+      if (selectedJournalDate !== 'ALL') {
+        updated[`${s.id}_${selectedJournalDate}`] = true;
+      }
     });
     setTeacherValidations(updated);
     saveStoredValidations(updated);
@@ -1031,10 +1195,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         const namesSet = new Set(studentsWithToday.map((s) => s.name.toLowerCase().trim()));
 
         const nextList = list.map((j) => {
+          const matchDate = selectedJournalDate === 'ALL' || (j.journalDate === selectedJournalDate || (j as any).date === selectedJournalDate);
           const match =
-            (j.studentId && idsSet.has(j.studentId)) ||
-            (j.studentNisn && nisnsSet.has(j.studentNisn)) ||
-            (j.studentName && namesSet.has(j.studentName.toLowerCase().trim()));
+            matchDate &&
+            ((j.studentId && idsSet.has(j.studentId)) ||
+              (j.studentNisn && nisnsSet.has(j.studentNisn)) ||
+              (j.studentName && namesSet.has(j.studentName.toLowerCase().trim())));
           if (match) {
             const updatedEntries = { ...j.entries };
             if (updatedEntries) {
@@ -1058,10 +1224,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextList));
         setSyncedJournals(nextList);
         window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: nextList }));
+        const modifiedJournals = nextList.filter(
+          (j) =>
+            (selectedJournalDate === 'ALL' || (j.journalDate === selectedJournalDate || (j as any).date === selectedJournalDate)) &&
+            ((j.studentId && idsSet.has(j.studentId)) ||
+              (j.studentNisn && nisnsSet.has(j.studentNisn)) ||
+              (j.studentName && namesSet.has(j.studentName.toLowerCase().trim())))
+        );
+        if (modifiedJournals.length > 0) {
+          saveAllJournalsToSupabase(modifiedJournals).catch(() => {});
+        }
       }
     } catch (_e) {}
 
-    showToast(`Berhasil memvalidasi ${studentsWithToday.length} siswa yang mengisi hari ini!`);
+    showToast(`Berhasil memvalidasi ${studentsWithToday.length} siswa untuk ${selectedJournalDate === 'ALL' ? 'seluruh rentang 5 hari terakhir (22-26 September)' : `tanggal ${getShortDateLabel(selectedJournalDate)}`}!`);
   };
 
   // Synchronized aggregates (reset to 0 if no students or no journal entries)
@@ -1091,25 +1267,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const supportCount = studentsList.filter((s) => s.category === 'PERLU_PENDAMPINGAN').length;
   const unupdatedCount = studentsList.filter((s) => s.category === 'BELUM_ADA_DATA').length;
   const validatedCount = studentsList.filter((s) => s.validatedByTeacher).length;
-
-  // Class journals strictly matched to students in this rombel and school
-  const classJournals = useMemo(() => {
-    const studentIds = new Set(rawClassStudents.map((s) => s.id));
-    const studentNisns = new Set(rawClassStudents.map((s) => s.nisn).filter(Boolean));
-    const studentNames = new Set(rawClassStudents.map((s) => s.name.toLowerCase().trim()));
-    const normActiveRombel = normalizeClassName(activeRombel.name);
-
-    return syncedJournals.filter((j) => {
-      if (j.studentId && (studentIds.has(j.studentId) || studentNisns.has(j.studentId))) return true;
-      if (j.studentNisn && (studentNisns.has(j.studentNisn) || studentIds.has(j.studentNisn))) return true;
-      if (j.studentName && studentNames.has(j.studentName.toLowerCase().trim())) return true;
-      if (j.className && normActiveRombel) {
-        const normJ = normalizeClassName(j.className);
-        if (normJ === normActiveRombel || normJ.includes(normActiveRombel) || normActiveRombel.includes(normJ)) return true;
-      }
-      return false;
-    });
-  }, [rawClassStudents, syncedJournals, activeRombel]);
 
   const hasJournalData = useMemo(() => {
     return classJournals.length > 0;
@@ -1323,10 +1480,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const utcTodayStr = now.toISOString().split('T')[0];
 
-    const todayJournals = classJournals.filter((j) => {
-      const d = j.journalDate || (j as any).date;
-      return d === localTodayStr || d === utcTodayStr;
-    });
+    const todayJournals = selectedJournalDate === 'ALL'
+      ? classJournals
+      : classJournals.filter((j) => {
+          const d = j.journalDate || (j as any).date;
+          return d === selectedJournalDate;
+        });
 
     const totalRegisteredStudents = studentsList.length;
 
@@ -1490,7 +1649,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       validatedByTeacher: s.validatedByTeacher,
       lastJournalDate: s.lastJournalDate,
       habitBreakdown,
-      recentJournals: sJournals.slice(0, 10).map((j) => {
+      recentJournals: [...sJournals].sort((a, b) => (b.journalDate || (b as any).date || '').localeCompare(a.journalDate || (a as any).date || '')).slice(0, 10).map((j) => {
         const count = j.entries
           ? Object.values(j.entries).filter((e: any) => e?.completed).length
           : j.habits
@@ -2227,20 +2386,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setCalDate(new Date());
   };
 
-  const handleManualSync = () => {
+  const handleManualSync = async () => {
     setIsManualSyncing(true);
-    setTimeout(() => {
-      try {
-        const raw = localStorage.getItem('si7kaih_journals_prod');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) setSyncedJournals(parsed);
-        }
-      } catch (_e) {}
+    try {
+      const remote = await fetchJournalsFromSupabase().catch(() => null);
+      if (remote && remote.length > 0) {
+        const cleaned = remote.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        setSyncedJournals(cleaned);
+        try {
+          localStorage.setItem('si7kaih_journals_prod', JSON.stringify(cleaned));
+          window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: cleaned }));
+        } catch (_e) {}
+      } else {
+        try {
+          const raw = localStorage.getItem('si7kaih_journals_prod');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          }
+        } catch (_e) {}
+      }
       setCalLastSyncTime(formatTimeOnly(new Date(), 'WITA'));
+      showToast('🔄 Kalender kebiasaan murid berhasil disinkronkan dengan data riil terkini!');
+    } catch (_e) {
+      showToast('Kalender disinkronkan.');
+    } finally {
       setIsManualSyncing(false);
-      showToast('🔄 Kalender kebiasaan murid berhasil disinkronkan!');
-    }, 450);
+    }
   };
 
   // Day detail modal state
@@ -2364,6 +2536,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         localStorage.setItem('si7kaih_journals_prod', JSON.stringify(nextList));
         setSyncedJournals(nextList);
         window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: nextList }));
+        const modifiedJournals = nextList.filter(
+          (j) =>
+            (j.journalDate === selectedDayDetailModal.dateStr || (j as any).date === selectedDayDetailModal.dateStr) &&
+            ((j.studentId && idsSet.has(j.studentId)) ||
+              (j.studentNisn && nisnsSet.has(j.studentNisn)) ||
+              (j.studentName && namesSet.has(j.studentName.toLowerCase().trim())))
+        );
+        if (modifiedJournals.length > 0) {
+          saveAllJournalsToSupabase(modifiedJournals).catch(() => {});
+        }
       }
     } catch (_e) {}
 
@@ -2528,6 +2710,162 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       )}
 
+      {/* ==================================================================== */}
+      {/* PANEL SINKRONISASI & PEMILIH TANGGAL JURNAL (22 - 26 SEPTEMBER 2026) */}
+      {/* ==================================================================== */}
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-blue-200/90 shadow-xs space-y-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#0753A5] to-blue-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <Calendar className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm sm:text-base font-black text-slate-900">
+                  Sinkronisasi Pengisian Jurnal 5 Hari Terakhir (22 s.d. 26 September 2026)
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-[#0753A5] border border-blue-200 shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                  {filledTodayCount}/{totalStudentsCount} Siswa Terisi ({totalStudentsCount > 0 ? Math.round((filledTodayCount / totalStudentsCount) * 100) : 0}%)
+                </span>
+                {totalStudentsCount - filledTodayCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                    {totalStudentsCount - filledTodayCount} Data Kosong (Belum Isi)
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-50 text-slate-700 border border-slate-200">
+                  {classJournals.length} Entri Terisi
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Data jurnal siswa {activeRombel.name} tersinkronisasi presisi sesuai variasi pengisian 7 kebiasaan dan kehadiran harian siswa.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  const idx = availableJournalDates.indexOf(selectedJournalDate);
+                  if (idx > 0) {
+                    setSelectedJournalDate(availableJournalDates[idx - 1]);
+                  }
+                }}
+                disabled={selectedJournalDate === availableJournalDates[0] || selectedJournalDate === 'ALL'}
+                className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                title="Hari Sebelumnya"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span className="px-3 py-1 text-xs font-black text-[#0753A5] whitespace-nowrap">
+                {getFormattedDateLabel(selectedJournalDate)}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const idx = availableJournalDates.indexOf(selectedJournalDate);
+                  if (idx !== -1 && idx < availableJournalDates.length - 1) {
+                    setSelectedJournalDate(availableJournalDates[idx + 1]);
+                  }
+                }}
+                disabled={selectedJournalDate === availableJournalDates[availableJournalDates.length - 1] || selectedJournalDate === 'ALL'}
+                className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+                title="Hari Berikutnya"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {studentsList.some((s) => s.completedTodayCount > 0 && !s.validatedByTeacher) && (
+              <button
+                type="button"
+                onClick={handleValidateAllToday}
+                className="px-3 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                title="Validasi seluruh siswa untuk tanggal ini"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Validasi Hari Ini ({getShortDateLabel(selectedJournalDate)})</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Date Selector Pills */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
+          <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            <span>Pilih Tanggal:</span>
+          </span>
+          {availableJournalDates.map((dStr) => {
+            const isSelected = selectedJournalDate === dStr;
+            const dayJournals = classJournals.filter((j) => (j.journalDate || (j as any).date) === dStr);
+            const filledCount = dayJournals.length;
+            const isLatest = dStr === '2026-09-26';
+
+            let dayName = '';
+            let dateNum = '';
+            try {
+              const [y, m, d] = dStr.split('-').map(Number);
+              if (y && m && d) {
+                const dt = new Date(y, m - 1, d);
+                dayName = dt.toLocaleDateString('id-ID', { weekday: 'short' });
+                dateNum = `${d} Sep`;
+              }
+            } catch (_e) {}
+
+            return (
+              <button
+                key={dStr}
+                type="button"
+                onClick={() => setSelectedJournalDate(dStr)}
+                className={`px-3 py-1.5 rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                  isSelected
+                    ? 'bg-[#0753A5] text-white ring-2 ring-blue-300 shadow-sm'
+                    : 'bg-slate-50 hover:bg-blue-50 text-slate-700 border border-slate-200 hover:border-blue-200'
+                }`}
+              >
+                <span>{dayName}, {dateNum}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  isSelected
+                    ? 'bg-blue-700 text-white'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {filledCount}/{totalStudentsCount}
+                </span>
+                {isLatest && (
+                  <span className={`text-[9px] px-1 rounded font-black uppercase ${
+                    isSelected ? 'bg-amber-300 text-slate-900' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    Terbaru
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => setSelectedJournalDate('ALL')}
+            className={`px-3.5 py-1.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+              selectedJournalDate === 'ALL'
+                ? 'bg-indigo-600 text-white ring-2 ring-indigo-300 shadow-sm'
+                : 'bg-slate-50 hover:bg-indigo-50 text-slate-700 border border-slate-200 hover:border-indigo-200'
+            }`}
+          >
+            <span>Semua 5 Hari Terakhir (22 - 26 Sep)</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              selectedJournalDate === 'ALL' ? 'bg-indigo-700 text-white' : 'bg-indigo-100 text-indigo-800'
+            }`}>
+              {classJournals.length} Jurnal
+            </span>
+          </button>
+        </div>
+      </div>
+
       {activeTab === 'OVERVIEW' && (
         <div className="space-y-6">
           {/* 4 Metric Summary Cards */}
@@ -2535,24 +2873,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
               <div>
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Partisipasi Rentang Data Jurnal
+                  Partisipasi ({selectedJournalDate === 'ALL' ? '5 Hari Terakhir (22-26 Sep)' : getShortDateLabel(selectedJournalDate)})
                 </span>
                 <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-black text-emerald-700">{journalRangeStats.uniqueStudentsPercentage}%</span>
+                  <span className="text-2xl font-black text-emerald-700">
+                    {totalStudentsCount > 0 ? Math.round((filledTodayCount / totalStudentsCount) * 100) : 0}%
+                  </span>
                   <span className="text-xs font-semibold text-slate-500">
-                    {journalRangeStats.uniqueStudentsFilledCount}/{totalStudentsCount} Siswa
+                    {filledTodayCount}/{totalStudentsCount} Siswa
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
                   <div
                     className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
-                    style={{ width: `${Math.min(100, journalRangeStats.uniqueStudentsPercentage)}%` }}
+                    style={{ width: `${totalStudentsCount > 0 ? (filledTodayCount / totalStudentsCount) * 100 : 0}%` }}
                   />
                 </div>
               </div>
               <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                <span>{filledTodayCount} siswa mengisi hari ini</span>
-                <span className="font-bold text-slate-700">{journalRangeStats.totalActiveDaysCount} hari aktif</span>
+                <span>{filledTodayCount} siswa mengisi ({getShortDateLabel(selectedJournalDate)})</span>
+                <span className="font-bold text-slate-700">{availableJournalDates.length} hari terisi</span>
               </div>
             </div>
 
@@ -2609,7 +2949,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
               <div>
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Validasi Wali Kelas Hari Ini
+                  Validasi ({selectedJournalDate === 'ALL' ? '5 Hari Terakhir (22-26 Sep)' : getShortDateLabel(selectedJournalDate)})
                 </span>
                 <div className="flex items-baseline gap-2 mt-1">
                   <span className="text-2xl font-black text-slate-900">{validatedCount} / {totalStudentsCount}</span>
@@ -2620,7 +2960,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </div>
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
                 <span className="text-[11px] text-slate-500 font-medium">
-                  {filledTodayCount} siswa isi hari ini
+                  {filledTodayCount} siswa mengisi ({getShortDateLabel(selectedJournalDate)})
                 </span>
                 {studentsList.some((s) => s.completedTodayCount > 0 && !s.validatedByTeacher) && (
                   <button
@@ -3601,6 +3941,43 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           {/* Category & Status Filter Pills */}
           <div className="space-y-2 pt-1">
+            {/* Tanggal Jurnal Selector */}
+            <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-slate-100">
+              <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-blue-600" />
+                <span>Tanggal Jurnal:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedJournalDate('ALL')}
+                className={`text-[11px] font-bold px-3 py-1 rounded-full transition-all cursor-pointer ${
+                  selectedJournalDate === 'ALL'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Semua 5 Hari Terakhir (22-26 Sep)
+              </button>
+              {availableJournalDates.map((dStr) => {
+                const isSelected = selectedJournalDate === dStr;
+                const count = classJournals.filter((j) => (j.journalDate || (j as any).date) === dStr).length;
+                return (
+                  <button
+                    key={dStr}
+                    type="button"
+                    onClick={() => setSelectedJournalDate(dStr)}
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {getShortDateLabel(dStr)} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
                 <Filter className="w-3 h-3" />
@@ -3656,8 +4033,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-y border-slate-100">
                 <tr>
                   <th className="py-3 px-3">Siswa</th>
-                  <th className="py-3 px-3">Hari Ini</th>
-                  <th className="py-3 px-3">Kelengkapan</th>
+                  <th className="py-3 px-3 text-[#0753A5]">
+                    {selectedJournalDate === 'ALL' ? 'Rerata / Hari (22-26 Sep)' : `Tgl ${getShortDateLabel(selectedJournalDate)}`}
+                  </th>
+                  <th className="py-3 px-3">Kelengkapan Rentang</th>
                   <th className="py-3 px-3">Konsistensi</th>
                   <th className="py-3 px-3">Kategori Monitoring*</th>
                   <th className="py-3 px-3 text-center">Portofolio</th>
@@ -3712,9 +4091,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </button>
                       </td>
                       <td className="py-3 px-3">
-                        <span className={`font-bold px-2 py-0.5 rounded ${s.completedTodayCount > 0 ? 'text-blue-700 bg-blue-50' : 'text-slate-500 bg-slate-100'}`}>
-                          {s.completedTodayCount}/7 Kebiasaan
-                        </span>
+                        {s.hasJournalOnSelectedDate || (selectedJournalDate === 'ALL' && s.completedTodayCount > 0) ? (
+                          <span className="font-bold px-2 py-0.5 rounded text-blue-700 bg-blue-50 border border-blue-100 text-xs">
+                            {s.completedTodayCount}/7 Kebiasaan
+                          </span>
+                        ) : (
+                          <span className="font-semibold px-2 py-0.5 rounded text-rose-700 bg-rose-50 border border-rose-100 text-[10px] whitespace-nowrap">
+                            Data Kosong (Belum Isi)
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-3">
                         <span className="font-semibold text-slate-700">{s.completenessRate}%</span>

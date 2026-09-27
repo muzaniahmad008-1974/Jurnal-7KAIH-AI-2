@@ -40,26 +40,28 @@ export const DEFAULT_SCHOOLS: SchoolMaster[] = [
     city: 'Kab. Tanah Laut',
     province: 'Kalimantan Selatan',
     address: 'Jl. A. Yani KM. 88, Jorong, Kec. Jorong, Kab. Tanah Laut, Kalimantan Selatan',
-    principalName: 'H. Akhmad Fauzi, M.Pd.',
+    principalName: 'Adang Heri Nugroho, S.Pd, M.M',
     principalNip: '197105121998021004',
-    adminName: 'Operator SIM UPTD SMPN 1 Jorong',
-    adminUsername: 'admin.smpn1jorong',
-    totalStudents: 32,
-    totalClasses: 1,
+    adminName: 'Rina Dewi (Operator SIM)',
+    adminUsername: 'admin.1jorong',
+    totalStudents: 82,
+    totalClasses: 3,
     totalTeachers: 12,
-    habitCompletenessRate: 94,
-    habitConsistencyRate: 91,
+    habitCompletenessRate: 95,
+    habitConsistencyRate: 92,
     activeStatus: 'AKTIF',
     createdAt: '2026-06-01',
   },
 ];
+
+export const RESTORED_SCHOOLS: SchoolMaster[] = DEFAULT_SCHOOLS;
 
 export const getStoredSchools = (): SchoolMaster[] => {
   try {
     const saved = localStorage.getItem('si7kaih_schools_master_prod');
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         // Hilangkan hanya data dummy bawaan lama sistem awal jika masih tersimpan di browser
         const legacyDefaultIds = new Set(['s-smp-01', 's-smp-02', 's-smp-03', 's-smp-04']);
         const legacyDefaultNames = new Set([
@@ -69,18 +71,31 @@ export const getStoredSchools = (): SchoolMaster[] => {
           'smp bintang juara',
         ]);
 
-        const sanitized = parsed.filter(
-          (s: SchoolMaster) =>
-            !legacyDefaultIds.has(s.id) &&
-            !legacyDefaultNames.has((s.name || '').trim().toLowerCase())
-        );
+        const sanitized = parsed
+          .filter(
+            (s: SchoolMaster) =>
+              !legacyDefaultIds.has(s.id) &&
+              !legacyDefaultNames.has((s.name || '').trim().toLowerCase())
+          )
+          .map((s: SchoolMaster) => {
+            const cleanName = (s.name || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
+            const isJorong = cleanName.toLowerCase().includes('jorong') || s.id === 'sch-smpn1-jorong' || s.id === 's-1789602026315';
+            return {
+              ...s,
+              name: isJorong ? 'UPTD SMPN 1 Jorong' : cleanName,
+              activeStatus: isJorong ? ('AKTIF' as const) : s.activeStatus,
+              totalStudents: isJorong ? 82 : s.totalStudents,
+              totalClasses: isJorong ? 3 : s.totalClasses,
+            };
+          });
 
-        if (sanitized.length !== parsed.length) {
-          try {
-            localStorage.setItem('si7kaih_schools_master_prod', JSON.stringify(sanitized));
-          } catch (_e) {}
-        }
-        return sanitized;
+        const hasJorong = sanitized.some((s) => s.name.toLowerCase().includes('jorong'));
+        const finalSchools = hasJorong ? sanitized : [DEFAULT_SCHOOLS[0], ...sanitized];
+
+        try {
+          localStorage.setItem('si7kaih_schools_master_prod', JSON.stringify(finalSchools));
+        } catch (_e) {}
+        return finalSchools;
       }
     }
   } catch (_e) {}

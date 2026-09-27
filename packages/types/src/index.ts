@@ -162,6 +162,8 @@ export interface DailyJournal {
   parentValidatorName?: string; // Name of the parent/guardian validator
   parentValidationType?: 'SIGNATURE' | 'INITIALS'; // Format validasi: Tanda Tangan atau Paraf
   parentValidationSource?: 'STUDENT_DASHBOARD' | 'PARENT_DASHBOARD'; // Sumber validasi
+  teacherValidated?: boolean;
+  teacherValidatedAt?: string;
   className?: string;
   studentNisn?: string;
   schoolName?: string;

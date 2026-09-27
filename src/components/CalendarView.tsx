@@ -10,7 +10,7 @@ import {
   DailyJournal,
   HabitCode,
 } from '../../packages/types/src/index';
-import { HABIT_LIST } from '../lib/constants';
+import { HABIT_LIST, isDeprecatedOrDummyJournal } from '../lib/constants';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -161,6 +161,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const targetName = (studentName || '').trim().toLowerCase();
 
     return list.filter((j) => {
+      if (isDeprecatedOrDummyJournal(j)) return false;
       if (targetId && j.studentId && j.studentId.toLowerCase() === targetId) return true;
       if (targetNisn && j.studentNisn && j.studentNisn === targetNisn) return true;
       if (targetName && j.studentName && j.studentName.trim().toLowerCase() === targetName) return true;

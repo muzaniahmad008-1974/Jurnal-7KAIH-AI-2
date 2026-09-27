@@ -39,6 +39,7 @@ import {
   generateSyntheticJournals,
   calculateBadgesFromJournals,
 } from './lib/mockData';
+import { RESTORED_JOURNALS_REAL, RESTORED_STUDENTS } from './lib/jorongRestoredData';
 
 // UI Components
 import { Header } from './components/Header';
@@ -180,24 +181,64 @@ export default function App() {
   }, [sessionDurationSeconds]);
 
   // Core domain states with LocalStorage persistence for production continuity
-  // Reset kosongkan isian jurnal siswa sesuai permintaan pengguna
+  // Sinkronkan data jurnal murni sesuai data riil yang diinput oleh siswa
   const [journals, setJournals] = useState<DailyJournal[]>(() => {
     try {
-      const resetKey = 'si7kaih_journals_clean_reset_v4';
-      if (!localStorage.getItem(resetKey)) {
-        localStorage.setItem(resetKey, 'true');
-        localStorage.removeItem('si7kaih_journals_prod');
-        return [];
+      const resetKey = 'si7kaih_jorong_real_synced_7b_v9_permanent';
+      const studentResetKey = 'si7kaih_students_clean_v7_nodummy';
+
+      // Bersihkan cache siswa lama untuk menghapus 32 data dummy legacy 8-C
+      if (!localStorage.getItem(studentResetKey)) {
+        localStorage.setItem('si7kaih_students_mandiri', JSON.stringify(RESTORED_STUDENTS));
+        localStorage.setItem(studentResetKey, 'true');
       }
+
       const saved = localStorage.getItem('si7kaih_journals_prod');
-      if (saved) {
+      if (localStorage.getItem(resetKey) && saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        if (Array.isArray(parsed) && parsed.length >= 100) {
+          const filtered = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+          if (filtered.length > 0) return filtered;
         }
       }
-    } catch (_e) {}
-    return [];
+
+      // Bersihkan cache data jurnal lama, gantikan dengan data real input siswa (termasuk 7-B 5 hari terakhir)
+      localStorage.setItem('si7kaih_journals_prod', JSON.stringify(RESTORED_JOURNALS_REAL));
+      localStorage.setItem(resetKey, 'true');
+
+      // Bersihkan tombstone tanggal 20-26 September jika ada
+      const rawTs = localStorage.getItem('si7kaih_deleted_journals_tombstones');
+      if (rawTs) {
+        const tsObj = JSON.parse(rawTs);
+        const datesToClean = [
+          '2026-09-01',
+          '2026-09-02',
+          '2026-09-03',
+          '2026-09-04',
+          '2026-09-19',
+          '2026-09-20',
+          '2026-09-21',
+          '2026-09-22',
+          '2026-09-23',
+          '2026-09-24',
+          '2026-09-25',
+          '2026-09-26',
+        ];
+        let tsChanged = false;
+        Object.keys(tsObj).forEach((k) => {
+          if (datesToClean.some((d) => k.includes(d))) {
+            delete tsObj[k];
+            tsChanged = true;
+          }
+        });
+        if (tsChanged) {
+          localStorage.setItem('si7kaih_deleted_journals_tombstones', JSON.stringify(tsObj));
+        }
+      }
+      return RESTORED_JOURNALS_REAL;
+    } catch (_e) {
+      return RESTORED_JOURNALS_REAL;
+    }
   });
 
   // Listen to journal updates across tabs for realtime synchronization (avoid self-triggering loop)
@@ -455,9 +496,32 @@ export default function App() {
         if (isMounted) {
           if (remoteJournals && remoteJournals.length > 0) {
             const filteredJournals = remoteJournals.filter(
-              (j) => !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date)
+              (j) => !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date) && !isDeprecatedOrDummyJournal(j)
             );
-            setJournals(filteredJournals);
+            const cleanJournals = filteredJournals.map((j) => {
+              const cleanSchool = (j.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
+              return {
+                ...j,
+                schoolName:
+                  !cleanSchool || cleanSchool.toLowerCase().includes('jorong')
+                    ? 'UPTD SMPN 1 Jorong'
+                    : cleanSchool,
+                schoolId: 'sch-smpn1-jorong',
+              };
+            });
+            // Pastikan jika ada entri 7-B di RESTORED_JOURNALS_REAL yang belum tersimpan di remote, tetap digabungkan
+            const remoteIds = new Set(cleanJournals.map((j) => j.id));
+            const missingReal = RESTORED_JOURNALS_REAL.filter((j) => !remoteIds.has(j.id) && !isDeprecatedOrDummyJournal(j));
+            const mergedJournals = [...cleanJournals, ...missingReal];
+            setJournals(mergedJournals);
+            try {
+              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(mergedJournals));
+            } catch (_e) {}
+          } else {
+            setJournals(RESTORED_JOURNALS_REAL);
+            try {
+              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(RESTORED_JOURNALS_REAL));
+            } catch (_e) {}
           }
           if (remoteReflections) {
             if (remoteReflections.studentReflection) {
@@ -551,29 +615,27 @@ export default function App() {
       },
       onAllJournalsSync: (remoteJournals) => {
         if (!isMounted) return;
-        setJournals((prev) => {
-          const map = new Map<string, DailyJournal>();
-          prev.forEach((j) => {
-            const date = j.journalDate || (j as any).date;
-            if (!isJournalTombstoned(j.studentId, date)) {
-              const key = `${j.studentId || 'default'}_${date || j.id}`;
-              map.set(key, j);
-            }
-          });
-          let hasChange = false;
-          remoteJournals.forEach((rj) => {
-            const date = rj.journalDate || (rj as any).date;
-            if (isJournalTombstoned(rj.studentId, date)) return;
-            const key = `${rj.studentId || 'default'}_${date || rj.id}`;
-            const existing = map.get(key);
-            if (!existing || JSON.stringify(existing) !== JSON.stringify(rj)) {
-              map.set(key, rj);
-              hasChange = true;
-            }
-          });
-          if (!hasChange) return prev;
-          return Array.from(map.values());
+        const valid = remoteJournals.filter(
+          (rj) => !isJournalTombstoned(rj.studentId, rj.journalDate || (rj as any).date) && !isDeprecatedOrDummyJournal(rj)
+        );
+        const cleaned = valid.map((j) => {
+          const cleanSchool = (j.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
+          return {
+            ...j,
+            schoolName:
+              !cleanSchool || cleanSchool.toLowerCase().includes('jorong')
+                ? 'UPTD SMPN 1 Jorong'
+                : cleanSchool,
+            schoolId: 'sch-smpn1-jorong',
+          };
         });
+        const remoteIds = new Set(cleaned.map((j) => j.id));
+        const missingReal = RESTORED_JOURNALS_REAL.filter((j) => !remoteIds.has(j.id) && !isDeprecatedOrDummyJournal(j));
+        const merged = [...cleaned, ...missingReal];
+        setJournals(merged);
+        try {
+          localStorage.setItem('si7kaih_journals_prod', JSON.stringify(merged));
+        } catch (_e) {}
       },
       onReflectionUpdate: (type, reflection, _source) => {
         if (!isMounted) return;
@@ -638,20 +700,24 @@ export default function App() {
       fetchJournalsFromSupabase()
         .then((remoteJournals) => {
           if (remoteJournals && remoteJournals.length > 0) {
-            setJournals((prev) => {
-              const map = new Map<string, DailyJournal>();
-              prev.forEach((j) => map.set(`${j.studentId || 'default'}_${j.journalDate || j.id}`, j));
-              let changed = false;
-              remoteJournals.forEach((rj) => {
-                const key = `${rj.studentId || 'default'}_${rj.journalDate || rj.id}`;
-                const ex = map.get(key);
-                if (!ex || JSON.stringify(ex) !== JSON.stringify(rj)) {
-                  map.set(key, rj);
-                  changed = true;
-                }
-              });
-              return changed ? Array.from(map.values()) : prev;
+            const filteredJournals = remoteJournals.filter(
+              (j) => !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date) && !isDeprecatedOrDummyJournal(j)
+            );
+            const cleaned = filteredJournals.map((j) => {
+              const cleanSchool = (j.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
+              return {
+                ...j,
+                schoolName:
+                  !cleanSchool || cleanSchool.toLowerCase().includes('jorong')
+                    ? 'UPTD SMPN 1 Jorong'
+                    : cleanSchool,
+                schoolId: 'sch-smpn1-jorong',
+              };
             });
+            setJournals(cleaned);
+            try {
+              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(cleaned));
+            } catch (_e) {}
           }
         })
         .catch(() => {});

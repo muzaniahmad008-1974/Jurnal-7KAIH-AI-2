@@ -99,7 +99,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       const match = schools.find((s) => isSameSchool(s.name, currentSchoolName));
       if (match) return match.id;
     }
-    return defaultSchool?.id || 'sch-smpn1-jorong';
+    return defaultSchool?.id || 's-smp-01';
   });
 
   const activeSchool = useMemo(() => {
@@ -110,9 +110,9 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     );
   }, [schools, activeSchoolId, currentSchoolName, defaultSchool]);
 
-  const targetSchoolId = activeSchool?.id || currentSchoolId || 'sch-smpn1-jorong';
-  const targetSchoolName = activeSchool?.name || currentSchoolName || 'UPTD SMPN 1 Jorong';
-  const currentSchoolNpsn = activeSchool?.npsn || '30301725';
+  const targetSchoolId = activeSchool?.id || currentSchoolId || defaultSchool?.id || 's-smp-01';
+  const targetSchoolName = activeSchool?.name || currentSchoolName || defaultSchool?.name || 'SMPN 01 Nusantara';
+  const currentSchoolNpsn = activeSchool?.npsn || defaultSchool?.npsn || '20210001';
 
   // Strict Scoping Filter: School Admin may only access students of their own school
   const isStudentOfSchool = (s: Student, schId?: string, schName?: string): boolean => {
@@ -136,8 +136,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     return false;
   };
 
-  // Master Students & Rombel State for THIS school (100% Mandiri Operator, tanpa Dapodik)
-  // Default terisi data resmi UPTD SMPN 1 Jorong (Kelas 8-C) dan data mandiri operator
+  // Master Students & Rombel State for THIS school (100% Mandiri Operator)
   const [students, setStudents] = useState<Student[]>(() => {
     const all = getStoredStudents();
     return all.filter((s) => isStudentOfSchool(s, targetSchoolId, targetSchoolName));
@@ -477,7 +476,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
 
     if (notify) {
       showToast(
-        `Sinkronisasi berhasil! Data Rombel dan Data Peserta Didik (termasuk Kelas 8-C) pada ${targetSchoolName} telah tersinkronisasi 100%. (${changedCount} penyesuaian kelas siswa, ${addedRombelsCount} rombel diverifikasi).`
+        `Sinkronisasi berhasil! Data Rombel dan Data Peserta Didik pada ${targetSchoolName} telah tersinkronisasi 100%. (${changedCount} penyesuaian kelas siswa, ${addedRombelsCount} rombel diverifikasi).`
       );
     }
   };

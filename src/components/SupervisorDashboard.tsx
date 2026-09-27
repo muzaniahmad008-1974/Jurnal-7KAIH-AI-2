@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { Rombel, Student, getStoredRombels, getStoredStudents } from '../lib/studentData';
-import { UserPersona, getStoredUsers } from '../lib/constants';
+import { UserPersona, getStoredUsers, isDeprecatedOrDummyJournal } from '../lib/constants';
 import { DailyJournal, FollowUpPlan } from '../../packages/types/src/index';
 import { formatIndonesianFullDate, formatIndonesianShortDate, getLocalDateString } from '../lib/dateUtils';
 import { SupervisorHabitTrendsChart } from './SupervisorHabitTrendsChart';
@@ -66,10 +66,10 @@ const getStoredSupervisionNotes = (): Record<string, string> => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        const legacyDummyKeys = ['s-smp-01', 's-smp-02', 's-smp-03', 's-smp-04'];
+        const defaultDummySchoolKeys = ['sch-smpn1-jorong'];
         const sanitized: Record<string, string> = {};
         for (const [k, v] of Object.entries(parsed)) {
-          if (!legacyDummyKeys.includes(k) && typeof v === 'string') {
+          if (!defaultDummySchoolKeys.includes(k) && typeof v === 'string') {
             sanitized[k] = v;
           }
         }
@@ -111,6 +111,19 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
   const [localFollowUps, setLocalFollowUps] = useState<FollowUpPlan[]>(() => {
     const stored = getStoredSupervisorFollowUps();
     return stored.length > 0 ? stored : followUps;
+  });
+  // Synchronized journals state reflecting live student journal submissions
+  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
+    try {
+      const raw = localStorage.getItem('si7kaih_journals_prod');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
+    } catch (_e) {}
+    return (journals || []).filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
   });
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(() =>
@@ -242,6 +255,23 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
     setUserAccounts(freshUsers);
     setLocalFollowUps(getStoredSupervisorFollowUps());
     setSupervisionNotes(getStoredSupervisionNotes());
+
+    let freshJournals: DailyJournal[] = [];
+    try {
+      const rawJournals = localStorage.getItem('si7kaih_journals_prod');
+      if (rawJournals) {
+        const parsed = JSON.parse(rawJournals);
+        if (Array.isArray(parsed)) {
+          freshJournals = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
+    } catch (_e) {}
+    if (freshJournals.length > 0) {
+      setSyncedJournals(freshJournals);
+    } else if (journals) {
+      setSyncedJournals(journals.filter((j) => !isDeprecatedOrDummyJournal(j)));
+    }
+
     setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     setTimeout(() => setIsSyncing(false), 500);
   };
@@ -256,6 +286,18 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
     window.addEventListener('si7kaih_rombels_updated', handleSync);
     window.addEventListener('si7kaih_users_updated', handleSync);
     window.addEventListener('si7kaih_followups_updated', handleSync);
+    window.addEventListener('si7kaih_journals_updated', handleSync);
+    window.addEventListener('si7kaih_programs_updated', handleSync);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = () => {
+          handleSync();
+        };
+      } catch (_e) {}
+    }
 
     return () => {
       window.removeEventListener('storage', handleSync);
@@ -264,6 +306,9 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
       window.removeEventListener('si7kaih_rombels_updated', handleSync);
       window.removeEventListener('si7kaih_users_updated', handleSync);
       window.removeEventListener('si7kaih_followups_updated', handleSync);
+      window.removeEventListener('si7kaih_journals_updated', handleSync);
+      window.removeEventListener('si7kaih_programs_updated', handleSync);
+      if (bc) bc.close();
     };
   }, []);
 
@@ -337,10 +382,14 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
 
       // 4. Jurnal Harian & Metrik 7 Kebiasaan
       const schoolStudentIds = new Set(schoolStudents.map((st) => st.id));
-      const schoolJournals = journals.filter((j) => {
+      const schoolJournals = syncedJournals.filter((j) => {
+        if (!j) return false;
+        if (isDeprecatedOrDummyJournal(j)) return false;
         const belongs =
           (j.schoolId && j.schoolId === s.id) ||
-          (j.studentId && schoolStudentIds.has(j.studentId));
+          (j.studentId && schoolStudentIds.has(j.studentId)) ||
+          (s.name && j.schoolName && j.schoolName.trim().toLowerCase() === s.name.trim().toLowerCase()) ||
+          (!j.schoolId && !j.schoolName && schools.length <= 1);
         if (!belongs) return false;
 
         // Terapkan filter rentang tanggal (mingguan / bulanan / kustom)
@@ -392,15 +441,9 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
         completeness = Math.min(100, Math.round((schoolJournals.length / denominator) * 100));
         consistency = totalEntries > 0 ? Math.min(100, Math.round((totalCompletedHabits / totalEntries) * 100)) : 0;
       } else {
-        // Jika filter rentang tanggal spesifik aktif dan tidak ada jurnal dalam periode tersebut
-        if (dateRangePreset !== 'ALL' || filterStartDate || filterEndDate) {
-          completeness = 0;
-          consistency = 0;
-        } else {
-          // Jika belum ada entri jurnal dan belum diupdate data oleh super admin dan admin sekolah, reset ke default 0
-          completeness = typeof s.habitCompletenessRate === 'number' ? s.habitCompletenessRate : 0;
-          consistency = typeof s.habitConsistencyRate === 'number' ? s.habitConsistencyRate : 0;
-        }
+        // Jika belum ada entri jurnal atau di luar rentang filter, murni 0 (tanpa fallback default palsu)
+        completeness = 0;
+        consistency = 0;
       }
 
       // Setiap kebiasaan reset ke default 0 jika belum ada data/jurnal
@@ -574,6 +617,102 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
     [fosterSchools]
   );
   const warningStatusCount = totalSchoolsCount - goodStatusCount - unupdatedStatusCount;
+
+  // ==========================================================================
+  // STATISTIK PERSENTASE MURID MENGISI JURNAL DALAM RENTANG DATA HARI TERISI
+  // Sinkronisasi otomatis sesuai isian jurnal murid terupdate seluruh sekolah binaan
+  // ==========================================================================
+  const supervisorJournalRangeStats = useMemo(() => {
+    const dateMap = new Map<string, DailyJournal[]>();
+    syncedJournals.forEach((j) => {
+      if (isDeprecatedOrDummyJournal(j)) return;
+      const dStr = j.journalDate || (j as any).date;
+      if (dStr && typeof dStr === 'string' && dStr.trim()) {
+        const cleanDate = dStr.trim();
+        if (!dateMap.has(cleanDate)) {
+          dateMap.set(cleanDate, []);
+        }
+        dateMap.get(cleanDate)!.push(j);
+      }
+    });
+
+    const allActiveDatesSorted = Array.from(dateMap.keys()).sort((a, b) => a.localeCompare(b));
+    const totalStudents = totalStudentsCount;
+    const now = new Date();
+    const todayStr = getLocalDateString(now);
+
+    if (allActiveDatesSorted.length === 0 || totalStudents === 0) {
+      return {
+        hasData: false,
+        totalActiveDaysCount: 0,
+        startDate: null,
+        endDate: null,
+        startDateFormatted: '-',
+        endDateFormatted: '-',
+        rangeLabel: 'Belum ada hari yang terisi data jurnal',
+        totalRegisteredStudents: totalStudents,
+        uniqueStudentsFilledCount: 0,
+        uniqueStudentsPercentage: 0,
+        avgDailyFilledCount: 0,
+        avgDailyFilledPercentage: 0,
+        todayFilledCount: 0,
+        todayFilledPercentage: 0,
+        todayIsFilled: false,
+      };
+    }
+
+    const startDate = allActiveDatesSorted[0];
+    const endDate = allActiveDatesSorted[allActiveDatesSorted.length - 1];
+
+    // Siswa unik yang mengisi setidaknya satu jurnal dalam rentang hari aktif
+    const uniqueStudentsSet = new Set<string>();
+    let totalEntriesSum = 0;
+
+    allActiveDatesSorted.forEach((d) => {
+      const dayJournals = dateMap.get(d) || [];
+      const dayStudents = new Set<string>();
+      dayJournals.forEach((j) => {
+        const key = (j.studentNisn || j.studentId || (j as any).studentName || '').toLowerCase().trim();
+        if (key) {
+          dayStudents.add(key);
+          uniqueStudentsSet.add(key);
+        }
+      });
+      totalEntriesSum += dayStudents.size;
+    });
+
+    const uniqueStudentsCount = Math.min(totalStudents, uniqueStudentsSet.size);
+    const uniqueStudentsPercentage = totalStudents > 0 ? Math.round((uniqueStudentsCount / totalStudents) * 100) : 0;
+    const avgDailyFilledCount = +(totalEntriesSum / allActiveDatesSorted.length).toFixed(1);
+    const avgDailyFilledPercentage = totalStudents > 0 ? Math.round((avgDailyFilledCount / totalStudents) * 100) : 0;
+
+    const todayJournals = dateMap.get(todayStr) || [];
+    const todayStudentsSet = new Set<string>();
+    todayJournals.forEach((j) => {
+      const key = (j.studentNisn || j.studentId || (j as any).studentName || '').toLowerCase().trim();
+      if (key) todayStudentsSet.add(key);
+    });
+    const todayFilledCount = Math.min(totalStudents, todayStudentsSet.size);
+    const todayFilledPercentage = totalStudents > 0 ? Math.round((todayFilledCount / totalStudents) * 100) : 0;
+
+    return {
+      hasData: true,
+      totalActiveDaysCount: allActiveDatesSorted.length,
+      startDate,
+      endDate,
+      startDateFormatted: formatIndonesianShortDate(startDate),
+      endDateFormatted: formatIndonesianShortDate(endDate),
+      rangeLabel: startDate === endDate ? formatIndonesianShortDate(startDate) : `${formatIndonesianShortDate(startDate)} s.d. ${formatIndonesianShortDate(endDate)}`,
+      totalRegisteredStudents: totalStudents,
+      uniqueStudentsFilledCount: uniqueStudentsCount,
+      uniqueStudentsPercentage,
+      avgDailyFilledCount,
+      avgDailyFilledPercentage,
+      todayFilledCount,
+      todayFilledPercentage,
+      todayIsFilled: todayFilledCount > 0,
+    };
+  }, [syncedJournals, totalStudentsCount]);
 
   // Habit Averages across schools for tab MONITORING
   const habitAverages = useMemo(() => {
@@ -879,7 +1018,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
               <div className="text-2xl font-black text-slate-900 mt-1">{totalSchoolsCount} Sekolah</div>
               <p className="text-[11px] text-slate-500 mt-1">
                 {totalSchoolsCount === 0
-                  ? 'Default 0 (Belum ada data)'
+                  ? 'Belum ada data satuan pendidikan'
                   : `${goodStatusCount} Terpantau • ${unupdatedStatusCount > 0 ? `${unupdatedStatusCount} Belum Ada Data` : `${warningStatusCount} Penguatan`}`}
               </p>
             </div>
@@ -891,7 +1030,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
               <div className="text-2xl font-black text-slate-900 mt-1">{totalStudentsCount} Siswa</div>
               <p className="text-[11px] text-slate-500 mt-1">
                 {totalStudentsCount === 0 && totalTeachersCount === 0
-                  ? 'Default 0 (Belum ada data)'
+                  ? 'Belum ada data siswa'
                   : `${totalTeachersCount} Tenaga Pendidik`}
               </p>
             </div>
@@ -906,7 +1045,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
                   ? 'Target tercapai (>80%)'
                   : avgCompleteness > 0
                   ? 'Perlu ditingkatkan'
-                  : 'Default 0 (Belum ada data)'}
+                  : 'Belum ada data jurnal terisi'}
               </p>
             </div>
 
@@ -920,7 +1059,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
                   ? 'Kategori pembiasaan baik'
                   : avgConsistency > 0
                   ? 'Perlu pendampingan'
-                  : 'Default 0 (Belum ada data)'}
+                  : 'Belum ada data jurnal terisi'}
               </p>
             </div>
 
@@ -930,8 +1069,120 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
               </span>
               <div className="text-2xl font-black text-indigo-700 mt-1">{totalActiveRtl} RTL</div>
               <p className="text-[11px] text-slate-500 mt-1">
-                {totalActiveRtl > 0 ? 'Dalam pemantauan supervisi' : 'Default 0 (Belum ada RTL)'}
+                {totalActiveRtl > 0 ? 'Dalam pemantauan supervisi' : 'Belum ada rencana tindak lanjut'}
               </p>
+            </div>
+          </div>
+
+          {/* Dedicated Section: Info Update Persentase Murid Mengisi Jurnal dalam Rentang Hari Terisi */}
+          <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 border border-blue-200/80 rounded-2xl p-5 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-blue-200/60">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs shrink-0">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                      Info Update Persentase Murid Mengisi Jurnal dalam Rentang Hari Terisi Data
+                    </h3>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-600 text-white shadow-xs">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Data Terupdate
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Disinkronkan otomatis sesuai isian jurnal harian terkini seluruh satuan pendidikan binaan (bebas data default).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={syncAllData}
+                  disabled={isSyncing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-200 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-60"
+                  title="Sinkronkan ulang seluruh data jurnal terkini"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'Sinkronisasi...' : 'Sinkronkan Data'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Rentang Hari Terisi Data Jurnal
+                </div>
+                <div className="text-base font-black text-slate-900 mt-1 truncate" title={supervisorJournalRangeStats.rangeLabel}>
+                  {supervisorJournalRangeStats.rangeLabel}
+                </div>
+                <p className="text-xs font-semibold text-blue-600 mt-1">
+                  {supervisorJournalRangeStats.hasData
+                    ? `${supervisorJournalRangeStats.totalActiveDaysCount} Hari Aktif Berdata`
+                    : 'Belum ada data jurnal terisi'}
+                </p>
+              </div>
+
+              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Partisipasi Murid (Rentang Terisi)
+                </div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-2xl font-black text-blue-700">
+                    {supervisorJournalRangeStats.uniqueStudentsPercentage}%
+                  </span>
+                  <span className="text-xs font-semibold text-slate-500">
+                    ({supervisorJournalRangeStats.uniqueStudentsFilledCount} / {supervisorJournalRangeStats.totalRegisteredStudents} murid)
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${supervisorJournalRangeStats.uniqueStudentsPercentage}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Rerata Partisipasi Harian
+                </div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-2xl font-black text-indigo-700">
+                    {supervisorJournalRangeStats.avgDailyFilledCount}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-500">
+                    murid / hari ({supervisorJournalRangeStats.avgDailyFilledPercentage}%)
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div
+                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${supervisorJournalRangeStats.avgDailyFilledPercentage}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Partisipasi Hari Ini
+                </div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-2xl font-black text-emerald-600">
+                    {supervisorJournalRangeStats.todayFilledCount}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-500">
+                    murid ({supervisorJournalRangeStats.todayFilledPercentage}%)
+                  </span>
+                </div>
+                <p className="text-[11px] font-medium text-slate-500 mt-1">
+                  {supervisorJournalRangeStats.todayIsFilled
+                    ? 'Sudah ada murid mengisi hari ini'
+                    : 'Belum ada isian hari ini'}
+                </p>
+              </div>
             </div>
           </div>
 

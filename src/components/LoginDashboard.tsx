@@ -60,6 +60,7 @@ import {
 } from '../lib/studentData';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { DailyJournal } from '../../packages/types/src/index';
+import { RESTORED_JOURNALS_REAL } from '../lib/jorongRestoredData';
 import {
   fetchUsersFromSupabase,
   fetchJournalsFromSupabase,
@@ -113,21 +114,21 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
   const [isCardRoleDropdownOpen, setIsCardRoleDropdownOpen] = useState(false);
 
   // Pengaturan dropdown pilihan sekolah, kelas, dan murid untuk login Murid & Orang Tua
-  // Default ke '0' bila belum diupdate datanya oleh superadmin dan admin sekolah
   const [selectedSchoolForLogin, setSelectedSchoolForLogin] = useState<string>(() => {
     const storedSchools = getStoredSchools();
-    if (storedSchools.length === 0) return '0';
+    if (storedSchools.length === 0) return 'UPTD SMPN 1 Jorong';
     try {
       const saved = localStorage.getItem('si7kaih_remembered_school');
       if (saved && saved !== '0' && (saved === 'ALL' || storedSchools.some((s) => s.name === saved))) {
         return saved;
       }
     } catch (_e) {}
-    return 'ALL';
+    const jorong = storedSchools.find((s) => s.name.toLowerCase().includes('jorong'));
+    return jorong ? jorong.name : storedSchools[0]?.name || 'UPTD SMPN 1 Jorong';
   });
   const [selectedClassForLogin, setSelectedClassForLogin] = useState<string>(() => {
     const storedRombels = getStoredRombels();
-    if (storedRombels.length === 0) return '0';
+    if (storedRombels.length === 0) return 'ALL';
     return 'ALL';
   });
   const [selectedStudentNisn, setSelectedStudentNisn] = useState<string>('');
@@ -153,13 +154,13 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       const saved = localStorage.getItem('si7kaih_journals_prod');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
         }
       }
-      return [];
+      return RESTORED_JOURNALS_REAL;
     } catch (_e) {
-      return [];
+      return RESTORED_JOURNALS_REAL;
     }
   });
 
@@ -238,10 +239,19 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       .then((remoteJournals) => {
         if (remoteJournals && remoteJournals.length > 0) {
           const cleaned = remoteJournals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
-          setJournals((prev) => (JSON.stringify(prev) === JSON.stringify(cleaned) ? prev : cleaned));
-          try {
-            localStorage.setItem('si7kaih_journals_prod', JSON.stringify(cleaned));
-          } catch (_e) {}
+          setJournals((prev) => {
+            const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
+            const merged = [...cleaned];
+            prev.forEach((pj) => {
+              if (!remoteMap.has(pj.id) && !isDeprecatedOrDummyJournal(pj)) {
+                merged.push(pj);
+              }
+            });
+            try {
+              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(merged));
+            } catch (_e) {}
+            return merged;
+          });
         }
       })
       .catch(() => {});

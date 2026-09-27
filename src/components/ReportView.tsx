@@ -14,7 +14,7 @@ import {
   ParentMonthlyReflection,
   HabitCode,
 } from '../../packages/types/src/index';
-import { HABIT_LIST, UserPersona } from '../lib/constants';
+import { HABIT_LIST, UserPersona, isDeprecatedOrDummyJournal } from '../lib/constants';
 import { calculateHabitualThreshold } from '../../packages/analytics/src/index';
 import { calculateBadgesFromJournals, DEFAULT_BADGES } from '../lib/mockData';
 import {
@@ -99,6 +99,20 @@ export const ReportView: React.FC<ReportViewProps> = ({
     return stored.length > 0 ? stored : DEFAULT_STUDENTS;
   });
 
+  // State sinkronisasi jurnal harian terupdate langsung dari penyimpanan lokal persisten
+  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
+    try {
+      const raw = localStorage.getItem('si7kaih_journals_prod');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        }
+      }
+    } catch (_e) {}
+    return (journals || []).filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+  });
+
   // Tentukan siswa terpilih saat awal modal dibuka
   const [selectedStudentId, setSelectedStudentId] = useState<string>(() => {
     if (targetStudent?.id) return targetStudent.id;
@@ -154,12 +168,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
         id: targetStudent.id || selectedStudentId,
         nisn: targetStudent.nisn || propNisn || '-',
         name: targetStudent.name,
-        className: targetStudent.className || propClassName || 'Kelas 8-C',
+        className: targetStudent.className || propClassName || '-',
         parentName: targetStudent.parentName || 'Orang Tua / Wali Siswa',
         status: 'AKTIF' as const,
         gender: (targetStudent.gender as 'L' | 'P') || 'L',
         source: 'INPUT_MANUAL' as const,
-        schoolName: targetStudent.schoolName || propSchoolName || 'UPTD SMPN 1 Jorong',
+        schoolName: targetStudent.schoolName || propSchoolName || (getStoredSchools()[0]?.name) || 'Satuan Pendidikan',
       };
     }
 
@@ -168,12 +182,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
         id: selectedStudentId,
         nisn: propNisn || '-',
         name: propStudentName,
-        className: propClassName || 'Kelas 8-C',
+        className: propClassName || '-',
         parentName: 'Orang Tua / Wali Siswa',
         status: 'AKTIF' as const,
         gender: 'L' as const,
         source: 'INPUT_MANUAL' as const,
-        schoolName: propSchoolName || 'UPTD SMPN 1 Jorong',
+        schoolName: propSchoolName || (getStoredSchools()[0]?.name) || 'Satuan Pendidikan',
       };
     }
 
@@ -181,12 +195,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
       id: 'std-fallback',
       nisn: '-',
       name: 'Peserta Didik',
-      className: 'Kelas 8-C',
+      className: '-',
       parentName: 'Orang Tua / Wali Siswa',
       status: 'AKTIF' as const,
       gender: 'L' as const,
       source: 'INPUT_MANUAL' as const,
-      schoolName: 'UPTD SMPN 1 Jorong',
+      schoolName: propSchoolName || (getStoredSchools()[0]?.name) || 'Satuan Pendidikan',
     };
   }, [allStudents, selectedStudentId, targetStudent, propStudentName, propClassName, propSchoolName, propNisn]);
 
@@ -321,6 +335,15 @@ export const ReportView: React.FC<ReportViewProps> = ({
     const handleSyncUpdate = () => {
       const freshStudents = getStoredStudents();
       if (freshStudents.length > 0) setAllStudents(freshStudents);
+      try {
+        const raw = localStorage.getItem('si7kaih_journals_prod');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          }
+        }
+      } catch (_e) {}
       if (!isCustomMode) {
         const synced = syncAcademicYearFromData();
         setSelectedYear(synced.year);
@@ -367,28 +390,30 @@ export const ReportView: React.FC<ReportViewProps> = ({
     setTimeout(() => setIsSyncing(false), 350);
   };
 
-  // 4. Filter Jurnal Harian Aktual Khusus Siswa & Bulan Terpilih
+  // 4. Filter Jurnal Harian Aktual Khusus Siswa & Bulan Terpilih (Murni Data Siswa Bersangkutan Tanpa Bocoran Data Default)
   const studentMonthJournals = useMemo(() => {
-    if (!journals || journals.length === 0) return [];
+    const listToFilter = syncedJournals.length > 0 ? syncedJournals : (journals || []);
+    if (!listToFilter || listToFilter.length === 0) return [];
 
     // Filter berdasarkan identitas siswa
-    const matchedForStudent = journals.filter((j) => {
-      const sid = activeStudent.id;
-      const snisn = activeStudent.nisn;
+    const matchedForStudent = listToFilter.filter((j) => {
+      if (isDeprecatedOrDummyJournal(j)) return false;
+      const sid = (activeStudent.id || '').toLowerCase().trim();
+      const snisn = (activeStudent.nisn || '').toLowerCase().trim();
       const sname = (activeStudent.name || '').toLowerCase().trim();
 
-      return (
-        (sid && j.studentId === sid) ||
-        (snisn && (j.studentId === snisn || (j as any).studentNisn === snisn)) ||
-        (sname && (
-          ((j as any).studentName && (j as any).studentName.toLowerCase().trim() === sname) ||
-          (j.studentId && j.studentId.toLowerCase().trim() === sname)
-        ))
-      );
+      const jSid = (j.studentId || '').toLowerCase().trim();
+      const jSnisn = (j.studentNisn || '').toLowerCase().trim();
+      const jSname = ((j as any).studentName || '').toLowerCase().trim();
+
+      if (sid && (jSid === sid || jSnisn === sid)) return true;
+      if (snisn && (jSid === snisn || jSnisn === snisn)) return true;
+      if (sname && jSname && (jSname === sname || jSname.includes(sname) || sname.includes(jSname))) return true;
+      return false;
     });
 
-    // Jika filter spesifik kosong namun user adalah siswa tunggal (misal dari demo session)
-    const baseList = matchedForStudent.length > 0 ? matchedForStudent : journals;
+    // Murni hanya entri milik siswa terpilih, jangan pernah fallback ke seluruh journals milik siswa lain
+    const baseList = matchedForStudent;
 
     // Filter berdasarkan bulan & tahun terpilih
     return baseList.filter((j) => {
@@ -400,7 +425,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
       const m = parseInt(parts[1], 10);
       return y === selectedYearNum && m === activeMonthNumber;
     });
-  }, [journals, activeStudent, selectedYearNum, activeMonthNumber]);
+  }, [syncedJournals, journals, activeStudent, selectedYearNum, activeMonthNumber]);
 
   // Hitung Kelengkapan Jurnal (Recorded Days)
   const recordedDays = useMemo(() => {
@@ -1090,15 +1115,15 @@ export const ReportView: React.FC<ReportViewProps> = ({
               <p className="text-slate-700">
                 Menyetujui,<br />
                 <strong className="text-slate-900">
-                  Kepala {activeStudent.schoolName || propSchoolName || 'UPTD SMPN 1 Jorong'}
+                  Kepala {activeStudent.schoolName || propSchoolName || matchedSchool?.name || 'Satuan Pendidikan'}
                 </strong>
               </p>
               <div>
                 <p className="font-bold text-slate-900 underline decoration-dotted">
-                  ( {matchedSchool.principalName || 'H. Akhmad Fauzi, M.Pd.'} )
+                  ( {matchedSchool?.principalName || 'Kepala Satuan Pendidikan'} )
                 </p>
                 <span className="font-normal text-[10px] text-slate-600">
-                  NIP. {matchedSchool.principalNip || '197105121998021004'}
+                  NIP. {matchedSchool?.principalNip || '-'}
                 </span>
               </div>
             </div>

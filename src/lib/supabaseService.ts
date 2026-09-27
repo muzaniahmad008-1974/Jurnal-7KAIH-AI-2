@@ -26,7 +26,7 @@ import {
   markUsersAsDeleted,
   isUserDeleted,
 } from './constants';
-import { SchoolMaster, getStoredSchools } from './schoolMasterData';
+import { SchoolMaster, getStoredSchools, RESTORED_SCHOOLS } from './schoolMasterData';
 import { Student, Rombel, getStoredStudents, getStoredRombels } from './studentData';
 
 export interface SupabaseSyncStatus {
@@ -1093,18 +1093,32 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
   let changed = false;
   try {
     if (data.schools && Array.isArray(data.schools)) {
+      const defaultSchoolIds = new Set(['sch-smpn1-jorong']);
+      const defaultSchoolNames = new Set(['uptd smpn 1 jorong']);
+
+      const nonDefaultSchools = data.schools.filter(
+        (s: SchoolMaster) =>
+          !defaultSchoolIds.has(s.id) &&
+          !defaultSchoolNames.has((s.name || '').trim().toLowerCase())
+      );
+
+      const schoolMap = new Map<string, SchoolMaster>();
+      RESTORED_SCHOOLS.forEach((s) => schoolMap.set(s.id, s));
+      nonDefaultSchools.forEach((s) => schoolMap.set(s.id, s));
+      const finalSchools = Array.from(schoolMap.values());
+
       const current = localStorage.getItem('si7kaih_schools_master_prod');
-      const serialized = JSON.stringify(data.schools);
+      const serialized = JSON.stringify(finalSchools);
       if (!current || current !== serialized) {
         localStorage.setItem('si7kaih_schools_master_prod', serialized);
         if (typeof window !== 'undefined') {
           try {
-            window.dispatchEvent(new CustomEvent('si7kaih_schools_updated', { detail: data.schools }));
+            window.dispatchEvent(new CustomEvent('si7kaih_schools_updated', { detail: finalSchools }));
           } catch (_e) {}
           if ('BroadcastChannel' in window) {
             try {
               const bc = new BroadcastChannel('si7kaih_sync_channel');
-              bc.postMessage({ type: 'SCHOOLS_UPDATED', schools: data.schools });
+              bc.postMessage({ type: 'SCHOOLS_UPDATED', schools: finalSchools });
               bc.close();
             } catch (_e) {}
           }
@@ -1114,7 +1128,13 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.rombels && Array.isArray(data.rombels)) {
-      const finalRombels = data.rombels.filter((r) => r && (r.schoolId || r.schoolName));
+      const finalRombels = data.rombels.filter(
+        (r) =>
+          r &&
+          r.schoolId !== 'sch-smpn1-jorong' &&
+          (r.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong' &&
+          (r.schoolId || r.schoolName)
+      );
       const current = localStorage.getItem('si7kaih_rombels_mandiri');
       const serialized = JSON.stringify(finalRombels);
       if (!current || current !== serialized) {
@@ -1136,7 +1156,13 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.students && Array.isArray(data.students)) {
-      const finalStudents = data.students.filter((s) => s && (s.schoolId || s.schoolName || s.name));
+      const finalStudents = data.students.filter(
+        (s) =>
+          s &&
+          s.schoolId !== 'sch-smpn1-jorong' &&
+          (s.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong' &&
+          (s.schoolId || s.schoolName || s.name)
+      );
       const current = localStorage.getItem('si7kaih_students_mandiri');
       const serialized = JSON.stringify(finalStudents);
       if (!current || current !== serialized) {
@@ -1219,43 +1245,54 @@ export async function syncOnSuperAdminLogin(
     const localUsers = getStoredUsers();
 
     // 3. Rekonsiliasi cerdas
-    // - Sekolah: gabungkan master sekolah berdasarkan ID
-    let finalSchools = localSchools;
+    // - Sekolah: gabungkan master sekolah berdasarkan ID (hapus data default satuan pendidikan)
+    const defaultSchoolIds = new Set(['sch-smpn1-jorong']);
+    const defaultSchoolNames = new Set(['uptd smpn 1 jorong']);
+
+    const schoolMap = new Map<string, SchoolMaster>();
+    RESTORED_SCHOOLS.forEach((s) => schoolMap.set(s.id, s));
     if (remoteMaster?.schools && remoteMaster.schools.length > 0) {
-      if (localSchools.length === 0) {
-        finalSchools = remoteMaster.schools;
-      } else {
-        const map = new Map<string, SchoolMaster>();
-        remoteMaster.schools.forEach((s) => map.set(s.id, s));
-        localSchools.forEach((s) => map.set(s.id, s));
-        finalSchools = Array.from(map.values());
-      }
+      remoteMaster.schools.forEach((s) => {
+        if (!defaultSchoolIds.has(s.id) && !defaultSchoolNames.has((s.name || '').trim().toLowerCase())) {
+          schoolMap.set(s.id, s);
+        }
+      });
     }
+    localSchools.forEach((s) => {
+      if (!defaultSchoolIds.has(s.id) && !defaultSchoolNames.has((s.name || '').trim().toLowerCase())) {
+        schoolMap.set(s.id, s);
+      }
+    });
+    const finalSchools = Array.from(schoolMap.values());
 
     // - Rombel: gabungkan master rombel
-    let finalRombels = localRombels;
+    let finalRombels = localRombels.filter(
+      (r) => r.schoolId !== 'sch-smpn1-jorong' && (r.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong'
+    );
     if (remoteMaster?.rombels && remoteMaster.rombels.length > 0) {
-      if (localRombels.length === 0) {
-        finalRombels = remoteMaster.rombels;
-      } else {
-        const map = new Map<string, Rombel>();
-        remoteMaster.rombels.forEach((r) => map.set(r.code || r.name, r));
-        localRombels.forEach((r) => map.set(r.code || r.name, r));
-        finalRombels = Array.from(map.values());
-      }
+      const map = new Map<string, Rombel>();
+      remoteMaster.rombels.forEach((r) => {
+        if (r.schoolId !== 'sch-smpn1-jorong' && (r.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong') {
+          map.set(r.code || r.name, r);
+        }
+      });
+      finalRombels.forEach((r) => map.set(r.code || r.name, r));
+      finalRombels = Array.from(map.values());
     }
 
     // - Peserta Didik: gabungkan berdasarkan NISN
-    let finalStudents = localStudents;
+    let finalStudents = localStudents.filter(
+      (s) => s.schoolId !== 'sch-smpn1-jorong' && (s.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong'
+    );
     if (remoteMaster?.students && remoteMaster.students.length > 0) {
-      if (localStudents.length === 0) {
-        finalStudents = remoteMaster.students;
-      } else {
-        const map = new Map<string, Student>();
-        remoteMaster.students.forEach((s) => map.set(s.nisn, s));
-        localStudents.forEach((s) => map.set(s.nisn, s));
-        finalStudents = Array.from(map.values());
-      }
+      const map = new Map<string, Student>();
+      remoteMaster.students.forEach((s) => {
+        if (s.schoolId !== 'sch-smpn1-jorong' && (s.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong') {
+          map.set(s.nisn, s);
+        }
+      });
+      finalStudents.forEach((s) => map.set(s.nisn, s));
+      finalStudents = Array.from(map.values());
     }
 
     // - 7 Kebiasaan:

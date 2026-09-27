@@ -37,476 +37,13 @@ export interface Rombel {
   schoolName?: string;
 }
 
-// Initial default Rombels for Master Data (UPTD SMPN 1 Jorong)
-export const DEFAULT_ROMBELS: Rombel[] = [
-  {
-    id: 'rombel-jorong-8c',
-    code: 'ROMBEL-8C',
-    name: 'Kelas 8-C',
-    phase: 'Fase D',
-    grade: 8,
-    teacher: 'Siti Rahmah, S.Pd.',
-    teacherNip: '198403152009032008',
-    capacity: 32,
-    academicYear: '2026/2027 Ganjil',
-    status: 'AKTIF',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-];
+import { RESTORED_ROMBELS, RESTORED_STUDENTS } from './jorongRestoredData';
 
-// Initial default Students for Master Data (32 Siswa Kelas 8-C UPTD SMPN 1 Jorong)
-export const DEFAULT_STUDENTS: Student[] = [
-  {
-    id: 'std-jorong-8c-01',
-    nisn: '0091234001',
-    name: 'Ahmad Fauzan',
-    className: 'Kelas 8-C',
-    parentName: 'Hendra Wijaya',
-    parentPhone: '081234567801',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-03-14',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-02',
-    nisn: '0091234002',
-    name: 'Siti Nurhaliza',
-    className: 'Kelas 8-C',
-    parentName: 'Ratna Juwita',
-    parentPhone: '081234567802',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-05-20',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-03',
-    nisn: '0091234003',
-    name: 'Muhammad Rizky Pratama',
-    className: 'Kelas 8-C',
-    parentName: 'Bambang Pratama',
-    parentPhone: '081234567803',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-01-18',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-04',
-    nisn: '0091234004',
-    name: 'Dewi Lestari',
-    className: 'Kelas 8-C',
-    parentName: 'Agus Santoso',
-    parentPhone: '081234567804',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-07-22',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-05',
-    nisn: '0091234005',
-    name: 'Bima Sakti Wibowo',
-    className: 'Kelas 8-C',
-    parentName: 'Joko Wibowo',
-    parentPhone: '081234567805',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-02-11',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-06',
-    nisn: '0091234006',
-    name: 'Alya Zahra Ramadhani',
-    className: 'Kelas 8-C',
-    parentName: 'Tri Astuti',
-    parentPhone: '081234567806',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-08-09',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-07',
-    nisn: '0091234007',
-    name: 'Dimas Arya Putra',
-    className: 'Kelas 8-C',
-    parentName: 'Rudi Hartono',
-    parentPhone: '081234567807',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-04-16',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-08',
-    nisn: '0091234008',
-    name: 'Fitri Rahmadani',
-    className: 'Kelas 8-C',
-    parentName: 'M. Arsyad',
-    parentPhone: '081234567808',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-09-03',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-09',
-    nisn: '0091234009',
-    name: 'Gilang Ramadhan',
-    className: 'Kelas 8-C',
-    parentName: 'Suryadi',
-    parentPhone: '081234567809',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-06-27',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-10',
-    nisn: '0091234010',
-    name: 'Hana Aulia Rahma',
-    className: 'Kelas 8-C',
-    parentName: 'Nurul Hidayah',
-    parentPhone: '081234567810',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-10-15',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-11',
-    nisn: '0091234011',
-    name: 'Ihsan Maulana',
-    className: 'Kelas 8-C',
-    parentName: 'Zainuddin',
-    parentPhone: '081234567811',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-03-05',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-12',
-    nisn: '0091234012',
-    name: 'Jihan Nabilla',
-    className: 'Kelas 8-C',
-    parentName: 'Sri Wahyuni',
-    parentPhone: '081234567812',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-11-28',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-13',
-    nisn: '0091234013',
-    name: 'Kevin Alamsyah',
-    className: 'Kelas 8-C',
-    parentName: 'Deni Alamsyah',
-    parentPhone: '081234567813',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-01-30',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-14',
-    nisn: '0091234014',
-    name: 'Laila Maharani',
-    className: 'Kelas 8-C',
-    parentName: 'Erna Wati',
-    parentPhone: '081234567814',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-07-19',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-15',
-    nisn: '0091234015',
-    name: 'Muhammad Ilham Fauzi',
-    className: 'Kelas 8-C',
-    parentName: 'Fauzi Rahman',
-    parentPhone: '081234567815',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-04-02',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-16',
-    nisn: '0091234016',
-    name: 'Nadya Putri Cahyani',
-    className: 'Kelas 8-C',
-    parentName: 'Cahyo Purnomo',
-    parentPhone: '081234567816',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-12-08',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-17',
-    nisn: '0091234017',
-    name: 'Omar Fatih Robbani',
-    className: 'Kelas 8-C',
-    parentName: 'Lukman Hakim',
-    parentPhone: '081234567817',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-05-17',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-18',
-    nisn: '0091234018',
-    name: 'Putri Ayu Lestari',
-    className: 'Kelas 8-C',
-    parentName: 'Sulastri',
-    parentPhone: '081234567818',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-08-25',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-19',
-    nisn: '0091234019',
-    name: 'Qolby Azzahra',
-    className: 'Kelas 8-C',
-    parentName: 'Taufik Hidayat',
-    parentPhone: '081234567819',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-02-23',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-20',
-    nisn: '0091234020',
-    name: 'Rendy Saputra',
-    className: 'Kelas 8-C',
-    parentName: 'Saputra Jaya',
-    parentPhone: '081234567820',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-09-12',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-21',
-    nisn: '0091234021',
-    name: 'Salma Safitri',
-    className: 'Kelas 8-C',
-    parentName: 'Mardiana',
-    parentPhone: '081234567821',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-06-14',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-22',
-    nisn: '0091234022',
-    name: 'Tegar Maulana',
-    className: 'Kelas 8-C',
-    parentName: 'Suparman',
-    parentPhone: '081234567822',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-10-01',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-23',
-    nisn: '0091234023',
-    name: 'Ulfa Humaira',
-    className: 'Kelas 8-C',
-    parentName: 'Abdul Muin',
-    parentPhone: '081234567823',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-03-29',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-24',
-    nisn: '0091234024',
-    name: 'Vano Aditya Pratama',
-    className: 'Kelas 8-C',
-    parentName: 'Yudi Pratama',
-    parentPhone: '081234567824',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-07-04',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-25',
-    nisn: '0091234025',
-    name: 'Winda Khairunnisa',
-    className: 'Kelas 8-C',
-    parentName: 'Rosmawati',
-    parentPhone: '081234567825',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-11-10',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-26',
-    nisn: '0091234026',
-    name: 'Xavier Dwi Ananda',
-    className: 'Kelas 8-C',
-    parentName: 'Eko Prasetyo',
-    parentPhone: '081234567826',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-01-22',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-27',
-    nisn: '0091234027',
-    name: 'Yasmin Amalia',
-    className: 'Kelas 8-C',
-    parentName: 'Siti Aminah',
-    parentPhone: '081234567827',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-04-19',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-28',
-    nisn: '0091234028',
-    name: 'Zaky Al Ghifari',
-    className: 'Kelas 8-C',
-    parentName: 'Ghifari Salim',
-    parentPhone: '081234567828',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-08-13',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-29',
-    nisn: '0091234029',
-    name: 'Adinda Kirana',
-    className: 'Kelas 8-C',
-    parentName: 'Danu Kusuma',
-    parentPhone: '081234567829',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-05-31',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-30',
-    nisn: '0091234030',
-    name: 'Bayu Nugroho',
-    className: 'Kelas 8-C',
-    parentName: 'Gatot Nugroho',
-    parentPhone: '081234567830',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-09-24',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-31',
-    nisn: '0091234031',
-    name: 'Cantika Putri Maharani',
-    className: 'Kelas 8-C',
-    parentName: 'Rina Susanti',
-    parentPhone: '081234567831',
-    gender: 'P',
-    status: 'AKTIF',
-    birthDate: '2012-12-01',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-  {
-    id: 'std-jorong-8c-32',
-    nisn: '0091234032',
-    name: 'Dani Pratama Wijaya',
-    className: 'Kelas 8-C',
-    parentName: 'Heri Wijaya',
-    parentPhone: '081234567832',
-    gender: 'L',
-    status: 'AKTIF',
-    birthDate: '2012-06-08',
-    source: 'INPUT_MANUAL',
-    schoolId: 'sch-smpn1-jorong',
-    schoolName: 'UPTD SMPN 1 Jorong',
-  },
-];
+// Initial default Rombels for Master Data (UPTD SMPN 1 Jorong)
+export const DEFAULT_ROMBELS: Rombel[] = RESTORED_ROMBELS;
+
+// Master Data Siswa Resmi Satuan Pendidikan (82 Siswa Nyata UPTD SMPN 1 Jorong)
+export const DEFAULT_STUDENTS: Student[] = RESTORED_STUDENTS;
 
 // Local storage management helpers
 export const getStoredStudents = (): Student[] => {
@@ -514,15 +51,29 @@ export const getStoredStudents = (): Student[] => {
     const saved = localStorage.getItem('si7kaih_students_mandiri');
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        // Hilangkan hanya data bawaan lama sistem awal jika berlabel SISTEM_AWAL
-        const cleaned = parsed.filter(
-          (s: Student) => s.source !== 'SISTEM_AWAL'
-        );
-        if (cleaned.length !== parsed.length) {
-          saveStoredStudents(cleaned);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Hilangkan data lama SISTEM_AWAL, data dummy legacy 8-C & bersihkan tag sekolah dihapus
+        const cleaned = parsed
+          .filter((s: Student) => 
+            s.source !== 'SISTEM_AWAL' &&
+            !(s.id && s.id.startsWith('std-jorong-8c-')) &&
+            !(s.nisn && s.nisn.startsWith('00912340'))
+          )
+          .map((s: Student) => {
+            const rawSchool = (s.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
+            const schoolName = !rawSchool || rawSchool.toLowerCase().includes('jorong') ? 'UPTD SMPN 1 Jorong' : rawSchool;
+            let className = s.className || 'Kelas 8-C';
+            if (className === 'Kelas 8C') className = 'Kelas 8-C';
+            return {
+              ...s,
+              schoolName,
+              className,
+              status: 'AKTIF' as const,
+            };
+          });
+        if (cleaned.length > 0) {
+          return cleaned;
         }
-        return cleaned;
       }
     }
   } catch (_e) {}
@@ -549,21 +100,21 @@ export const saveStoredStudents = (students: Student[]): void => {
 
 export const resetStoredStudents = (): Student[] => {
   try {
-    localStorage.setItem('si7kaih_students_mandiri', JSON.stringify([]));
+    localStorage.setItem('si7kaih_students_mandiri', JSON.stringify(DEFAULT_STUDENTS));
     if (typeof window !== 'undefined') {
       try {
-        window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: [] }));
+        window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: DEFAULT_STUDENTS }));
       } catch (_e) {}
       if ('BroadcastChannel' in window) {
         try {
           const bc = new BroadcastChannel('si7kaih_sync_channel');
-          bc.postMessage({ type: 'STUDENTS_UPDATED', students: [] });
+          bc.postMessage({ type: 'STUDENTS_UPDATED', students: DEFAULT_STUDENTS });
           bc.close();
         } catch (_e) {}
       }
     }
   } catch (_e) {}
-  return [];
+  return DEFAULT_STUDENTS;
 };
 
 export const getStoredRombels = (): Rombel[] => {
@@ -571,17 +122,24 @@ export const getStoredRombels = (): Rombel[] => {
     const saved = localStorage.getItem('si7kaih_rombels_mandiri');
     if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        // Hilangkan hanya rombel berlabel SISTEM_AWAL, pertahankan semua rombel mandiri yang diinput operator
-        const cleaned = parsed.filter(
-          (r: Rombel) => r.source !== 'SISTEM_AWAL'
-        );
-        if (cleaned.length !== parsed.length) {
-          try {
-            localStorage.setItem('si7kaih_rombels_mandiri', JSON.stringify(cleaned));
-          } catch (_e) {}
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const cleaned = parsed
+          .filter((r: Rombel) => r.source !== 'SISTEM_AWAL')
+          .map((r: Rombel) => {
+            const rawSchool = (r.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
+            const schoolName = !rawSchool || rawSchool.toLowerCase().includes('jorong') ? 'UPTD SMPN 1 Jorong' : rawSchool;
+            let name = r.name || 'Kelas 8-C';
+            if (name === 'Kelas 8C') name = 'Kelas 8-C';
+            return {
+              ...r,
+              schoolName,
+              name,
+              status: 'AKTIF' as const,
+            };
+          });
+        if (cleaned.length > 0) {
+          return cleaned;
         }
-        return cleaned;
       }
     }
   } catch (_e) {}
@@ -608,21 +166,21 @@ export const saveStoredRombels = (rombels: Rombel[]): void => {
 
 export const resetStoredRombels = (): Rombel[] => {
   try {
-    localStorage.setItem('si7kaih_rombels_mandiri', JSON.stringify([]));
+    localStorage.setItem('si7kaih_rombels_mandiri', JSON.stringify(DEFAULT_ROMBELS));
     if (typeof window !== 'undefined') {
       try {
-        window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: [] }));
+        window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: DEFAULT_ROMBELS }));
       } catch (_e) {}
       if ('BroadcastChannel' in window) {
         try {
           const bc = new BroadcastChannel('si7kaih_sync_channel');
-          bc.postMessage({ type: 'ROMBELS_UPDATED', rombels: [] });
+          bc.postMessage({ type: 'ROMBELS_UPDATED', rombels: DEFAULT_ROMBELS });
           bc.close();
         } catch (_e) {}
       }
     }
   } catch (_e) {}
-  return [];
+  return DEFAULT_ROMBELS;
 };
 
 // ============================================================================

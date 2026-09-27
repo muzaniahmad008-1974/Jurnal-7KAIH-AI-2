@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { HabitCode, HabitMaster, UserRole } from '../../packages/types/src/index';
+import { RESTORED_STAFF_USERS } from './jorongRestoredData';
 
 export type AuthChannel = 'MANDIRI_INTERNAL';
 
@@ -66,6 +67,7 @@ export const USER_PERSONAS: UserPersona[] = [
     managedBy: 'Root Security Authority Kemdikbudristek',
     createdDate: '2026-05-01',
   },
+  ...RESTORED_STAFF_USERS,
 ];
 
 // ============================================================================
@@ -234,16 +236,27 @@ export const isDeprecatedOrDummyJournal = (j: any): boolean => {
   const sId = (j.studentId || '').toLowerCase().trim();
   const sName = (j.studentName || '').toLowerCase().trim();
   const jId = (j.id || '').toLowerCase().trim();
+  const sNisn = (j.studentNisn || '').toLowerCase().trim();
 
-  // Exclude legacy mock student journals and test data only
+  // Exclude legacy mock student journals, dummy data, and unverified placeholders
   if (
     sId.includes('sample-01') ||
     sId.includes('dummy') ||
+    sId.startsWith('std-jorong-8c-') ||
+    sNisn.startsWith('00912340') ||
     jId.includes('sample-01') ||
     jId.includes('dummy') ||
     sName.includes('siswa contoh') ||
-    sName.includes('ananda dummy')
+    sName.includes('ananda dummy') ||
+    sName.includes('budi pratama')
   ) {
+    return true;
+  }
+
+  // Filter out obsolete 7-B dates prior to the active 5-day evaluation window (22-26 Sep)
+  const jClass = (j.className || '').toLowerCase().trim();
+  const jDate = (j.journalDate || j.date || '').trim();
+  if ((jClass.includes('7-b') || jClass.includes('7b')) && (jDate === '2026-09-20' || jDate === '2026-09-21' || jDate === '2026-09-19')) {
     return true;
   }
   return false;
@@ -258,20 +271,28 @@ export const getStoredUsers = (): UserPersona[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         const cleaned = parsed
           .filter((u: UserPersona) => !isDeprecatedOrDummyUser(u) && !isUserDeleted(u.id, u.username))
-          .map((u: UserPersona) => ({
-            ...u,
-            dataMode: 'PRODUKSI_AKTIF' as const,
-          }));
+          .map((u: UserPersona) => {
+            const rawSchool = (u.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
+            const isJorong = !rawSchool || rawSchool.toLowerCase().includes('jorong') || u.schoolId === 'sch-smpn1-jorong' || u.schoolId === 's-1789602026315';
+            const schoolName = u.role === 'SUPER_ADMIN' || u.role === 'SUPERVISOR' ? (u.schoolName || 'Kementerian Dikdasmen / Wilayah Binaan') : isJorong ? 'UPTD SMPN 1 Jorong' : rawSchool;
+            const accountStatus = u.accountStatus === 'MANDIRI_NONAKTIF' && isJorong ? 'MANDIRI_AKTIF' : (u.accountStatus || 'MANDIRI_AKTIF');
+            return {
+              ...u,
+              schoolName,
+              schoolId: isJorong && u.role !== 'SUPER_ADMIN' ? 'sch-smpn1-jorong' : u.schoolId,
+              accountStatus,
+              dataMode: 'PRODUKSI_AKTIF' as const,
+            };
+          });
 
-        // Pastikan akun Super Admin selalu ada di pool pengguna
-        const hasSuperAdmin = cleaned.some((u) => u.role === 'SUPER_ADMIN');
-        const finalPool = hasSuperAdmin ? cleaned : [USER_PERSONAS[0], ...cleaned];
+        // Pastikan seluruh staf bawaan UPTD SMPN 1 Jorong dan Super Admin selalu ada di pool pengguna
+        const existingIds = new Set(cleaned.map((u) => u.id));
+        const missingDefaults = USER_PERSONAS.filter((p) => !existingIds.has(p.id));
+        const finalPool = [...missingDefaults, ...cleaned];
 
-        if (finalPool.length !== parsed.length) {
-          try {
-            localStorage.setItem('si7kaih_users_pool_prod', JSON.stringify(finalPool));
-          } catch (_e) {}
-        }
+        try {
+          localStorage.setItem('si7kaih_users_pool_prod', JSON.stringify(finalPool));
+        } catch (_e) {}
         return finalPool;
       }
     }
