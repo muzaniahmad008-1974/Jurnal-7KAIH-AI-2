@@ -117,8 +117,8 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   // Strict Scoping Filter: School Admin may only access students of their own school
   const isStudentOfSchool = (s: Student, schId?: string, schName?: string): boolean => {
     if (!s) return false;
-    const effId = (schId ?? targetSchoolId).trim();
-    const effName = (schName ?? targetSchoolName).trim();
+    const effId = (schId || targetSchoolId).trim();
+    const effName = (schName || targetSchoolName).trim();
     if (effId && s.schoolId && s.schoolId.toLowerCase() === effId.toLowerCase()) return true;
     if (effName && s.schoolName && isSameSchool(s.schoolName, effName)) return true;
     if (!s.schoolId && !s.schoolName) return true;
@@ -128,8 +128,8 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   // Strict Scoping Filter: School Admin may only access rombels of their own school
   const isRombelOfSchool = (r: Rombel, schId?: string, schName?: string): boolean => {
     if (!r) return false;
-    const effId = (schId ?? targetSchoolId).trim();
-    const effName = (schName ?? targetSchoolName).trim();
+    const effId = (schId || targetSchoolId).trim();
+    const effName = (schName || targetSchoolName).trim();
     if (effId && r.schoolId && r.schoolId.toLowerCase() === effId.toLowerCase()) return true;
     if (effName && r.schoolName && isSameSchool(r.schoolName, effName)) return true;
     if (!r.schoolId && !r.schoolName) return true;
@@ -161,10 +161,10 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       const freshSchools = getStoredSchools();
       setSchools((prev) => (JSON.stringify(prev) === JSON.stringify(freshSchools) ? prev : freshSchools));
       const allS = getStoredStudents();
-      const freshStudents = allS.filter((s) => isStudentOfSchool(s, currentSchoolId, currentSchoolName));
+      const freshStudents = allS.filter((s) => isStudentOfSchool(s, targetSchoolId, targetSchoolName));
       setStudents((prev) => (JSON.stringify(prev) === JSON.stringify(freshStudents) ? prev : freshStudents));
       const allR = getStoredRombels();
-      const freshRombels = allR.filter((r) => isRombelOfSchool(r, currentSchoolId, currentSchoolName));
+      const freshRombels = allR.filter((r) => isRombelOfSchool(r, targetSchoolId, targetSchoolName));
       setRombels((prev) => (JSON.stringify(prev) === JSON.stringify(freshRombels) ? prev : freshRombels));
     };
     syncMaster();
@@ -184,7 +184,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       window.removeEventListener('si7kaih_rombels_updated', syncMaster);
       window.removeEventListener('focus', syncUsers);
     };
-  }, [currentSchoolId, currentSchoolName]);
+  }, [targetSchoolId, targetSchoolName]);
 
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
@@ -233,29 +233,55 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       return false;
     }
 
+    const effId = (targetSchoolId || currentSchoolId).trim();
+    const effName = (targetSchoolName || currentSchoolName).trim();
+
     // 1. Direct or normalized school ID match
-    if (user.schoolId && currentSchoolId) {
-      if (user.schoolId.toLowerCase() === currentSchoolId.toLowerCase()) return true;
+    if (user.schoolId && effId) {
+      if (user.schoolId.toLowerCase() === effId.toLowerCase()) return true;
     }
 
-    // 2. Direct school name match (case-insensitive)
-    if (user.schoolName && currentSchoolName) {
-      if (user.schoolName.trim().toLowerCase() === currentSchoolName.trim().toLowerCase()) {
+    // 2. Direct school name match (flexible)
+    if (user.schoolName && effName) {
+      if (isSameSchool(user.schoolName, effName)) {
         return true;
       }
     }
 
     // 3. ManagedBy string fallback if it mentions the school
-    if (user.managedBy && user.managedBy.toLowerCase().includes(currentSchoolName.toLowerCase())) {
+    if (user.managedBy && effName && user.managedBy.toLowerCase().includes(effName.toLowerCase())) {
       return true;
     }
 
-    // 4. For parent users, link to this school if their child is enrolled in this school
+    // 4. For student users: match by NISN, username, or student roster in this school
+    if (user.role === 'STUDENT') {
+      if (user.identifierValue && students.some((s) => s.nisn.toLowerCase() === user.identifierValue?.toLowerCase())) {
+        return true;
+      }
+      if (user.username && students.some((s) => s.nisn.toLowerCase() === user.username.toLowerCase())) {
+        return true;
+      }
+      if (user.id && students.some((s) => s.id === user.id)) {
+        return true;
+      }
+    }
+
+    // 5. For parent users, link to this school if their child is enrolled in this school
     if (user.role === 'PARENT') {
       if (user.childNisn && students.some((s) => s.nisn === user.childNisn)) {
         return true;
       }
       if (user.childName && students.some((s) => s.name.toLowerCase() === user.childName?.toLowerCase())) {
+        return true;
+      }
+    }
+
+    // 6. For teacher users, link to this school if their assigned rombel belongs to this school
+    if (user.role === 'TEACHER') {
+      if (user.className && rombels.some((r) => isSameClass(r.name, user.className))) {
+        return true;
+      }
+      if (user.name && rombels.some((r) => r.teacher && r.teacher.toLowerCase().includes(user.name.toLowerCase()))) {
         return true;
       }
     }
@@ -266,14 +292,14 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   // Scoped list of users strictly within this school
   const schoolScopedUsers = useMemo(() => {
     return userAccounts.filter(isUserOfSchool);
-  }, [userAccounts, currentSchoolId, currentSchoolName, students]);
+  }, [userAccounts, targetSchoolId, targetSchoolName, students, rombels]);
 
   // Sync user accounts with LocalStorage while preserving other schools' accounts
   const updateSchoolUsers = (updatedSchoolUsers: UserPersona[]) => {
     const stamped = updatedSchoolUsers.map((u) => ({
       ...u,
-      schoolId: u.schoolId || currentSchoolId,
-      schoolName: u.schoolName || currentSchoolName,
+      schoolId: u.schoolId || targetSchoolId,
+      schoolName: u.schoolName || targetSchoolName,
     }));
     const allUsers = getStoredUsers();
     // Keep users from other schools untouched
@@ -283,7 +309,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     saveStoredUsers(mergedPool);
     saveSuperAdminMasterDataToSupabase({
       users: mergedPool,
-      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
+      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${targetSchoolName})`,
       actionType: 'UPDATE_USERS_BY_SCHOOL_ADMIN',
     }).catch((err) => console.warn('Supabase master users sync notice:', err));
   };
@@ -382,6 +408,14 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const [studentFormParentPhone, setStudentFormParentPhone] = useState('');
   const [studentFormStatus, setStudentFormStatus] = useState<'AKTIF' | 'MUTASI' | 'LULUS'>('AKTIF');
 
+  // Account creation options for Add Student
+  const [studentFormCreateUser, setStudentFormCreateUser] = useState(true);
+  const [studentFormUsername, setStudentFormUsername] = useState('');
+  const [studentFormPassword, setStudentFormPassword] = useState('123456');
+  const [studentFormCreateParent, setStudentFormCreateParent] = useState(true);
+  const [studentFormParentUsername, setStudentFormParentUsername] = useState('');
+  const [studentFormParentPassword, setStudentFormParentPassword] = useState('123456');
+
   // Add / Edit Rombel Modal State
   const [isRombelModalOpen, setIsRombelModalOpen] = useState(false);
   const [editingRombel, setEditingRombel] = useState<Rombel | null>(null);
@@ -395,24 +429,32 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const [rombelFormYear, setRombelFormYear] = useState('2026/2027 Ganjil');
   const [rombelFormStatus, setRombelFormStatus] = useState<'AKTIF' | 'NONAKTIF'>('AKTIF');
 
+  // Account creation options for Add Rombel (Guru Wali Kelas)
+  const [rombelFormCreateTeacher, setRombelFormCreateTeacher] = useState(true);
+  const [rombelFormTeacherUsername, setRombelFormTeacherUsername] = useState('');
+  const [rombelFormTeacherPassword, setRombelFormTeacherPassword] = useState('123456');
+
+  // Batch create student accounts modal state
+  const [isBatchStudentModalOpen, setIsBatchStudentModalOpen] = useState(false);
+
   // Sync to LocalStorage & Supabase Realtime Master
   const updateStudents = (newStudents: Student[]) => {
     const stamped = newStudents.map((s) => ({
       ...s,
-      schoolId: s.schoolId || currentSchoolId,
-      schoolName: s.schoolName || currentSchoolName,
+      schoolId: s.schoolId || targetSchoolId,
+      schoolName: s.schoolName || targetSchoolName,
     }));
     setStudents(stamped);
 
     const allStudents = getStoredStudents();
     const otherSchoolStudents = allStudents.filter(
-      (s) => !isStudentOfSchool(s, currentSchoolId, currentSchoolName)
+      (s) => !isStudentOfSchool(s, targetSchoolId, targetSchoolName)
     );
     const merged = [...otherSchoolStudents, ...stamped];
     saveStoredStudents(merged);
     saveSuperAdminMasterDataToSupabase({
       students: merged,
-      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
+      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${targetSchoolName})`,
       actionType: 'UPDATE_STUDENTS_BY_SCHOOL_ADMIN',
     }).catch((err) => console.warn('Supabase sync students notice:', err));
   };
@@ -420,20 +462,20 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
   const updateRombels = (newRombels: Rombel[]) => {
     const stamped = newRombels.map((r) => ({
       ...r,
-      schoolId: r.schoolId || currentSchoolId,
-      schoolName: r.schoolName || currentSchoolName,
+      schoolId: r.schoolId || targetSchoolId,
+      schoolName: r.schoolName || targetSchoolName,
     }));
     setRombels(stamped);
 
     const allRombels = getStoredRombels();
     const otherSchoolRombels = allRombels.filter(
-      (r) => !isRombelOfSchool(r, currentSchoolId, currentSchoolName)
+      (r) => !isRombelOfSchool(r, targetSchoolId, targetSchoolName)
     );
     const merged = [...otherSchoolRombels, ...stamped];
     saveStoredRombels(merged);
     saveSuperAdminMasterDataToSupabase({
       rombels: merged,
-      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${currentSchoolName})`,
+      lastUpdatedBy: `${currentPersona?.name || 'Admin Sekolah'} (${targetSchoolName})`,
       actionType: 'UPDATE_ROMBELS_BY_SCHOOL_ADMIN',
     }).catch((err) => console.warn('Supabase sync rombels notice:', err));
   };
@@ -604,6 +646,26 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     return [...students].sort((a, b) => a.name.localeCompare(b.name));
   }, [students]);
 
+  // Students who do not currently have an active student login account in this school
+  const studentsWithoutStudentUser = useMemo(() => {
+    const studentIdentifierValues = new Set(
+      schoolScopedUsers
+        .filter((u) => u.role === 'STUDENT' && u.identifierValue)
+        .map((u) => u.identifierValue.trim().toLowerCase())
+    );
+    const studentUsernames = new Set(
+      schoolScopedUsers
+        .filter((u) => u.role === 'STUDENT')
+        .map((u) => u.username.trim().toLowerCase())
+    );
+    return students.filter(
+      (s) =>
+        !studentIdentifierValues.has(s.nisn.trim().toLowerCase()) &&
+        !studentUsernames.has(s.nisn.trim().toLowerCase()) &&
+        (!s.username || !studentUsernames.has(s.username.trim().toLowerCase()))
+    );
+  }, [students, schoolScopedUsers]);
+
   // Students who do not currently have a linked parent user
   const studentsWithoutParent = useMemo(() => {
     const parentChildNisns = new Set(
@@ -620,6 +682,92 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
       (s) => !parentChildNisns.has(s.nisn) && !parentUsernames.has(`wali.${s.nisn}`)
     );
   }, [students, schoolScopedUsers]);
+
+  const handleCreateSingleStudentAccount = (s: Student) => {
+    const uName = (s.username || s.nisn).trim().toLowerCase();
+    const existing = schoolScopedUsers.find(
+      (u) => u.username.toLowerCase() === uName || (u.role === 'STUDENT' && u.identifierValue === s.nisn)
+    );
+    if (existing) {
+      showToast(`Akun untuk siswa ${s.name} (@${existing.username}) sudah ada!`);
+      return;
+    }
+
+    const schoolDomain = targetSchoolName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'sekolah';
+    const newStudentUser: UserPersona = {
+      id: `usr-std-${Date.now()}-${s.nisn}`,
+      name: s.name,
+      role: 'STUDENT',
+      title: `Peserta Didik ${s.className}`,
+      avatar: s.gender === 'L' ? '👦🏻' : '👧🏻',
+      schoolId: targetSchoolId,
+      schoolName: targetSchoolName,
+      email: `${uName}@siswa.${schoolDomain}.sch.id`,
+      username: uName,
+      passwordHash: '123456',
+      authChannel: 'MANDIRI_INTERNAL',
+      accountStatus: 'MANDIRI_AKTIF',
+      authProviderLabel: `Autentikasi Mandiri ${targetSchoolName}`,
+      securityLevel: 'Peserta Didik (Pengisian Jurnal & Refleksi Harian)',
+      identifierLabel: 'NISN',
+      identifierValue: s.nisn,
+      className: s.className,
+      managedBy: `Administrator Mandiri ${targetSchoolName}`,
+      createdDate: new Date().toISOString().slice(0, 10),
+    };
+
+    setUserPassword(newStudentUser.id, '123456', [
+      newStudentUser.username,
+      newStudentUser.identifierValue,
+      newStudentUser.email,
+    ]);
+
+    updateSchoolUsers([...schoolScopedUsers, newStudentUser]);
+    showToast(`Akun mandiri siswa untuk ${s.name} (@${uName}) berhasil diterbitkan (Password: 123456)!`);
+  };
+
+  const handleExecuteBatchCreateStudentAccounts = () => {
+    if (studentsWithoutStudentUser.length === 0) {
+      showToast('Semua peserta didik sudah memiliki akun pengguna login!');
+      return;
+    }
+
+    const schoolDomain = targetSchoolName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'sekolah';
+    const newAccounts: UserPersona[] = studentsWithoutStudentUser.map((s, idx) => {
+      const uName = (s.username || s.nisn).trim().toLowerCase();
+      return {
+        id: `usr-std-${Date.now()}-${idx}-${s.nisn}`,
+        name: s.name,
+        role: 'STUDENT',
+        title: `Peserta Didik ${s.className}`,
+        avatar: s.gender === 'L' ? '👦🏻' : '👧🏻',
+        schoolId: targetSchoolId,
+        schoolName: targetSchoolName,
+        email: `${uName}@siswa.${schoolDomain}.sch.id`,
+        username: uName,
+        passwordHash: '123456',
+        authChannel: 'MANDIRI_INTERNAL',
+        accountStatus: 'MANDIRI_AKTIF',
+        authProviderLabel: `Autentikasi Mandiri ${targetSchoolName}`,
+        securityLevel: 'Peserta Didik (Pengisian Jurnal & Refleksi Harian)',
+        identifierLabel: 'NISN',
+        identifierValue: s.nisn,
+        className: s.className,
+        managedBy: `Administrator Mandiri ${targetSchoolName}`,
+        createdDate: new Date().toISOString().slice(0, 10),
+      };
+    });
+
+    newAccounts.forEach((acc) => {
+      setUserPassword(acc.id, '123456', [acc.username, acc.identifierValue, acc.email]);
+    });
+
+    updateSchoolUsers([...schoolScopedUsers, ...newAccounts]);
+    setIsBatchStudentModalOpen(false);
+    showToast(
+      `Berhasil menerbitkan ${newAccounts.length} akun murid baru secara mandiri untuk ${targetSchoolName}!`
+    );
+  };
 
   const handleSelectExistingPerson = (val: string) => {
     setSelectedExistingPerson(val);
@@ -798,6 +946,12 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     setStudentFormParentName('');
     setStudentFormParentPhone('');
     setStudentFormStatus('AKTIF');
+    setStudentFormCreateUser(true);
+    setStudentFormUsername('');
+    setStudentFormPassword('123456');
+    setStudentFormCreateParent(true);
+    setStudentFormParentUsername('');
+    setStudentFormParentPassword('123456');
     setIsStudentModalOpen(true);
   };
 
@@ -850,8 +1004,8 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
         academicYear: '2026/2027 Ganjil',
         status: 'AKTIF',
         source: 'INPUT_MANUAL',
-        schoolId: currentSchoolId,
-        schoolName: currentSchoolName,
+        schoolId: targetSchoolId,
+        schoolName: targetSchoolName,
       };
       updateRombels([...rombels, autoRombel]);
     }
@@ -869,19 +1023,48 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
               parentName: studentFormParentName.trim() || 'Orang Tua / Wali',
               parentPhone: studentFormParentPhone.trim(),
               status: studentFormStatus,
-              schoolId: currentSchoolId,
-              schoolName: currentSchoolName,
+              schoolId: targetSchoolId,
+              schoolName: targetSchoolName,
             }
           : s
       );
       updateStudents(updated);
-      showToast('Data peserta didik berhasil diperbarui!');
+
+      // Sinkronkan juga nama/kelas ke akun pengguna terkait jika ada
+      const updatedUsers = schoolScopedUsers.map((u) => {
+        if (u.role === 'STUDENT' && (u.identifierValue === editingStudent.nisn || u.id === editingStudent.id)) {
+          return {
+            ...u,
+            name: trimmedName,
+            className: targetClass,
+            identifierValue: trimmedNisn,
+            title: `Peserta Didik ${targetClass}`,
+          };
+        }
+        if (u.role === 'PARENT' && (u.childNisn === editingStudent.nisn || u.childId === editingStudent.id)) {
+          return {
+            ...u,
+            childName: trimmedName,
+            childNisn: trimmedNisn,
+            className: targetClass,
+            title: `Wali Murid dari ${trimmedName}`,
+          };
+        }
+        return u;
+      });
+      if (JSON.stringify(updatedUsers) !== JSON.stringify(schoolScopedUsers)) {
+        updateSchoolUsers(updatedUsers);
+      }
+
+      showToast('Data peserta didik dan penugasan akun berhasil diperbarui!');
     } else {
       const isDuplicate = students.some((s) => s.nisn === trimmedNisn);
       if (isDuplicate) {
         showToast(`Siswa dengan NISN ${trimmedNisn} sudah ada dalam database!`);
         return;
       }
+
+      const assignedStudentUsername = (studentFormUsername.trim() || trimmedNisn).toLowerCase();
 
       const newStudent: Student = {
         id: `std-man-${Date.now()}`,
@@ -895,11 +1078,98 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
         status: studentFormStatus,
         source: 'INPUT_MANUAL',
         createdAt: new Date().toISOString().slice(0, 10),
-        schoolId: currentSchoolId,
-        schoolName: currentSchoolName,
+        username: assignedStudentUsername,
+        schoolId: targetSchoolId,
+        schoolName: targetSchoolName,
       };
+
+      const newAccounts: UserPersona[] = [];
+      const schoolDomain = targetSchoolName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'sekolah';
+
+      // 1. Buat Akun Pengguna Siswa jika opsi aktif
+      if (studentFormCreateUser) {
+        const studentUser: UserPersona = {
+          id: `usr-std-${Date.now()}-${trimmedNisn}`,
+          name: trimmedName,
+          role: 'STUDENT',
+          title: `Peserta Didik ${targetClass}`,
+          avatar: studentFormGender === 'L' ? '👦🏻' : '👧🏻',
+          schoolId: targetSchoolId,
+          schoolName: targetSchoolName,
+          email: `${assignedStudentUsername}@siswa.${schoolDomain}.sch.id`,
+          username: assignedStudentUsername,
+          passwordHash: studentFormPassword.trim() || '123456',
+          authChannel: 'MANDIRI_INTERNAL',
+          accountStatus: 'MANDIRI_AKTIF',
+          authProviderLabel: `Autentikasi Mandiri ${targetSchoolName}`,
+          securityLevel: 'Peserta Didik (Pengisian Jurnal & Refleksi Harian)',
+          identifierLabel: 'NISN',
+          identifierValue: trimmedNisn,
+          className: targetClass,
+          managedBy: `Administrator Mandiri ${targetSchoolName}`,
+          createdDate: new Date().toISOString().slice(0, 10),
+        };
+        setUserPassword(studentUser.id, studentUser.passwordHash || '123456', [
+          studentUser.username,
+          studentUser.identifierValue,
+          studentUser.email,
+        ]);
+        newAccounts.push(studentUser);
+      }
+
+      // 2. Buat Akun Pengguna Orang Tua jika opsi aktif
+      if (studentFormCreateParent) {
+        const assignedParentUsername = (studentFormParentUsername.trim() || `wali.${trimmedNisn}`).toLowerCase();
+        const pName =
+          studentFormParentName.trim() && studentFormParentName.trim() !== '-'
+            ? studentFormParentName.trim()
+            : `Wali dari ${trimmedName}`;
+        const parentUser: UserPersona = {
+          id: `usr-parent-${Date.now()}-${trimmedNisn}`,
+          name: pName,
+          role: 'PARENT',
+          title: `Wali Murid dari ${trimmedName}`,
+          avatar: '👨‍👩‍👧',
+          schoolId: targetSchoolId,
+          schoolName: targetSchoolName,
+          email: `${assignedParentUsername}@${schoolDomain}.sch.id`,
+          username: assignedParentUsername,
+          passwordHash: studentFormParentPassword.trim() || '123456',
+          authChannel: 'MANDIRI_INTERNAL',
+          accountStatus: 'MANDIRI_AKTIF',
+          authProviderLabel: `Autentikasi Mandiri ${targetSchoolName}`,
+          securityLevel: 'Orang Tua / Wali Murid',
+          identifierLabel: 'No. WhatsApp / NIK',
+          identifierValue: studentFormParentPhone.trim() || trimmedNisn,
+          className: targetClass,
+          managedBy: `Administrator Mandiri ${targetSchoolName}`,
+          childName: trimmedName,
+          childId: newStudent.id,
+          childNisn: trimmedNisn,
+          phone: studentFormParentPhone.trim() || undefined,
+          createdDate: new Date().toISOString().slice(0, 10),
+        };
+        setUserPassword(parentUser.id, parentUser.passwordHash || '123456', [
+          parentUser.username,
+          parentUser.identifierValue,
+          parentUser.email,
+          parentUser.childNisn,
+        ]);
+        newAccounts.push(parentUser);
+      }
+
       updateStudents([newStudent, ...students]);
-      showToast(`Peserta didik ${newStudent.name} berhasil ditambahkan!`);
+      if (newAccounts.length > 0) {
+        updateSchoolUsers([...schoolScopedUsers, ...newAccounts]);
+      }
+
+      const notifAccount =
+        newAccounts.length === 2
+          ? ' beserta akun login Siswa (@' + assignedStudentUsername + ') & Orang Tua'
+          : newAccounts.length === 1
+          ? ' beserta akun login (@' + newAccounts[0].username + ')'
+          : '';
+      showToast(`Peserta didik ${newStudent.name}${notifAccount} berhasil ditambahkan!`);
     }
     setIsStudentModalOpen(false);
   };
@@ -1086,8 +1356,11 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
     setRombelFormTeacher('');
     setRombelFormTeacherNip('');
     setRombelFormCapacity(32);
-    setRombelFormYear('2025/2026 Ganjil');
+    setRombelFormYear('2026/2027 Ganjil');
     setRombelFormStatus('AKTIF');
+    setRombelFormCreateTeacher(true);
+    setRombelFormTeacherUsername('');
+    setRombelFormTeacherPassword('123456');
     setIsRombelModalOpen(true);
   };
 
@@ -1131,8 +1404,8 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
               capacity: rombelFormCapacity,
               academicYear: rombelFormYear,
               status: rombelFormStatus,
-              schoolId: currentSchoolId,
-              schoolName: currentSchoolName,
+              schoolId: targetSchoolId,
+              schoolName: targetSchoolName,
             }
           : r
       );
@@ -1175,11 +1448,72 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
         academicYear: rombelFormYear,
         status: rombelFormStatus,
         source: 'INPUT_MANUAL',
-        schoolId: currentSchoolId,
-        schoolName: currentSchoolName,
+        schoolId: targetSchoolId,
+        schoolName: targetSchoolName,
       };
+
+      const newTeacherAccounts: UserPersona[] = [];
+      if (rombelFormCreateTeacher && teacherName && teacherName !== 'Wali Kelas') {
+        const cleanName = teacherName
+          .toLowerCase()
+          .replace(/^(pak|ibu|bapak|dr|drs|dra|h|hj)\.?\s+/gi, '')
+          .split(',')[0]
+          .trim()
+          .replace(/[^a-z0-9]/g, '.');
+        const teacherUsername = (
+          rombelFormTeacherUsername.trim() ||
+          `guru.${cleanName}` ||
+          `guru.${Date.now().toString().slice(-4)}`
+        ).toLowerCase();
+
+        // Cek apakah akun guru sudah ada
+        const existingTeacher = schoolScopedUsers.find(
+          (u) => u.username.toLowerCase() === teacherUsername || u.name.toLowerCase() === teacherName.toLowerCase()
+        );
+
+        if (!existingTeacher) {
+          const schoolDomain = targetSchoolName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'sekolah';
+          const teacherPersona: UserPersona = {
+            id: `usr-teacher-${Date.now()}`,
+            name: teacherName,
+            role: 'TEACHER',
+            title: `Wali ${trimmedName}`,
+            avatar: '👨‍🏫',
+            schoolId: targetSchoolId,
+            schoolName: targetSchoolName,
+            email: `${teacherUsername}@${schoolDomain}.sch.id`,
+            username: teacherUsername,
+            passwordHash: rombelFormTeacherPassword.trim() || '123456',
+            authChannel: 'MANDIRI_INTERNAL',
+            accountStatus: 'MANDIRI_AKTIF',
+            authProviderLabel: `Autentikasi Mandiri ${targetSchoolName}`,
+            securityLevel: 'Guru Wali Kelas (Akses Pengesahan & Refleksi Rombel)',
+            identifierLabel: 'NIP / NUPTK',
+            identifierValue: teacherNip !== '-' ? teacherNip : `NIP-${Date.now().toString().slice(-6)}`,
+            nip: teacherNip !== '-' ? teacherNip : undefined,
+            className: trimmedName,
+            managedBy: `Administrator Mandiri ${targetSchoolName}`,
+            createdDate: new Date().toISOString().slice(0, 10),
+          };
+          setUserPassword(teacherPersona.id, teacherPersona.passwordHash || '123456', [
+            teacherPersona.username,
+            teacherPersona.identifierValue,
+            teacherPersona.email,
+          ]);
+          newTeacherAccounts.push(teacherPersona);
+        }
+      }
+
       updateRombels([...rombels, newRombel]);
-      showToast(`Rombongan Belajar ${newRombel.name} berhasil ditambahkan!`);
+      if (newTeacherAccounts.length > 0) {
+        updateSchoolUsers([...schoolScopedUsers, ...newTeacherAccounts]);
+      }
+
+      const teacherNotif =
+        newTeacherAccounts.length > 0
+          ? ` dan Akun Guru Wali Kelas (@${newTeacherAccounts[0].username})`
+          : '';
+      showToast(`Rombongan Belajar ${newRombel.name}${teacherNotif} berhasil ditambahkan!`);
     }
     setIsRombelModalOpen(false);
   };
@@ -1568,6 +1902,16 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                       <Users className="w-3.5 h-3.5 text-purple-600" />
                       <span>+ Akun Orang Tua</span>
                     </button>
+                    {studentsWithoutStudentUser.length > 0 && (
+                      <button
+                        onClick={() => setIsBatchStudentModalOpen(true)}
+                        className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        title="Terbitkan akun login siswa sekaligus untuk peserta didik yang belum memiliki akun"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Terbitkan Siswa Massal ({studentsWithoutStudentUser.length})</span>
+                      </button>
+                    )}
                     {studentsWithoutParent.length > 0 && (
                       <button
                         onClick={() => setIsBatchParentModalOpen(true)}
@@ -1810,6 +2154,44 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                                   {s.gender === 'L' ? 'L' : 'P'}
                                 </span>
                               </div>
+                              {(() => {
+                                const studentAcc = schoolScopedUsers.find(
+                                  (u) =>
+                                    u.role === 'STUDENT' &&
+                                    (u.identifierValue === s.nisn ||
+                                      u.id === s.id ||
+                                      (u.username && u.username.toLowerCase() === (s.username || s.nisn).toLowerCase()))
+                                );
+                                if (studentAcc) {
+                                  return (
+                                    <div className="mt-1 flex items-center gap-1.5">
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-[#0753A5] border border-blue-200">
+                                        <CheckCircle2 className="w-2.5 h-2.5" />
+                                        <span>Akun: @{studentAcc.username}</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenDeleteUser(studentAcc)}
+                                        title={`Hapus Akun Siswa @${studentAcc.username}`}
+                                        className="p-0.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer transition-colors"
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  );
+                                } else {
+                                  return (
+                                    <button
+                                      onClick={() => handleCreateSingleStudentAccount(s)}
+                                      className="mt-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                      title="Terbitkan akun login mandiri untuk siswa ini"
+                                    >
+                                      <Plus className="w-2.5 h-2.5" />
+                                      <span>+ Buat Akun Siswa</span>
+                                    </button>
+                                  );
+                                }
+                              })()}
                             </td>
                             <td className="py-3 px-4">
                               <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-blue-800 font-bold text-[11px] border border-blue-100">
@@ -1877,6 +2259,13 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                             <td className="py-3 px-4 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
+                                  onClick={() => handleCreateSingleStudentAccount(s)}
+                                  className="p-1.5 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-colors cursor-pointer"
+                                  title={`Terbitkan / Sinkronkan Akun Murid untuk ${s.name}`}
+                                >
+                                  <KeyRound className="w-3.5 h-3.5" />
+                                </button>
+                                <button
                                   onClick={() => handleOpenAddParent(s)}
                                   className="p-1.5 rounded-lg text-purple-600 hover:text-purple-800 hover:bg-purple-50 transition-colors cursor-pointer"
                                   title={`Kelola / Terbitkan Akun Orang Tua untuk ${s.name}`}
@@ -1912,7 +2301,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                         return matchSearch && matchClass && matchStatus;
                       }).length === 0 && (
                         <tr>
-                          <td colSpan={7} className="py-10 text-center text-slate-400">
+                          <td colSpan={8} className="py-10 text-center text-slate-400">
                             <GraduationCap className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                             <p className="font-bold text-slate-600">Tidak ada data peserta didik yang cocok</p>
                             <p className="text-[11px] text-slate-400 mt-1">
@@ -2006,6 +2395,52 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                                 <div className="text-[10px] text-slate-500 font-mono">
                                   NIP: {r.teacherNip || '-'}
                                 </div>
+                                {(() => {
+                                  const teacherAcc = schoolScopedUsers.find(
+                                    (u) =>
+                                      u.role === 'TEACHER' &&
+                                      (isSameClass(u.className, r.name) ||
+                                        (r.teacher && r.teacher !== 'Wali Kelas' && u.name.toLowerCase() === r.teacher.toLowerCase()) ||
+                                        (r.teacherNip && r.teacherNip !== '-' && u.identifierValue === r.teacherNip))
+                                  );
+                                  if (teacherAcc) {
+                                    return (
+                                      <div className="mt-1 flex items-center gap-1.5">
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                          <CheckCircle2 className="w-2.5 h-2.5" />
+                                          <span>Akun: @{teacherAcc.username}</span>
+                                        </span>
+                                      </div>
+                                    );
+                                  } else if (r.teacher && r.teacher.trim() && r.teacher !== 'Wali Kelas') {
+                                    return (
+                                      <button
+                                        onClick={() => {
+                                          setNewUserRole('TEACHER');
+                                          setNewUserName(r.teacher);
+                                          setNewUserClassName(r.name);
+                                          setNewUserIdentifierLabel('NIP / NUPTK');
+                                          setNewUserIdentifierValue(r.teacherNip !== '-' ? r.teacherNip : '');
+                                          const cleanName = r.teacher
+                                            .toLowerCase()
+                                            .replace(/^(pak|ibu|bapak|dr|drs|dra|h|hj)\.?\s+/gi, '')
+                                            .split(',')[0]
+                                            .trim()
+                                            .replace(/[^a-z0-9]/g, '.');
+                                          setNewUserUsername(`guru.${cleanName}`);
+                                          setNewUserPassword('123456');
+                                          setIsAddUserModalOpen(true);
+                                        }}
+                                        className="mt-1 text-[10px] text-indigo-600 hover:text-indigo-800 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                        title="Terbitkan akun login mandiri untuk guru wali kelas ini"
+                                      >
+                                        <Plus className="w-2.5 h-2.5" />
+                                        <span>+ Buat Akun Guru</span>
+                                      </button>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                               </td>
                               <td className="py-3 px-4">
                                 <div className="flex flex-col gap-1">
@@ -2461,6 +2896,16 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                   <Users className="w-3.5 h-3.5 text-purple-600" />
                   <span>+ Tambah Akun Orang Tua</span>
                 </button>
+                {studentsWithoutStudentUser.length > 0 && (
+                  <button
+                    onClick={() => setIsBatchStudentModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white transition-colors cursor-pointer shadow-xs"
+                    title="Terbitkan akun login murid untuk semua siswa yang belum memiliki akun"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>⚡ Terbitkan Murid Massal ({studentsWithoutStudentUser.length})</span>
+                  </button>
+                )}
                 {studentsWithoutParent.length > 0 && (
                   <button
                     onClick={() => setIsBatchParentModalOpen(true)}
@@ -3559,6 +4004,97 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* Batch Create Student Accounts Modal */}
+          {isBatchStudentModalOpen && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[calc(100vh-2rem)] sm:max-h-[90vh] my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between p-5 sm:p-6 pb-3 sm:pb-4 border-b border-slate-100 shrink-0 bg-white">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#0753A5] flex items-center justify-center font-bold">
+                      <GraduationCap className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">
+                        Terbitkan Akun Peserta Didik Massal
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Otomatisasi akun portal siswa untuk pengisian jurnal 7 Kebiasaan di {currentSchoolName}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsBatchStudentModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer p-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1 overscroll-contain text-xs">
+                  <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 flex items-start gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-[#0753A5] shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-blue-950">
+                        Terdeteksi {studentsWithoutStudentUser.length} Siswa Belum Memiliki Akun Login Mandiri
+                      </p>
+                      <p className="text-[11px] text-blue-900/90 leading-relaxed">
+                        Sistem mandiri sekolah akan secara otomatis menerbitkan akun pengguna login bagi masing-masing siswa dengan kredensial:
+                      </p>
+                      <ul className="text-[10px] list-disc list-inside text-blue-900 space-y-0.5 pt-1 font-mono">
+                        <li>ID Pengguna / Username: <span className="font-bold">[NISN Siswa]</span></li>
+                        <li>Kata Sandi Awal: <span className="font-bold">123456</span> (dapat diubah siswa setelah masuk)</li>
+                        <li>Hak Akses: Peserta Didik (Pencatatan & Refleksi 7 Kebiasaan Anak Indonesia Hebat)</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* List of students that will get accounts */}
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1.5">
+                      Daftar Peserta Didik yang Diterbitkan Akun Murid ({studentsWithoutStudentUser.length}):
+                    </label>
+                    <div className="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 divide-y divide-slate-100 bg-slate-50/50">
+                      {studentsWithoutStudentUser.map((st) => (
+                        <div key={st.id || st.nisn} className="p-2.5 px-3 flex items-center justify-between text-[11px]">
+                          <div>
+                            <span className="font-bold text-slate-900 block">{st.name}</span>
+                            <span className="text-[10px] text-slate-500">
+                              Kelas: {st.className} &bull; NISN: {st.nisn}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-mono font-bold text-blue-800 block">
+                              @{st.username || st.nisn}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-500">
+                              Pass: 123456
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 p-4 sm:p-5 pt-3 border-t border-slate-100 shrink-0 bg-slate-50/80 rounded-b-3xl">
+                  <button
+                    onClick={() => setIsBatchStudentModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={handleExecuteBatchCreateStudentAccounts}
+                    className="px-4 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-xs font-bold text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Terbitkan {studentsWithoutStudentUser.length} Akun Siswa Sekarang</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -3917,6 +4453,118 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                     ))}
                   </div>
                 </div>
+
+                {!editingStudent && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/60 border border-blue-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4 text-[#0753A5]" />
+                        Penerbitan Akun Pengguna & Hak Akses Login
+                      </span>
+                      <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                        Autentikasi Mandiri
+                      </span>
+                    </div>
+
+                    <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl bg-white border border-blue-100">
+                      <input
+                        type="checkbox"
+                        checked={studentFormCreateUser}
+                        onChange={(e) => setStudentFormCreateUser(e.target.checked)}
+                        className="rounded text-[#0753A5] focus:ring-[#0753A5] mt-0.5 cursor-pointer"
+                      />
+                      <div className="text-[11px]">
+                        <span className="font-bold text-slate-900 block">
+                          Terbitkan Akun Pengguna Siswa Otomatis (Akses Login Murid)
+                        </span>
+                        <span className="text-slate-500 block text-[10px]">
+                          Siswa dapat langsung login ke portal mandiri untuk mencatat 7 Kebiasaan Anak Indonesia Hebat.
+                        </span>
+                      </div>
+                    </label>
+
+                    {studentFormCreateUser && (
+                      <div className="grid grid-cols-2 gap-2.5 pt-1">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                            ID Pengguna / Username Siswa <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={studentFormUsername || studentFormNisn}
+                            onChange={(e) => setStudentFormUsername(e.target.value)}
+                            placeholder="Contoh: 0091234567"
+                            className="w-full p-2 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20 focus:border-[#0753A5]"
+                          />
+                          <span className="text-[9px] text-slate-400 mt-0.5 block">
+                            Standar SIM: Gunakan nomor NISN
+                          </span>
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                            Kata Sandi Awal Siswa
+                          </label>
+                          <input
+                            type="text"
+                            value={studentFormPassword}
+                            onChange={(e) => setStudentFormPassword(e.target.value)}
+                            placeholder="123456"
+                            className="w-full p-2 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20 focus:border-[#0753A5]"
+                          />
+                          <span className="text-[9px] text-slate-400 mt-0.5 block">
+                            Dapat diubah siswa setelah login
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl bg-white border border-purple-100">
+                      <input
+                        type="checkbox"
+                        checked={studentFormCreateParent}
+                        onChange={(e) => setStudentFormCreateParent(e.target.checked)}
+                        className="rounded text-purple-600 focus:ring-purple-600 mt-0.5 cursor-pointer"
+                      />
+                      <div className="text-[11px]">
+                        <span className="font-bold text-slate-900 block">
+                          Terbitkan Juga Akun Orang Tua / Wali Murid
+                        </span>
+                        <span className="text-slate-500 block text-[10px]">
+                          Username: <code className="font-mono text-purple-700">wali.{studentFormNisn || '[NISN]'}</code> &bull; Password: <code className="font-mono text-purple-700">{studentFormParentPassword}</code>
+                        </span>
+                      </div>
+                    </label>
+
+                    {studentFormCreateParent && (
+                      <div className="grid grid-cols-2 gap-2.5 pt-1">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                            Username Akun Orang Tua
+                          </label>
+                          <input
+                            type="text"
+                            value={studentFormParentUsername || (studentFormNisn ? `wali.${studentFormNisn}` : '')}
+                            onChange={(e) => setStudentFormParentUsername(e.target.value)}
+                            placeholder="wali.0091234567"
+                            className="w-full p-2 rounded-xl border border-purple-200 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                            Kata Sandi Akun Orang Tua
+                          </label>
+                          <input
+                            type="text"
+                            value={studentFormParentPassword}
+                            onChange={(e) => setStudentFormParentPassword(e.target.value)}
+                            placeholder="123456"
+                            className="w-full p-2 rounded-xl border border-purple-200 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 p-4 sm:p-5 pt-3 border-t border-slate-100 shrink-0 bg-slate-50/80 rounded-b-3xl">
@@ -3931,7 +4579,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-xs font-bold text-white transition-colors cursor-pointer shadow-xs"
                 >
-                  {editingStudent ? 'Simpan Perubahan' : 'Daftarkan Peserta Didik'}
+                  {editingStudent ? 'Simpan Perubahan' : 'Daftarkan Peserta Didik & Akun'}
                 </button>
               </div>
             </form>
@@ -4082,11 +4730,77 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                       type="text"
                       value={rombelFormYear}
                       onChange={(e) => setRombelFormYear(e.target.value)}
-                      placeholder="2025/2026 Ganjil"
+                      placeholder="2026/2027 Ganjil"
                       className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#0753A5]/20"
                     />
                   </div>
                 </div>
+
+                {!editingRombel && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-50/80 to-blue-50/60 border border-indigo-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4 text-indigo-700" />
+                        Penerbitan Akun Guru Wali Kelas Otomatis
+                      </span>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-900 font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                        Akses Wali Kelas
+                      </span>
+                    </div>
+
+                    <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl bg-white border border-indigo-100">
+                      <input
+                        type="checkbox"
+                        checked={rombelFormCreateTeacher}
+                        onChange={(e) => setRombelFormCreateTeacher(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-600 mt-0.5 cursor-pointer"
+                      />
+                      <div className="text-[11px]">
+                        <span className="font-bold text-slate-900 block">
+                          Terbitkan Akun Login untuk Guru Wali Kelas Baru Ini
+                        </span>
+                        <span className="text-slate-500 block text-[10px]">
+                          Guru dapat langsung login untuk memantau dan memvalidasi jurnal pembiasaan siswa rombel ini.
+                        </span>
+                      </div>
+                    </label>
+
+                    {rombelFormCreateTeacher && (
+                      <div className="grid grid-cols-2 gap-2.5 pt-1">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                            ID Pengguna / Username Guru
+                          </label>
+                          <input
+                            type="text"
+                            value={rombelFormTeacherUsername}
+                            onChange={(e) => setRombelFormTeacherUsername(e.target.value)}
+                            placeholder="Contoh: guru.fauzi"
+                            className="w-full p-2 rounded-xl border border-indigo-200 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          />
+                          <span className="text-[9px] text-slate-400 mt-0.5 block">
+                            Otomatis dari nama guru jika kosong
+                          </span>
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1 text-[11px]">
+                            Kata Sandi Awal Guru
+                          </label>
+                          <input
+                            type="text"
+                            value={rombelFormTeacherPassword}
+                            onChange={(e) => setRombelFormTeacherPassword(e.target.value)}
+                            placeholder="123456"
+                            className="w-full p-2 rounded-xl border border-indigo-200 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          />
+                          <span className="text-[9px] text-slate-400 mt-0.5 block">
+                            Default: 123456
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 p-4 sm:p-5 pt-3 border-t border-slate-100 shrink-0 bg-slate-50/80 rounded-b-3xl">
@@ -4101,7 +4815,7 @@ export const SchoolAdminView: React.FC<SchoolAdminViewProps> = ({
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-xs font-bold text-white transition-colors cursor-pointer shadow-xs"
                 >
-                  {editingRombel ? 'Simpan Perubahan' : 'Buat Rombongan Belajar'}
+                  {editingRombel ? 'Simpan Perubahan' : 'Buat Rombongan Belajar & Akun'}
                 </button>
               </div>
             </form>

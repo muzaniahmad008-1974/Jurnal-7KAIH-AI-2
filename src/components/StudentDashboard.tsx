@@ -44,6 +44,7 @@ import {
   ExternalLink,
   Printer,
   Info,
+  AlertTriangle,
   X,
   Trophy,
   Check,
@@ -114,6 +115,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
   const [selectedHabitEval, setSelectedHabitEval] = useState<HabitCode | 'ALL'>('ALL');
   const [showHabitsDetail, setShowHabitsDetail] = useState<boolean>(false);
+  const [isResetConfirmModalOpen, setIsResetConfirmModalOpen] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(() =>
     new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   );
@@ -166,23 +168,25 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Real-time synchronization listeners for journal updates from form, other tabs, or parent validations
   useEffect(() => {
     const handleSync = (evt?: Event) => {
-      setLastSyncTime(
-        new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      );
-      try {
-        const customEvt = evt as CustomEvent<DailyJournal[]>;
-        if (customEvt?.detail && Array.isArray(customEvt.detail)) {
-          setSyncedJournals(customEvt.detail);
-          return;
-        }
-        const saved = localStorage.getItem('si7kaih_journals_prod');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            setSyncedJournals(parsed);
+      setTimeout(() => {
+        setLastSyncTime(
+          new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        );
+        try {
+          const customEvt = evt as CustomEvent<DailyJournal[]>;
+          if (customEvt?.detail && Array.isArray(customEvt.detail)) {
+            setSyncedJournals(customEvt.detail);
+            return;
           }
-        }
-      } catch (_e) {}
+          const saved = localStorage.getItem('si7kaih_journals_prod');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              setSyncedJournals(parsed);
+            }
+          }
+        } catch (_e) {}
+      }, 0);
     };
 
     window.addEventListener('si7kaih_journals_updated', handleSync);
@@ -265,14 +269,23 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     // Merge with todayJournal to guarantee 0-latency reflection of today's journal state
     if (todayJournal?.journalDate && !isDeprecatedOrDummyJournal(todayJournal)) {
       const existsIdx = filtered.findIndex((j) => j.journalDate === todayJournal.journalDate);
+      const isTodayEmpty =
+        (todayJournal.completedCount || 0) === 0 &&
+        (!todayJournal.entries || !Object.values(todayJournal.entries).some((e: any) => e?.completed));
+
       if (existsIdx >= 0) {
-        const existing = filtered[existsIdx];
-        const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-        const propTime = todayJournal.updatedAt ? new Date(todayJournal.updatedAt).getTime() : 0;
-        if (propTime >= existingTime) {
-          filtered[existsIdx] = todayJournal;
+        if (isTodayEmpty) {
+          // If today's journal has been reset/emptied, remove it from filtered so it doesn't show completed
+          filtered.splice(existsIdx, 1);
+        } else {
+          const existing = filtered[existsIdx];
+          const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+          const propTime = todayJournal.updatedAt ? new Date(todayJournal.updatedAt).getTime() : 0;
+          if (propTime >= existingTime) {
+            filtered[existsIdx] = todayJournal;
+          }
         }
-      } else if ((todayJournal.completedCount || 0) > 0 || Object.values(todayJournal.entries || {}).some((e: any) => e?.completed)) {
+      } else if (!isTodayEmpty) {
         filtered.push(todayJournal);
       }
     }
@@ -509,6 +522,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   // Resolve the active, most up-to-date journal for today for this student
   const activeTodayJournal = useMemo(() => {
+    // If todayJournal prop is an explicit empty/reset journal, it takes authoritative precedence
+    const isTodayPropEmpty =
+      todayJournal &&
+      (todayJournal.journalDate === currentTodayDateStr || !todayJournal.journalDate) &&
+      (todayJournal.completedCount || 0) === 0 &&
+      (!todayJournal.entries || !Object.values(todayJournal.entries).some((e: any) => e?.completed));
+
+    if (isTodayPropEmpty) {
+      return todayJournal;
+    }
+
     // 1. Check in studentJournals for an entry matching currentTodayDateStr
     const match = studentJournals.find((j) => j.journalDate === currentTodayDateStr);
     if (match) {
@@ -540,6 +564,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   const isAllCompleted = completedCount === 7;
   const firstName = studentName?.trim() ? studentName.trim().split(' ')[0] : 'Hebat';
+
+  // Handler pengosongan jurnal hari ini yang terisolasi dan anti-konflik
+  const handleExecuteResetToday = () => {
+    // 1. Bersihkan segera state lokal untuk siswa ini
+    setSyncedJournals((prev) =>
+      prev.filter((j) => {
+        const jDate = j.journalDate || (j as any).date;
+        if (jDate !== currentTodayDateStr) return true;
+        const jId = (j.studentId || '').trim().toLowerCase();
+        const jNisn = (j.studentNisn || '').trim();
+        const jName = (j.studentName || '').trim().toLowerCase();
+        const targetId = (studentId || '').trim().toLowerCase();
+        const targetNisn = (studentNisn || '').trim();
+        const targetName = (studentName || '').trim().toLowerCase();
+        if (targetId && jId && jId === targetId) return false;
+        if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return false;
+        if (targetName && jName && jName === targetName) return false;
+        return true;
+      })
+    );
+
+    // 2. Jalankan reset terpadu di root App
+    if (onResetTodayJournal) {
+      onResetTodayJournal();
+    }
+    setIsResetConfirmModalOpen(false);
+  };
 
   const todaySavedRealtime = useMemo(() => {
     if (!activeTodayJournal) return null;
@@ -689,11 +740,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               {completedCount > 0 && onResetTodayJournal && (
                 <button
                   id="hero-reset-journal-btn"
-                  onClick={() => {
-                    if (window.confirm(`Kosongkan seluruh isian Jurnal 7 Kebiasaan Hari Ini (${formattedFullTodayDate})?`)) {
-                      onResetTodayJournal();
-                    }
-                  }}
+                  onClick={() => setIsResetConfirmModalOpen(true)}
                   className="px-3.5 py-2.5 rounded-xl bg-white/20 hover:bg-rose-600/40 text-rose-100 hover:text-white border border-white/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                   title={`Kosongkan seluruh isian jurnal 7 kebiasaan hari ini (${formattedShortTodayDate})`}
                 >
@@ -853,11 +900,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             {completedCount > 0 && onResetTodayJournal && (
               <button
                 id="dashboard-reset-journal-btn"
-                onClick={() => {
-                  if (window.confirm(`Kosongkan seluruh isian Jurnal 7 Kebiasaan Hari Ini (${formattedFullTodayDate})?`)) {
-                    onResetTodayJournal();
-                  }
-                }}
+                onClick={() => setIsResetConfirmModalOpen(true)}
                 className="text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                 title={`Kosongkan seluruh isian jurnal 7 kebiasaan hari ini (${formattedShortTodayDate})`}
               >
@@ -2232,6 +2275,98 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dialog Konfirmasi Pengosongan Jurnal Hari Ini (Anti-Konflik) */}
+      {isResetConfirmModalOpen && (
+        <div
+          id="reset-today-confirm-modal-overlay"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsResetConfirmModalOpen(false);
+          }}
+        >
+          <div
+            id="reset-today-confirm-modal-card"
+            className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
+                  <RotateCcw className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Kosongkan Isian Jurnal</h3>
+                  <p className="text-xs text-slate-500">{formattedFullTodayDate}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResetConfirmModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Tutup"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Apakah Anda yakin ingin mengosongkan seluruh isian Jurnal 7 Kebiasaan hari ini untuk ananda{' '}
+                <strong className="text-slate-900 font-bold">{studentName || 'siswa'}</strong>?
+              </p>
+
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Peserta Didik:</span>
+                  <span className="font-bold text-slate-900">{studentName || '-'}</span>
+                </div>
+                {className && (
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span>Rombel Kelas:</span>
+                    <span className="font-bold text-[#0753A5]">{className}</span>
+                  </div>
+                )}
+                {studentNisn && (
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span>NISN:</span>
+                    <span className="font-mono text-slate-700">{studentNisn}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Tanggal Isian:</span>
+                  <span className="font-medium text-slate-800">{formattedShortTodayDate}</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-amber-900 text-xs leading-relaxed">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                <span>
+                  Pengosongan ini aman dan terisolasi: hanya menghapus draf/isian hari ini milik ananda sendiri tanpa mempengaruhi riwayat hari sebelumnya maupun data jurnal siswa lain.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsResetConfirmModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                id="execute-reset-today-btn"
+                type="button"
+                onClick={handleExecuteResetToday}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Ya, Kosongkan Isian</span>
               </button>
             </div>
           </div>

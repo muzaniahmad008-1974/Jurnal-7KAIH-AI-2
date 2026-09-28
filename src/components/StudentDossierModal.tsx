@@ -422,7 +422,9 @@ export const StudentDossierModal: React.FC<StudentDossierModalProps> = ({
                         </div>
                         <div>
                           <div className="font-bold text-slate-800">{item.date}</div>
-                          <div className="text-[10px] text-slate-400">Dicatat pukul {item.time} WIB</div>
+                          <div className="text-[10px] text-slate-400">
+                            {item.time.includes('pukul') ? item.time : `Dicatat pukul ${item.time}`}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

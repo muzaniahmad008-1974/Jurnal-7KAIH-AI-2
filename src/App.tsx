@@ -195,46 +195,35 @@ export default function App() {
 
       const saved = localStorage.getItem('si7kaih_journals_prod');
       if (localStorage.getItem(resetKey) && saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 100) {
-          const filtered = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
-          if (filtered.length > 0) return filtered;
-        }
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+            return filtered;
+          }
+        } catch (_e) {}
       }
 
       // Bersihkan cache data jurnal lama, gantikan dengan data real input siswa (termasuk 7-B update terkini 27 September)
       localStorage.setItem('si7kaih_journals_prod', JSON.stringify(RESTORED_JOURNALS_REAL));
       localStorage.setItem(resetKey, 'true');
 
-      // Bersihkan tombstone tanggal jika ada
+      // Bersihkan tombstone legacy wildcard any_* yang menyebabkan konflik antar-siswa
       const rawTs = localStorage.getItem('si7kaih_deleted_journals_tombstones');
       if (rawTs) {
-        const tsObj = JSON.parse(rawTs);
-        const datesToClean = [
-          '2026-09-01',
-          '2026-09-02',
-          '2026-09-03',
-          '2026-09-04',
-          '2026-09-19',
-          '2026-09-20',
-          '2026-09-21',
-          '2026-09-22',
-          '2026-09-23',
-          '2026-09-24',
-          '2026-09-25',
-          '2026-09-26',
-          '2026-09-27',
-        ];
-        let tsChanged = false;
-        Object.keys(tsObj).forEach((k) => {
-          if (datesToClean.some((d) => k.includes(d))) {
-            delete tsObj[k];
-            tsChanged = true;
+        try {
+          const tsObj = JSON.parse(rawTs);
+          let tsChanged = false;
+          Object.keys(tsObj).forEach((k) => {
+            if (k.startsWith('any_')) {
+              delete tsObj[k];
+              tsChanged = true;
+            }
+          });
+          if (tsChanged) {
+            localStorage.setItem('si7kaih_deleted_journals_tombstones', JSON.stringify(tsObj));
           }
-        });
-        if (tsChanged) {
-          localStorage.setItem('si7kaih_deleted_journals_tombstones', JSON.stringify(tsObj));
-        }
+        } catch (_e) {}
       }
       return RESTORED_JOURNALS_REAL;
     } catch (_e) {
@@ -497,7 +486,9 @@ export default function App() {
         if (isMounted) {
           if (remoteJournals && remoteJournals.length > 0) {
             const filteredJournals = remoteJournals.filter(
-              (j) => !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date) && !isDeprecatedOrDummyJournal(j)
+              (j) =>
+                !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id) &&
+                !isDeprecatedOrDummyJournal(j)
             );
             const cleanJournals = filteredJournals.map((j) => {
               const cleanSchool = (j.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
@@ -511,8 +502,14 @@ export default function App() {
               };
             });
             // Pastikan jika ada entri 7-B di RESTORED_JOURNALS_REAL yang belum tersimpan di remote, tetap digabungkan
+            // KECUALI entri yang sudah dikosongkan/ditombstone oleh siswa
             const remoteIds = new Set(cleanJournals.map((j) => j.id));
-            const missingReal = RESTORED_JOURNALS_REAL.filter((j) => !remoteIds.has(j.id) && !isDeprecatedOrDummyJournal(j));
+            const missingReal = RESTORED_JOURNALS_REAL.filter(
+              (j) =>
+                !remoteIds.has(j.id) &&
+                !isDeprecatedOrDummyJournal(j) &&
+                !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+            );
             const mergedJournals = [...cleanJournals, ...missingReal];
             setJournals(mergedJournals);
             try {
@@ -602,12 +599,21 @@ export default function App() {
           return [updatedJournal, ...prev];
         });
       },
-      onJournalDeleted: (studentId, date) => {
+      onJournalDeleted: (studentId, date, studentNisn, studentName) => {
         if (!isMounted) return;
         setJournals((prev) => {
-          const next = prev.filter(
-            (j) => !(j.journalDate === date && (j.studentId === studentId || !j.studentId || !studentId))
-          );
+          const next = prev.filter((j) => {
+            const jDate = j.journalDate || (j as any).date;
+            if (jDate !== date) return true;
+            const jId = (j.studentId || '').trim().toLowerCase();
+            const jNisn = (j.studentNisn || '').trim();
+            const jName = (j.studentName || '').trim().toLowerCase();
+
+            if (studentId && jId && jId === studentId.trim().toLowerCase()) return false;
+            if (studentNisn && (jNisn === studentNisn.trim() || jId === studentNisn.trim())) return false;
+            if (studentName && jName && jName === studentName.trim().toLowerCase()) return false;
+            return true;
+          });
           try {
             localStorage.setItem('si7kaih_journals_prod', JSON.stringify(next));
           } catch (_e) {}
@@ -617,7 +623,9 @@ export default function App() {
       onAllJournalsSync: (remoteJournals) => {
         if (!isMounted) return;
         const valid = remoteJournals.filter(
-          (rj) => !isJournalTombstoned(rj.studentId, rj.journalDate || (rj as any).date) && !isDeprecatedOrDummyJournal(rj)
+          (rj) =>
+            !isJournalTombstoned(rj.studentId, rj.journalDate || (rj as any).date, rj.studentNisn, rj.studentName, rj.id) &&
+            !isDeprecatedOrDummyJournal(rj)
         );
         const cleaned = valid.map((j) => {
           const cleanSchool = (j.schoolName || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
@@ -631,7 +639,12 @@ export default function App() {
           };
         });
         const remoteIds = new Set(cleaned.map((j) => j.id));
-        const missingReal = RESTORED_JOURNALS_REAL.filter((j) => !remoteIds.has(j.id) && !isDeprecatedOrDummyJournal(j));
+        const missingReal = RESTORED_JOURNALS_REAL.filter(
+          (j) =>
+            !remoteIds.has(j.id) &&
+            !isDeprecatedOrDummyJournal(j) &&
+            !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+        );
         const merged = [...cleaned, ...missingReal];
         setJournals(merged);
         try {
@@ -742,6 +755,31 @@ export default function App() {
     }
   }, [viewMode, activeTab, currentPersona.id]);
 
+  // State to guarantee that emptyDefaultJournal has a fresh timestamp upon reset
+  const [lastResetTimestamp, setLastResetTimestamp] = useState<number>(0);
+
+  // Helper to accurately match if a journal belongs to the active student persona
+  const isJournalMatchingCurrentPersona = (j: DailyJournal): boolean => {
+    if (currentPersona.role !== 'STUDENT') return false;
+    const targetId = (currentPersona.id || '').trim().toLowerCase();
+    const targetNisn = (currentPersona.identifierValue || '').trim();
+    const targetName = (currentPersona.name || '').trim().toLowerCase();
+
+    const jId = (j.studentId || '').trim().toLowerCase();
+    const jNisn = (j.studentNisn || '').trim();
+    const jName = (j.studentName || '').trim().toLowerCase();
+
+    if (targetId && jId && jId === targetId) return true;
+    if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return true;
+    if (targetName && jName && jName === targetName) {
+      if (!currentPersona.className || !j.className || currentPersona.className.toLowerCase() === j.className.toLowerCase()) {
+        return true;
+      }
+    }
+    if (!j.studentId && targetId === 'usr-student-01') return true;
+    return false;
+  };
+
   // Today's journal - clean empty fallback when no entry exists (using local date string)
   const todayStr = useMemo(() => getLocalDateString(), []);
   const emptyDefaultJournal: DailyJournal = useMemo(
@@ -758,9 +796,9 @@ export default function App() {
       completedCount: 0,
       entries: {} as any,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: lastResetTimestamp > 0 ? new Date(lastResetTimestamp).toISOString() : new Date().toISOString(),
     }),
-    [todayStr, currentPersona]
+    [todayStr, currentPersona, lastResetTimestamp]
   );
 
   const todayJournal = useMemo(() => {
@@ -768,23 +806,38 @@ export default function App() {
       journals.find(
         (j) =>
           j.journalDate === todayStr &&
-          (j.studentId === currentPersona.id ||
-            (currentPersona.identifierValue && j.studentNisn === currentPersona.identifierValue) ||
-            (currentPersona.name && j.studentName && j.studentName.toLowerCase() === currentPersona.name.toLowerCase()) ||
-            (!j.studentId && currentPersona.id === 'usr-student-01'))
+          isJournalMatchingCurrentPersona(j)
       ) || emptyDefaultJournal
     );
   }, [journals, todayStr, emptyDefaultJournal, currentPersona]);
 
-  // Handle resetting a single date's journal
+  // Handle resetting a single date's journal (strictly isolated to current student without affecting classmates)
   const handleResetSingleDateJournal = (dateStr: string) => {
     const studentId = currentPersona.id;
-    recordDeletedJournalTombstone(studentId, dateStr);
+    const studentNisn = currentPersona.identifierValue;
+    const studentName = currentPersona.name;
+    const journalId = `journal-${dateStr}-${studentId}`;
+
+    setLastResetTimestamp(Date.now());
+    recordDeletedJournalTombstone(studentId, dateStr, studentNisn, studentName, journalId);
 
     setJournals((prev) => {
-      const next = prev.filter(
-        (j) => !(j.journalDate === dateStr && (j.studentId === studentId || !j.studentId || currentPersona.role === 'STUDENT'))
-      );
+      const next = prev.filter((j) => {
+        const jDate = j.journalDate || (j as any).date;
+        if (jDate !== dateStr) return true;
+
+        // If current persona is a STUDENT, ONLY delete/empty this student's journal!
+        // Keep all other students in the class (Kelas 7-B) completely untouched!
+        if (currentPersona.role === 'STUDENT') {
+          return !isJournalMatchingCurrentPersona(j);
+        }
+
+        // If admin or other role, match specific studentId or NISN
+        if (studentId && j.studentId && j.studentId === studentId) return false;
+        if (studentNisn && j.studentNisn && j.studentNisn === studentNisn) return false;
+        return true;
+      });
+
       try {
         localStorage.setItem('si7kaih_journals_prod', JSON.stringify(next));
         if (typeof window !== 'undefined') {
@@ -794,8 +847,8 @@ export default function App() {
       return next;
     });
 
-    // Delete from Supabase cloud database
-    deleteJournalFromSupabase(studentId, dateStr).catch((err) =>
+    // Delete from Supabase cloud database specifically for this student
+    deleteJournalFromSupabase(studentId, dateStr, studentNisn, studentName).catch((err) =>
       console.warn('Supabase deleteJournal error:', err)
     );
 
@@ -808,9 +861,11 @@ export default function App() {
         actorRole: currentPersona.role,
         action: 'RESET_JOURNAL',
         targetEntity: 'daily_journals',
-        targetId: `journal-${dateStr}`,
+        targetId: journalId,
         metadata: {
           journalDate: dateStr,
+          studentName: currentPersona.name,
+          className: currentPersona.className,
         },
       }),
     }).catch(() => {});
@@ -818,7 +873,7 @@ export default function App() {
     setSyncToast({
       id: `reset-${Date.now()}`,
       title: 'Isian Jurnal Berhasil Dikosongkan',
-      detail: `Data isian Jurnal 7 Kebiasaan tanggal ${dateStr} telah direset menjadi bersih.`,
+      detail: `Data isian Jurnal 7 Kebiasaan tanggal ${dateStr} untuk ${currentPersona.name || 'siswa'} telah direset menjadi bersih.`,
     });
   };
 

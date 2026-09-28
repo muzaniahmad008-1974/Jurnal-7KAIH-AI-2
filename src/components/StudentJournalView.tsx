@@ -200,10 +200,15 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
     optionalNote: (currentJournal?.entries?.SLEEP_EARLY?.data as SleepEarlyData)?.optionalNote || '',
   });
 
-  // Re-sync when selectedDate or journals change
+  // Re-sync when selectedDate or studentJournals change (strictly isolated to current student)
   React.useEffect(() => {
-    const j = journals.find((item) => item.journalDate === selectedDate);
-    if (j && Object.keys(j.entries || {}).length > 0) {
+    const j = studentJournals.find((item) => item.journalDate === selectedDate);
+    const hasEntries =
+      j &&
+      Object.keys(j.entries || {}).length > 0 &&
+      ((j.completedCount || 0) > 0 || Object.values(j.entries).some((e: any) => e?.completed));
+
+    if (j && hasEntries) {
       setWakeEarly({
         completed: !!j.entries.WAKE_EARLY?.completed,
         wakeTime: (j.entries.WAKE_EARLY?.data as WakeEarlyData)?.wakeTime || '',
@@ -254,7 +259,7 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
       setSocial({ completed: false, activityTypes: [], shortStory: '' });
       setSleepEarly({ completed: false, sleepTime: '', screenFreeBeforeSleep: false, optionalNote: '' });
     }
-  }, [selectedDate, journals]);
+  }, [selectedDate, studentJournals]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -407,6 +412,24 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
     setLearning({ completed: false, activityType: '', durationMinutes: 0, newLearning: '' });
     setSocial({ completed: false, activityTypes: [], shortStory: '' });
     setSleepEarly({ completed: false, sleepTime: '', screenFreeBeforeSleep: false, optionalNote: '' });
+
+    // Segera bersihkan data lokal student ini agar tidak ada flicker atau konflik
+    setSyncedJournals((prev) =>
+      prev.filter((j) => {
+        const jDate = j.journalDate || (j as any).date;
+        if (jDate !== selectedDate) return true;
+        const jId = (j.studentId || '').trim().toLowerCase();
+        const jNisn = (j.studentNisn || '').trim();
+        const jName = (j.studentName || '').trim().toLowerCase();
+        const targetId = (studentId || '').trim().toLowerCase();
+        const targetNisn = (studentNisn || '').trim();
+        const targetName = (studentName || '').trim().toLowerCase();
+        if (targetId && jId && jId === targetId) return false;
+        if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return false;
+        if (targetName && jName && jName === targetName) return false;
+        return true;
+      })
+    );
 
     if (onResetDateJournal) {
       onResetDateJournal(selectedDate);

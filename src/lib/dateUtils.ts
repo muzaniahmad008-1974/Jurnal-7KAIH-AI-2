@@ -62,8 +62,17 @@ export function formatIndonesianShortDate(dateInput?: string | Date | null): str
 export function formatRealtimeSaveTime(dateInput?: string | Date | null, tz: 'WITA' | 'WIB' = 'WITA'): string {
   if (!dateInput) return '';
   try {
-    if (typeof dateInput === 'string' && (dateInput.includes('pukul') || dateInput.includes('WITA') || dateInput.includes('WIB'))) {
-      return dateInput;
+    if (typeof dateInput === 'string') {
+      const isoPrefixMatch = dateInput.match(/^(\d{4})-(\d{2})-(\d{2}),\s*pukul\s*(.+)$/i);
+      if (isoPrefixMatch) {
+        const [, y, m, d, rest] = isoPrefixMatch;
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        const mName = months[parseInt(m, 10) - 1] || m;
+        return `${parseInt(d, 10)} ${mName} ${y}, pukul ${rest.replace(/WIB/g, tz)}`;
+      }
+      if (dateInput.includes('pukul') || dateInput.includes('WITA') || dateInput.includes('WIB')) {
+        return dateInput;
+      }
     }
     const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
     if (isNaN(d.getTime())) return typeof dateInput === 'string' ? dateInput : '';

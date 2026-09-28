@@ -54,88 +54,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   );
 
-  // Synced journals state guaranteeing realtime synchronization
-  const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
-    try {
-      const saved = localStorage.getItem('si7kaih_journals_prod');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (_e) {}
-    return journals || [];
-  });
-
-  // Keep syncedJournals in sync with props
+  // Update lastSyncTime safely when journals prop updates
   useEffect(() => {
-    if (journals) {
-      setSyncedJournals(journals);
-    }
+    setLastSyncTime(
+      new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    );
   }, [journals]);
-
-  // Realtime listeners for journal updates from form, modal, or other tabs
-  useEffect(() => {
-    const handleSync = (evt?: Event) => {
-      setLastSyncTime(
-        new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      );
-      try {
-        const customEvt = evt as CustomEvent<DailyJournal[]>;
-        if (customEvt?.detail && Array.isArray(customEvt.detail)) {
-          setSyncedJournals(customEvt.detail);
-          return;
-        }
-        const saved = localStorage.getItem('si7kaih_journals_prod');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            setSyncedJournals(parsed);
-          }
-        }
-      } catch (_e) {}
-    };
-
-    window.addEventListener('si7kaih_journals_updated', handleSync);
-    window.addEventListener('storage', (e) => {
-      if (e.key === 'si7kaih_journals_prod') {
-        handleSync();
-      }
-    });
-
-    let bc: BroadcastChannel | null = null;
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      try {
-        bc = new BroadcastChannel('si7kaih_sync_channel');
-        bc.onmessage = (msg) => {
-          if (msg.data?.type === 'JOURNALS_UPDATED' || msg.data?.type === 'STUDENT_UPDATED') {
-            handleSync();
-          }
-        };
-      } catch (_e) {}
-    }
-
-    return () => {
-      window.removeEventListener('si7kaih_journals_updated', handleSync);
-      if (bc) bc.close();
-    };
-  }, []);
 
   const handleManualRefresh = () => {
     setIsManualSyncing(true);
     setLastSyncTime(
       new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     );
-    try {
-      const saved = localStorage.getItem('si7kaih_journals_prod');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setSyncedJournals(parsed);
-        }
-      }
-    } catch (_e) {}
     setTimeout(() => {
       setIsManualSyncing(false);
     }, 400);
@@ -153,9 +83,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
   ];
 
-  // Filter journals specifically for active student
+  // Filter journals specifically for active student directly from reactive journals prop
   const studentJournals = useMemo(() => {
-    const list = syncedJournals.length > 0 ? syncedJournals : (journals || []);
+    const list = journals || [];
     const targetId = (studentId || '').trim().toLowerCase();
     const targetNisn = (studentNisn || '').trim();
     const targetName = (studentName || '').trim().toLowerCase();
@@ -168,7 +98,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       if (!j.studentId && !j.studentNisn && !j.studentName) return true;
       return false;
     });
-  }, [syncedJournals, journals, studentId, studentNisn, studentName]);
+  }, [journals, studentId, studentNisn, studentName]);
 
   // Map journals by date
   const journalMap = useMemo(() => {

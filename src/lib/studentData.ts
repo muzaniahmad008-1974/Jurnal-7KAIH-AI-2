@@ -130,8 +130,10 @@ export const getStoredRombels = (): Rombel[] => {
             const schoolName = !rawSchool || rawSchool.toLowerCase().includes('jorong') ? 'UPTD SMPN 1 Jorong' : rawSchool;
             let name = r.name || 'Kelas 8-C';
             if (name === 'Kelas 8C') name = 'Kelas 8-C';
+            const schoolId = r.schoolId || (schoolName.toLowerCase().includes('jorong') ? 'sch-smpn1-jorong' : undefined);
             return {
               ...r,
+              schoolId,
               schoolName,
               name,
               status: 'AKTIF' as const,

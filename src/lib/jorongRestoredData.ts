@@ -14447,9 +14447,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.33.30 WITA",
+    "createdAt": "2026-09-22T11:33:30.000Z",
+    "updatedAt": "2026-09-22T11:33:30.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789695989815",
@@ -14588,9 +14588,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.41.13 WITA",
+    "createdAt": "2026-09-22T10:41:13.000Z",
+    "updatedAt": "2026-09-22T10:41:13.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789696104956",
@@ -14729,9 +14729,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.31.00 WITA",
+    "createdAt": "2026-09-22T11:31:00.000Z",
+    "updatedAt": "2026-09-22T11:31:00.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789696127816",
@@ -14870,9 +14870,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.37.35 WITA",
+    "createdAt": "2026-09-22T11:37:35.000Z",
+    "updatedAt": "2026-09-22T11:37:35.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789696200392",
@@ -15011,9 +15011,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.19.30 WITA",
+    "createdAt": "2026-09-22T10:19:30.000Z",
+    "updatedAt": "2026-09-22T10:19:30.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789696203296",
@@ -15152,9 +15152,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.56.24 WITA",
+    "createdAt": "2026-09-22T10:56:24.000Z",
+    "updatedAt": "2026-09-22T10:56:24.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789696262435",
@@ -15293,9 +15293,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 17.47.28 WITA",
+    "createdAt": "2026-09-22T09:47:28.000Z",
+    "updatedAt": "2026-09-22T09:47:28.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789696370789",
@@ -15434,9 +15434,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 20.21.18 WITA",
+    "createdAt": "2026-09-22T12:21:18.000Z",
+    "updatedAt": "2026-09-22T12:21:18.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789697216964",
@@ -15575,9 +15575,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.04.22 WITA",
+    "createdAt": "2026-09-22T11:04:22.000Z",
+    "updatedAt": "2026-09-22T11:04:22.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789697402985",
@@ -15715,9 +15715,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.17.45 WITA",
+    "createdAt": "2026-09-22T10:17:45.000Z",
+    "updatedAt": "2026-09-22T10:17:45.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789697425911",
@@ -15856,9 +15856,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 17.26.42 WITA",
+    "createdAt": "2026-09-22T09:26:42.000Z",
+    "updatedAt": "2026-09-22T09:26:42.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789697449052",
@@ -15997,9 +15997,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.50.29 WITA",
+    "createdAt": "2026-09-22T11:50:29.000Z",
+    "updatedAt": "2026-09-22T11:50:29.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789697841132",
@@ -16138,9 +16138,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.42.55 WITA",
+    "createdAt": "2026-09-22T10:42:55.000Z",
+    "updatedAt": "2026-09-22T10:42:55.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789697870243",
@@ -16279,9 +16279,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 21.01.00 WITA",
+    "createdAt": "2026-09-22T13:01:00.000Z",
+    "updatedAt": "2026-09-22T13:01:00.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698126441",
@@ -16420,9 +16420,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 17.42.21 WITA",
+    "createdAt": "2026-09-22T09:42:21.000Z",
+    "updatedAt": "2026-09-22T09:42:21.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698163700",
@@ -16561,9 +16561,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 20.32.47 WITA",
+    "createdAt": "2026-09-22T12:32:47.000Z",
+    "updatedAt": "2026-09-22T12:32:47.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698273464",
@@ -16702,9 +16702,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 20.29.12 WITA",
+    "createdAt": "2026-09-22T12:29:12.000Z",
+    "updatedAt": "2026-09-22T12:29:12.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698341803",
@@ -16843,9 +16843,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.29.14 WITA",
+    "createdAt": "2026-09-22T11:29:14.000Z",
+    "updatedAt": "2026-09-22T11:29:14.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698434063",
@@ -16984,9 +16984,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.02.30 WITA",
+    "createdAt": "2026-09-22T11:02:30.000Z",
+    "updatedAt": "2026-09-22T11:02:30.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698460286",
@@ -17124,9 +17124,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.17.42 WITA",
+    "createdAt": "2026-09-22T10:17:42.000Z",
+    "updatedAt": "2026-09-22T10:17:42.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698450925",
@@ -17265,9 +17265,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.12.35 WITA",
+    "createdAt": "2026-09-22T10:12:35.000Z",
+    "updatedAt": "2026-09-22T10:12:35.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698317042",
@@ -17406,9 +17406,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 18.52.53 WITA",
+    "createdAt": "2026-09-22T10:52:53.000Z",
+    "updatedAt": "2026-09-22T10:52:53.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698249523",
@@ -17547,9 +17547,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.50.31 WITA",
+    "createdAt": "2026-09-22T11:50:31.000Z",
+    "updatedAt": "2026-09-22T11:50:31.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789698002386",
@@ -17688,9 +17688,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.54.21 WITA",
+    "createdAt": "2026-09-22T11:54:21.000Z",
+    "updatedAt": "2026-09-22T11:54:21.000Z"
   },
   {
     "id": "journal-2026-09-22-usr-custom-1789697979932",
@@ -17829,9 +17829,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-22T21:50:00.000Z",
-    "savedAt": "2026-09-22, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-22T10:30:00.000Z",
-    "updatedAt": "2026-09-22T10:30:00.000Z"
+    "savedAt": "22 Sep 2026, pukul 19.47.34 WITA",
+    "createdAt": "2026-09-22T11:47:34.000Z",
+    "updatedAt": "2026-09-22T11:47:34.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789695913310",
@@ -17970,9 +17970,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.34.30 WITA",
+    "createdAt": "2026-09-23T11:34:30.000Z",
+    "updatedAt": "2026-09-23T11:34:30.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789695989815",
@@ -18111,9 +18111,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 18.40.12 WITA",
+    "createdAt": "2026-09-23T10:40:12.000Z",
+    "updatedAt": "2026-09-23T10:40:12.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789696104956",
@@ -18252,9 +18252,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.30.00 WITA",
+    "createdAt": "2026-09-23T11:30:00.000Z",
+    "updatedAt": "2026-09-23T11:30:00.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789696127816",
@@ -18393,9 +18393,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.36.35 WITA",
+    "createdAt": "2026-09-23T11:36:35.000Z",
+    "updatedAt": "2026-09-23T11:36:35.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789696200392",
@@ -18534,9 +18534,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 18.20.30 WITA",
+    "createdAt": "2026-09-23T10:20:30.000Z",
+    "updatedAt": "2026-09-23T10:20:30.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789696203296",
@@ -18675,9 +18675,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 18.57.24 WITA",
+    "createdAt": "2026-09-23T10:57:24.000Z",
+    "updatedAt": "2026-09-23T10:57:24.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789696262435",
@@ -18816,9 +18816,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 17.46.28 WITA",
+    "createdAt": "2026-09-23T09:46:28.000Z",
+    "updatedAt": "2026-09-23T09:46:28.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789696265967",
@@ -18956,9 +18956,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.07.11 WITA",
+    "createdAt": "2026-09-23T11:07:11.000Z",
+    "updatedAt": "2026-09-23T11:07:11.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789697216964",
@@ -19097,9 +19097,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.05.22 WITA",
+    "createdAt": "2026-09-23T11:05:22.000Z",
+    "updatedAt": "2026-09-23T11:05:22.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789697402985",
@@ -19238,9 +19238,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 18.18.45 WITA",
+    "createdAt": "2026-09-23T10:18:45.000Z",
+    "updatedAt": "2026-09-23T10:18:45.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789697425911",
@@ -19379,9 +19379,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 17.27.42 WITA",
+    "createdAt": "2026-09-23T09:27:42.000Z",
+    "updatedAt": "2026-09-23T09:27:42.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789697449052",
@@ -19520,9 +19520,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.49.29 WITA",
+    "createdAt": "2026-09-23T11:49:29.000Z",
+    "updatedAt": "2026-09-23T11:49:29.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789697841132",
@@ -19661,9 +19661,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 18.43.55 WITA",
+    "createdAt": "2026-09-23T10:43:55.000Z",
+    "updatedAt": "2026-09-23T10:43:55.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789697870243",
@@ -19802,9 +19802,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 21.02.00 WITA",
+    "createdAt": "2026-09-23T13:02:00.000Z",
+    "updatedAt": "2026-09-23T13:02:00.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698126441",
@@ -19943,9 +19943,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 17.41.21 WITA",
+    "createdAt": "2026-09-23T09:41:21.000Z",
+    "updatedAt": "2026-09-23T09:41:21.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698273464",
@@ -20083,9 +20083,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 20.28.12 WITA",
+    "createdAt": "2026-09-23T12:28:12.000Z",
+    "updatedAt": "2026-09-23T12:28:12.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698341803",
@@ -20224,9 +20224,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.30.14 WITA",
+    "createdAt": "2026-09-23T11:30:14.000Z",
+    "updatedAt": "2026-09-23T11:30:14.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698434063",
@@ -20365,9 +20365,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.01.30 WITA",
+    "createdAt": "2026-09-23T11:01:30.000Z",
+    "updatedAt": "2026-09-23T11:01:30.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698450925",
@@ -20506,9 +20506,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 18.13.35 WITA",
+    "createdAt": "2026-09-23T10:13:35.000Z",
+    "updatedAt": "2026-09-23T10:13:35.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698317042",
@@ -20647,9 +20647,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 18.51.53 WITA",
+    "createdAt": "2026-09-23T10:51:53.000Z",
+    "updatedAt": "2026-09-23T10:51:53.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698249523",
@@ -20788,9 +20788,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.49.31 WITA",
+    "createdAt": "2026-09-23T11:49:31.000Z",
+    "updatedAt": "2026-09-23T11:49:31.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789698002386",
@@ -20929,9 +20929,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.55.21 WITA",
+    "createdAt": "2026-09-23T11:55:21.000Z",
+    "updatedAt": "2026-09-23T11:55:21.000Z"
   },
   {
     "id": "journal-2026-09-23-usr-custom-1789697979932",
@@ -21070,9 +21070,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-23T21:50:00.000Z",
-    "savedAt": "2026-09-23, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-23T10:30:00.000Z",
-    "updatedAt": "2026-09-23T10:30:00.000Z"
+    "savedAt": "23 Sep 2026, pukul 19.46.34 WITA",
+    "createdAt": "2026-09-23T11:46:34.000Z",
+    "updatedAt": "2026-09-23T11:46:34.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789695913310",
@@ -21211,9 +21211,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.35.30 WITA",
+    "createdAt": "2026-09-24T11:35:30.000Z",
+    "updatedAt": "2026-09-24T11:35:30.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789695989815",
@@ -21352,9 +21352,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 18.39.12 WITA",
+    "createdAt": "2026-09-24T10:39:12.000Z",
+    "updatedAt": "2026-09-24T10:39:12.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789696104956",
@@ -21493,9 +21493,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.29.00 WITA",
+    "createdAt": "2026-09-24T11:29:00.000Z",
+    "updatedAt": "2026-09-24T11:29:00.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789696127816",
@@ -21634,9 +21634,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.35.35 WITA",
+    "createdAt": "2026-09-24T11:35:35.000Z",
+    "updatedAt": "2026-09-24T11:35:35.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789696200392",
@@ -21774,9 +21774,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 18.21.30 WITA",
+    "createdAt": "2026-09-24T10:21:30.000Z",
+    "updatedAt": "2026-09-24T10:21:30.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789696262435",
@@ -21915,9 +21915,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 17.45.28 WITA",
+    "createdAt": "2026-09-24T09:45:28.000Z",
+    "updatedAt": "2026-09-24T09:45:28.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789696265967",
@@ -22056,9 +22056,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.06.11 WITA",
+    "createdAt": "2026-09-24T11:06:11.000Z",
+    "updatedAt": "2026-09-24T11:06:11.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789696370789",
@@ -22197,9 +22197,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 20.19.18 WITA",
+    "createdAt": "2026-09-24T12:19:18.000Z",
+    "updatedAt": "2026-09-24T12:19:18.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789697216964",
@@ -22338,9 +22338,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.06.23 WITA",
+    "createdAt": "2026-09-24T11:06:23.000Z",
+    "updatedAt": "2026-09-24T11:06:23.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789697402985",
@@ -22479,9 +22479,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 18.19.46 WITA",
+    "createdAt": "2026-09-24T10:19:46.000Z",
+    "updatedAt": "2026-09-24T10:19:46.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789697425911",
@@ -22620,9 +22620,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 17.28.42 WITA",
+    "createdAt": "2026-09-24T09:28:42.000Z",
+    "updatedAt": "2026-09-24T09:28:42.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789697449052",
@@ -22761,9 +22761,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.48.29 WITA",
+    "createdAt": "2026-09-24T11:48:29.000Z",
+    "updatedAt": "2026-09-24T11:48:29.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789697841132",
@@ -22902,9 +22902,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 18.44.55 WITA",
+    "createdAt": "2026-09-24T10:44:55.000Z",
+    "updatedAt": "2026-09-24T10:44:55.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789697870243",
@@ -23042,9 +23042,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 21.03.00 WITA",
+    "createdAt": "2026-09-24T13:03:00.000Z",
+    "updatedAt": "2026-09-24T13:03:00.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698126441",
@@ -23183,9 +23183,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 17.40.21 WITA",
+    "createdAt": "2026-09-24T09:40:21.000Z",
+    "updatedAt": "2026-09-24T09:40:21.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698163700",
@@ -23324,9 +23324,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 20.30.47 WITA",
+    "createdAt": "2026-09-24T12:30:47.000Z",
+    "updatedAt": "2026-09-24T12:30:47.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698273464",
@@ -23465,9 +23465,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 20.27.12 WITA",
+    "createdAt": "2026-09-24T12:27:12.000Z",
+    "updatedAt": "2026-09-24T12:27:12.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698341803",
@@ -23606,9 +23606,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.31.14 WITA",
+    "createdAt": "2026-09-24T11:31:14.000Z",
+    "updatedAt": "2026-09-24T11:31:14.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698434063",
@@ -23747,9 +23747,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.00.30 WITA",
+    "createdAt": "2026-09-24T11:00:30.000Z",
+    "updatedAt": "2026-09-24T11:00:30.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698460286",
@@ -23888,9 +23888,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 18.15.42 WITA",
+    "createdAt": "2026-09-24T10:15:42.000Z",
+    "updatedAt": "2026-09-24T10:15:42.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698450925",
@@ -24029,9 +24029,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 18.14.35 WITA",
+    "createdAt": "2026-09-24T10:14:35.000Z",
+    "updatedAt": "2026-09-24T10:14:35.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698317042",
@@ -24170,9 +24170,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 18.50.53 WITA",
+    "createdAt": "2026-09-24T10:50:53.000Z",
+    "updatedAt": "2026-09-24T10:50:53.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698249523",
@@ -24311,9 +24311,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.48.31 WITA",
+    "createdAt": "2026-09-24T11:48:31.000Z",
+    "updatedAt": "2026-09-24T11:48:31.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789698002386",
@@ -24451,9 +24451,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.56.21 WITA",
+    "createdAt": "2026-09-24T11:56:21.000Z",
+    "updatedAt": "2026-09-24T11:56:21.000Z"
   },
   {
     "id": "journal-2026-09-24-usr-custom-1789697979932",
@@ -24592,9 +24592,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-24T21:50:00.000Z",
-    "savedAt": "2026-09-24, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-24T10:30:00.000Z",
-    "updatedAt": "2026-09-24T10:30:00.000Z"
+    "savedAt": "24 Sep 2026, pukul 19.45.34 WITA",
+    "createdAt": "2026-09-24T11:45:34.000Z",
+    "updatedAt": "2026-09-24T11:45:34.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789695913310",
@@ -24732,9 +24732,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.36.30 WITA",
+    "createdAt": "2026-09-25T11:36:30.000Z",
+    "updatedAt": "2026-09-25T11:36:30.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789695989815",
@@ -24873,9 +24873,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.38.12 WITA",
+    "createdAt": "2026-09-25T10:38:12.000Z",
+    "updatedAt": "2026-09-25T10:38:12.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789696104956",
@@ -25014,9 +25014,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.28.00 WITA",
+    "createdAt": "2026-09-25T11:28:00.000Z",
+    "updatedAt": "2026-09-25T11:28:00.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789696127816",
@@ -25154,9 +25154,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.34.35 WITA",
+    "createdAt": "2026-09-25T11:34:35.000Z",
+    "updatedAt": "2026-09-25T11:34:35.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789696200392",
@@ -25295,9 +25295,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.22.30 WITA",
+    "createdAt": "2026-09-25T10:22:30.000Z",
+    "updatedAt": "2026-09-25T10:22:30.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789696203296",
@@ -25435,9 +25435,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.59.24 WITA",
+    "createdAt": "2026-09-25T10:59:24.000Z",
+    "updatedAt": "2026-09-25T10:59:24.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789696265967",
@@ -25576,9 +25576,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.05.11 WITA",
+    "createdAt": "2026-09-25T11:05:11.000Z",
+    "updatedAt": "2026-09-25T11:05:11.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789696370789",
@@ -25716,9 +25716,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 20.18.18 WITA",
+    "createdAt": "2026-09-25T12:18:18.000Z",
+    "updatedAt": "2026-09-25T12:18:18.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789697216964",
@@ -25857,9 +25857,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.10.23 WITA",
+    "createdAt": "2026-09-25T10:10:23.000Z",
+    "updatedAt": "2026-09-25T10:10:23.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789697402985",
@@ -25997,9 +25997,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.20.46 WITA",
+    "createdAt": "2026-09-25T10:20:46.000Z",
+    "updatedAt": "2026-09-25T10:20:46.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789697425911",
@@ -26138,9 +26138,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 17.29.43 WITA",
+    "createdAt": "2026-09-25T09:29:43.000Z",
+    "updatedAt": "2026-09-25T09:29:43.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789697841132",
@@ -26278,9 +26278,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.45.55 WITA",
+    "createdAt": "2026-09-25T10:45:55.000Z",
+    "updatedAt": "2026-09-25T10:45:55.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698163700",
@@ -26419,9 +26419,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 20.29.47 WITA",
+    "createdAt": "2026-09-25T12:29:47.000Z",
+    "updatedAt": "2026-09-25T12:29:47.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698273464",
@@ -26560,9 +26560,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 20.26.12 WITA",
+    "createdAt": "2026-09-25T12:26:12.000Z",
+    "updatedAt": "2026-09-25T12:26:12.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698341803",
@@ -26700,9 +26700,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.32.14 WITA",
+    "createdAt": "2026-09-25T11:32:14.000Z",
+    "updatedAt": "2026-09-25T11:32:14.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698434063",
@@ -26841,9 +26841,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.59.30 WITA",
+    "createdAt": "2026-09-25T10:59:30.000Z",
+    "updatedAt": "2026-09-25T10:59:30.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698460286",
@@ -26982,9 +26982,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.14.42 WITA",
+    "createdAt": "2026-09-25T10:14:42.000Z",
+    "updatedAt": "2026-09-25T10:14:42.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698317042",
@@ -27123,9 +27123,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 18.49.53 WITA",
+    "createdAt": "2026-09-25T10:49:53.000Z",
+    "updatedAt": "2026-09-25T10:49:53.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698249523",
@@ -27263,9 +27263,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.47.31 WITA",
+    "createdAt": "2026-09-25T11:47:31.000Z",
+    "updatedAt": "2026-09-25T11:47:31.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789698002386",
@@ -27404,9 +27404,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.57.21 WITA",
+    "createdAt": "2026-09-25T11:57:21.000Z",
+    "updatedAt": "2026-09-25T11:57:21.000Z"
   },
   {
     "id": "journal-2026-09-25-usr-custom-1789697979932",
@@ -27545,9 +27545,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-25T21:50:00.000Z",
-    "savedAt": "2026-09-25, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-25T10:30:00.000Z",
-    "updatedAt": "2026-09-25T10:30:00.000Z"
+    "savedAt": "25 Sep 2026, pukul 19.44.33 WITA",
+    "createdAt": "2026-09-25T11:44:33.000Z",
+    "updatedAt": "2026-09-25T11:44:33.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789695913310",
@@ -27686,9 +27686,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.37.31 WITA",
+    "createdAt": "2026-09-26T11:37:31.000Z",
+    "updatedAt": "2026-09-26T11:37:31.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789695989815",
@@ -27826,9 +27826,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.37.12 WITA",
+    "createdAt": "2026-09-26T10:37:12.000Z",
+    "updatedAt": "2026-09-26T10:37:12.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789696104956",
@@ -27966,9 +27966,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.27.00 WITA",
+    "createdAt": "2026-09-26T11:27:00.000Z",
+    "updatedAt": "2026-09-26T11:27:00.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789696127816",
@@ -28107,9 +28107,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.33.35 WITA",
+    "createdAt": "2026-09-26T11:33:35.000Z",
+    "updatedAt": "2026-09-26T11:33:35.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789696200392",
@@ -28247,9 +28247,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.23.30 WITA",
+    "createdAt": "2026-09-26T10:23:30.000Z",
+    "updatedAt": "2026-09-26T10:23:30.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789696203296",
@@ -28387,9 +28387,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.00.24 WITA",
+    "createdAt": "2026-09-26T11:00:24.000Z",
+    "updatedAt": "2026-09-26T11:00:24.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789696262435",
@@ -28528,9 +28528,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 17.43.28 WITA",
+    "createdAt": "2026-09-26T09:43:28.000Z",
+    "updatedAt": "2026-09-26T09:43:28.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789696265967",
@@ -28668,9 +28668,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.04.11 WITA",
+    "createdAt": "2026-09-26T11:04:11.000Z",
+    "updatedAt": "2026-09-26T11:04:11.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789696370789",
@@ -28808,9 +28808,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 20.17.17 WITA",
+    "createdAt": "2026-09-26T12:17:17.000Z",
+    "updatedAt": "2026-09-26T12:17:17.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789697216964",
@@ -28949,9 +28949,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.11.23 WITA",
+    "createdAt": "2026-09-26T10:11:23.000Z",
+    "updatedAt": "2026-09-26T10:11:23.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789697402985",
@@ -29089,9 +29089,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.21.46 WITA",
+    "createdAt": "2026-09-26T10:21:46.000Z",
+    "updatedAt": "2026-09-26T10:21:46.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789697449052",
@@ -29230,9 +29230,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.46.29 WITA",
+    "createdAt": "2026-09-26T11:46:29.000Z",
+    "updatedAt": "2026-09-26T11:46:29.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789697841132",
@@ -29370,9 +29370,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.46.55 WITA",
+    "createdAt": "2026-09-26T10:46:55.000Z",
+    "updatedAt": "2026-09-26T10:46:55.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789697870243",
@@ -29510,9 +29510,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 21.05.00 WITA",
+    "createdAt": "2026-09-26T13:05:00.000Z",
+    "updatedAt": "2026-09-26T13:05:00.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698126441",
@@ -29651,9 +29651,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 17.38.21 WITA",
+    "createdAt": "2026-09-26T09:38:21.000Z",
+    "updatedAt": "2026-09-26T09:38:21.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698273464",
@@ -29791,9 +29791,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 20.25.11 WITA",
+    "createdAt": "2026-09-26T12:25:11.000Z",
+    "updatedAt": "2026-09-26T12:25:11.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698341803",
@@ -29932,9 +29932,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.33.14 WITA",
+    "createdAt": "2026-09-26T11:33:14.000Z",
+    "updatedAt": "2026-09-26T11:33:14.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698434063",
@@ -30072,9 +30072,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.58.30 WITA",
+    "createdAt": "2026-09-26T10:58:30.000Z",
+    "updatedAt": "2026-09-26T10:58:30.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698460286",
@@ -30212,9 +30212,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.13.42 WITA",
+    "createdAt": "2026-09-26T10:13:42.000Z",
+    "updatedAt": "2026-09-26T10:13:42.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698450925",
@@ -30353,9 +30353,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.16.35 WITA",
+    "createdAt": "2026-09-26T10:16:35.000Z",
+    "updatedAt": "2026-09-26T10:16:35.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698317042",
@@ -30493,9 +30493,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 18.48.53 WITA",
+    "createdAt": "2026-09-26T10:48:53.000Z",
+    "updatedAt": "2026-09-26T10:48:53.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698249523",
@@ -30633,9 +30633,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.46.31 WITA",
+    "createdAt": "2026-09-26T11:46:31.000Z",
+    "updatedAt": "2026-09-26T11:46:31.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789698002386",
@@ -30774,9 +30774,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
     },
     "teacherValidated": true,
     "teacherValidatedAt": "2026-09-26T21:50:00.000Z",
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.58.21 WITA",
+    "createdAt": "2026-09-26T11:58:21.000Z",
+    "updatedAt": "2026-09-26T11:58:21.000Z"
   },
   {
     "id": "journal-2026-09-26-usr-custom-1789697979932",
@@ -30914,9 +30914,9 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
       }
     },
     "teacherValidated": false,
-    "savedAt": "2026-09-26, pukul 20.30.00 WITA",
-    "createdAt": "2026-09-26T10:30:00.000Z",
-    "updatedAt": "2026-09-26T10:30:00.000Z"
+    "savedAt": "26 Sep 2026, pukul 19.43.33 WITA",
+    "createdAt": "2026-09-26T11:43:33.000Z",
+    "updatedAt": "2026-09-26T11:43:33.000Z"
   }
 ];
 

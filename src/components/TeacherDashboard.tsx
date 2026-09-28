@@ -19,6 +19,7 @@ import {
   getStoredUsers,
   isDeprecatedOrDummyJournal,
 } from '../lib/constants';
+import { sanitizeJournalsList } from '../lib/journalTimestampHelper';
 import {
   calculateHabitualThreshold,
 } from '../../packages/analytics/src/index';
@@ -127,6 +128,7 @@ interface StudentClassRow {
   category: EarlyWarningCategory | 'BELUM_ADA_DATA';
   lastJournalDate: string;
   validatedByTeacher: boolean;
+  savedAt?: string | null;
   gender?: 'L' | 'P';
   parentName?: string;
   parentPhone?: string;
@@ -235,14 +237,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Synchronized journals state reflecting real-time updates from students
   const [syncedJournals, setSyncedJournals] = useState<DailyJournal[]>(() => {
     if (Array.isArray(journals) && journals.length > 0) {
-      return journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+      return sanitizeJournalsList(journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
     }
     try {
       const raw = localStorage.getItem('si7kaih_journals_prod');
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+          return sanitizeJournalsList(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
         }
       }
     } catch (_e) {}
@@ -252,14 +254,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   useEffect(() => {
     if (Array.isArray(journals) && journals.length > 0) {
-      setSyncedJournals(journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+      setSyncedJournals(sanitizeJournalsList(journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))));
     } else {
       try {
         const raw = localStorage.getItem('si7kaih_journals_prod');
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+            setSyncedJournals(sanitizeJournalsList(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))));
           }
         }
       } catch (_e) {}
@@ -273,7 +275,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       try {
         const remote = await fetchJournalsFromSupabase();
         if (isMounted && remote && remote.length > 0) {
-          const cleaned = remote.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+          const cleaned = sanitizeJournalsList(remote.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
           setSyncedJournals((prev) => {
             const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
             const merged = [...cleaned];
@@ -282,10 +284,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 merged.push(pj);
               }
             });
+            const sanitizedMerged = sanitizeJournalsList(merged);
             try {
-              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(merged));
+              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(sanitizedMerged));
             } catch (_e) {}
-            return merged;
+            return sanitizedMerged;
           });
           setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
         }
@@ -327,38 +330,40 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     };
 
     const handleJournalUpdate = (e?: any) => {
-      let updatedList = e?.detail;
-      if (!Array.isArray(updatedList) || updatedList.length === 0) {
-        try {
-          const raw = localStorage.getItem('si7kaih_journals_prod');
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) updatedList = parsed;
-          }
-        } catch (_e) {}
-      }
-      if (Array.isArray(updatedList)) {
-        const cleaned = updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
-        setSyncedJournals(cleaned);
-        setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-
-        const latest = cleaned[0];
-        if (latest) {
-          const sName = latest.studentName || 'Peserta Didik';
-          const completedCount = typeof latest.completedCount === 'number'
-            ? latest.completedCount
-            : latest.entries
-            ? Object.values(latest.entries).filter((h: any) => h?.completed).length
-            : 0;
-          setLiveSyncToast({
-            studentName: sName,
-            time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
-            count: completedCount,
-            className: latest.className,
-          });
-          setTimeout(() => setLiveSyncToast(null), 8000);
+      setTimeout(() => {
+        let updatedList = e?.detail;
+        if (!Array.isArray(updatedList) || updatedList.length === 0) {
+          try {
+            const raw = localStorage.getItem('si7kaih_journals_prod');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) updatedList = parsed;
+            }
+          } catch (_e) {}
         }
-      }
+        if (Array.isArray(updatedList)) {
+          const cleaned = sanitizeJournalsList(updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          setSyncedJournals(cleaned);
+          setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+
+          const latest = cleaned[0];
+          if (latest) {
+            const sName = latest.studentName || 'Peserta Didik';
+            const completedCount = typeof latest.completedCount === 'number'
+              ? latest.completedCount
+              : latest.entries
+              ? Object.values(latest.entries).filter((h: any) => h?.completed).length
+              : 0;
+            setLiveSyncToast({
+              studentName: sName,
+              time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WITA',
+              count: completedCount,
+              className: latest.className,
+            });
+            setTimeout(() => setLiveSyncToast(null), 8000);
+          }
+        }
+      }, 0);
     };
 
     const handleStorageEvent = (e: StorageEvent) => {
@@ -393,7 +398,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               } catch (_e) {}
             }
             if (Array.isArray(updatedList)) {
-              const cleaned = updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+              const cleaned = sanitizeJournalsList(updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
               setSyncedJournals(cleaned);
             }
             setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -406,7 +411,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 : 0;
               setLiveSyncToast({
                 studentName: latest.studentName || 'Peserta Didik',
-                time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
+                time: latest.savedAt || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WITA',
                 count,
                 className: latest.className,
               });
@@ -458,7 +463,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       // 1. Ambil data riil jurnal pengisian siswa dari Supabase
       const remoteJournals = await fetchJournalsFromSupabase().catch(() => null);
       if (remoteJournals && remoteJournals.length > 0) {
-        const cleaned = remoteJournals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        const cleaned = sanitizeJournalsList(remoteJournals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
         setSyncedJournals((prev) => {
           const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
           const merged = [...cleaned];
@@ -467,11 +472,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               merged.push(pj);
             }
           });
+          const sanitizedMerged = sanitizeJournalsList(merged);
           try {
-            localStorage.setItem('si7kaih_journals_prod', JSON.stringify(merged));
-            window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: merged }));
+            localStorage.setItem('si7kaih_journals_prod', JSON.stringify(sanitizedMerged));
+            window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: sanitizedMerged }));
           } catch (_e) {}
-          return merged;
+          return sanitizedMerged;
         });
       } else {
         try {
@@ -479,7 +485,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           if (storedJournalsStr) {
             const parsed = JSON.parse(storedJournalsStr);
             if (Array.isArray(parsed)) {
-              setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+              setSyncedJournals(sanitizeJournalsList(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))));
             }
           }
         } catch (_e) {}
@@ -858,10 +864,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       let completenessRate = 0;
       let lastDate = '-';
       let totalCompletedHabits = 0;
+      let dateMatchJournal: DailyJournal | null = null;
 
       if (studentJournals.length > 0) {
         // Cari jurnal pada tanggal terpilih (misal: 2026-09-26) atau evaluasi rentang
-        const dateMatchJournal = selectedJournalDate === 'ALL'
+        dateMatchJournal = selectedJournalDate === 'ALL'
           ? null
           : studentJournals.find((j) => {
               const d = j.journalDate || (j as any).date;
@@ -872,8 +879,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           hasJournalOnSelectedDate = true;
           if (dateMatchJournal.entries) {
             completedForSelectedDate = Object.values(dateMatchJournal.entries).filter((h: any) => h?.completed).length;
-          } else if (dateMatchJournal.habits) {
-            completedForSelectedDate = Object.values(dateMatchJournal.habits).filter((h: any) => h?.completed).length;
+          } else if ((dateMatchJournal as any).habits) {
+            completedForSelectedDate = Object.values((dateMatchJournal as any).habits).filter((h: any) => h?.completed).length;
           } else if (typeof dateMatchJournal.completedCount === 'number') {
             completedForSelectedDate = dateMatchJournal.completedCount;
           }
@@ -939,6 +946,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         (st.nisn ? !!teacherValidations[st.nisn] : false) ||
         studentJournals.some((j) => j.teacherValidated);
 
+      const matchedJournal = dateMatchJournal || (selectedJournalDate === 'ALL' ? studentJournals[0] : null);
+      const studentSavedAt = matchedJournal?.savedAt || (matchedJournal?.updatedAt ? formatRealtimeSaveTime(matchedJournal.updatedAt, 'WITA') : null);
+
       return {
         id: st.id,
         nisn: st.nisn,
@@ -954,6 +964,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         category,
         lastJournalDate: lastDate,
         validatedByTeacher: selectedJournalDate === 'ALL' ? isValidated : validatedForSelectedDate,
+        savedAt: studentSavedAt,
         gender: st.gender,
         parentName: st.parentName,
         parentPhone: st.parentPhone,
@@ -1685,7 +1696,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           date: j.journalDate || (j as any).date || '',
           count,
           status: count >= 6 ? 'Lengkap' : count >= 4 ? 'Cukup' : 'Perlu Pendampingan',
-          time: (j as any).savedAt || (j as any).time || (j.updatedAt ? new Date(j.updatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB' : '-'),
+          time: (j as any).savedAt || (j as any).time || (j.updatedAt ? new Date(j.updatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WITA' : '-'),
         };
       }),
     };
@@ -2417,7 +2428,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     try {
       const remote = await fetchJournalsFromSupabase().catch(() => null);
       if (remote && remote.length > 0) {
-        const cleaned = remote.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
+        const cleaned = sanitizeJournalsList(remote.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
         setSyncedJournals(cleaned);
         try {
           localStorage.setItem('si7kaih_journals_prod', JSON.stringify(cleaned));
@@ -2428,7 +2439,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           const raw = localStorage.getItem('si7kaih_journals_prod');
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) setSyncedJournals(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+            if (Array.isArray(parsed)) setSyncedJournals(sanitizeJournalsList(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))));
           }
         } catch (_e) {}
       }
@@ -2644,7 +2655,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </button>
 
             <span className="text-[10px] text-slate-400 font-medium">
-              Update terakhir: {lastSyncTime} WIB
+              Update terakhir: {lastSyncTime} WITA
             </span>
           </div>
         </div>
@@ -4118,9 +4129,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       </td>
                       <td className="py-3 px-3">
                         {s.hasJournalOnSelectedDate || (selectedJournalDate === 'ALL' && s.completedTodayCount > 0) ? (
-                          <span className="font-bold px-2 py-0.5 rounded text-blue-700 bg-blue-50 border border-blue-100 text-xs">
-                            {s.completedTodayCount}/7 Kebiasaan
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className="font-bold px-2 py-0.5 rounded text-blue-700 bg-blue-50 border border-blue-100 text-xs">
+                              {s.completedTodayCount}/7 Kebiasaan
+                            </span>
+                            {s.savedAt && (
+                              <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+                                <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                <span>{s.savedAt}</span>
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="font-semibold px-2 py-0.5 rounded text-rose-700 bg-rose-50 border border-rose-100 text-[10px] whitespace-nowrap">
                             Data Kosong (Belum Isi)
@@ -5959,8 +5978,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             <span className="text-[10px] text-slate-400 font-mono">NISN: {item.student.nisn}</span>
                           </div>
                           {item.hasJournal && item.savedAt && (
-                            <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                              <Clock className="w-3 h-3 text-slate-400" />
+                            <span className="text-[10px] text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 flex items-center gap-1 mt-0.5 font-mono">
+                              <Clock className="w-3 h-3 text-emerald-600" />
                               Disimpan: {item.savedAt}
                             </span>
                           )}
