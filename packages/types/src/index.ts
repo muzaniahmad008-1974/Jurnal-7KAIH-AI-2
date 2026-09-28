@@ -35,6 +35,7 @@ export interface HabitMaster {
 export type JournalStatus =
   | 'NOT_SUBMITTED'
   | 'DRAFT'
+  | 'SUBMITTED'
   | 'SUBMITTED_COMPLETED'
   | 'SUBMITTED_NOT_COMPLETED'
   | 'PENDING_VALIDATION'
@@ -82,6 +83,7 @@ export interface WakeEarlyData {
 export interface WorshipData {
   completed: boolean;
   optionalNote?: string;
+  prayerTypes?: string[];
   // CRITICAL PRIVACY RULE: No photo evidence, no faith inference.
 }
 
@@ -97,7 +99,11 @@ export interface HealthyEatingData {
   breakfast: boolean;
   vegetableOrFruit: boolean;
   water: boolean; // Sufficient water (e.g. 6-8 glasses)
+  breakfastMenu?: string;
+  drinkGlasses?: number;
+  hadBreakfast?: boolean;
   optionalNote?: string;
+  [key: string]: any;
 }
 
 export interface LearningData {
@@ -105,12 +111,16 @@ export interface LearningData {
   activityType?: string; // e.g. "Membaca Buku", "Eksplorasi Sains", "Belajar Mandiri"
   durationMinutes?: number;
   newLearning?: string; // What new thing was learned today
+  optionalNote?: string;
+  [key: string]: any;
 }
 
 export interface SocialData {
   completed: boolean;
   activityTypes?: string[]; // e.g. ["Membantu Orang Tua", "Menyapa Tetangga", "Gotong Royong"]
   shortStory?: string; // Brief reflection story
+  optionalNote?: string;
+  [key: string]: any;
 }
 
 export interface SleepEarlyData {

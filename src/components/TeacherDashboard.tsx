@@ -459,11 +459,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const remoteJournals = await fetchJournalsFromSupabase().catch(() => null);
       if (remoteJournals && remoteJournals.length > 0) {
         const cleaned = remoteJournals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j));
-        setSyncedJournals(cleaned);
-        try {
-          localStorage.setItem('si7kaih_journals_prod', JSON.stringify(cleaned));
-          window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: cleaned }));
-        } catch (_e) {}
+        setSyncedJournals((prev) => {
+          const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
+          const merged = [...cleaned];
+          prev.forEach((pj) => {
+            if (!remoteMap.has(pj.id) && !isDeprecatedOrDummyJournal(pj)) {
+              merged.push(pj);
+            }
+          });
+          try {
+            localStorage.setItem('si7kaih_journals_prod', JSON.stringify(merged));
+            window.dispatchEvent(new CustomEvent('si7kaih_journals_updated', { detail: merged }));
+          } catch (_e) {}
+          return merged;
+        });
       } else {
         try {
           const storedJournalsStr = localStorage.getItem('si7kaih_journals_prod');
@@ -771,10 +780,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
   }, [rawClassStudents, syncedJournals, activeRombel]);
 
-  // Tanggal aktif monitoring pengisian jurnal siswa (Default: 26 September 2026 sebagai submit terbaru)
-  const [selectedJournalDate, setSelectedJournalDate] = useState<string>('2026-09-26');
+  // Tanggal aktif monitoring pengisian jurnal siswa (Default: 27 September 2026 sebagai update terkini)
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string>('2026-09-27');
 
-  // Daftar tanggal pengisian jurnal yang tersedia secara kronologis (5 hari terakhir: 22 Sep - 26 Sep 2026)
+  // Daftar tanggal pengisian jurnal yang tersedia secara kronologis (termasuk update terkini 27 Sep 2026)
   const availableJournalDates = useMemo(() => {
     const set = new Set<string>();
     classJournals.forEach((j) => {
@@ -783,16 +792,29 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         set.add(d.trim());
       }
     });
-    // Pastikan tanggal 5 hari terakhir (22 s.d. 26 September) tersedia untuk Kelas 7-B
+    // Pastikan tanggal aktif (22 s.d. 27 September) tersedia untuk Kelas 7-B
     if (activeRombel.name.includes('7-B') || (activeRombel.code && activeRombel.code.includes('7B'))) {
-      ['2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26'].forEach((d) => set.add(d));
+      ['2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'].forEach((d) => set.add(d));
     }
     const sorted = Array.from(set).sort();
-    return sorted.length > 0 ? sorted : ['2026-09-26'];
+    return sorted.length > 0 ? sorted : ['2026-09-27'];
   }, [classJournals, activeRombel]);
 
+  // Otomatis arahkan ke tanggal submit terbaru jika tanggal saat ini tidak valid
+  useEffect(() => {
+    if (availableJournalDates.length > 0 && selectedJournalDate !== 'ALL') {
+      if (!availableJournalDates.includes(selectedJournalDate)) {
+        setSelectedJournalDate(availableJournalDates[availableJournalDates.length - 1]);
+      }
+    }
+  }, [availableJournalDates, selectedJournalDate]);
+
   const getFormattedDateLabel = (dateStr: string) => {
-    if (dateStr === 'ALL') return 'Semua 5 Hari Terakhir (22 - 26 Sep 2026)';
+    if (dateStr === 'ALL') {
+      const first = availableJournalDates[0] ? getShortDateLabel(availableJournalDates[0]) : '22 Sep';
+      const last = availableJournalDates[availableJournalDates.length - 1] ? getShortDateLabel(availableJournalDates[availableJournalDates.length - 1]) : '27 Sep';
+      return `Semua ${availableJournalDates.length} Hari Terakhir (${first} - ${last} 2026)`;
+    }
     try {
       const [y, m, d] = dateStr.split('-').map(Number);
       if (y && m && d) {
@@ -804,7 +826,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   };
 
   const getShortDateLabel = (dateStr: string) => {
-    if (dateStr === 'ALL') return '22-26 Sep';
+    if (dateStr === 'ALL') {
+      const first = availableJournalDates[0] ? getShortDateLabel(availableJournalDates[0]) : '22 Sep';
+      const last = availableJournalDates[availableJournalDates.length - 1] ? getShortDateLabel(availableJournalDates[availableJournalDates.length - 1]) : '27 Sep';
+      return `${first}-${last}`;
+    }
     try {
       const [y, m, d] = dateStr.split('-').map(Number);
       if (y && m && d) {
@@ -1170,7 +1196,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const studentsWithToday = studentsList.filter((s) => s.completedTodayCount > 0 && !s.validatedByTeacher);
     if (studentsWithToday.length === 0) {
       showToast(selectedJournalDate === 'ALL'
-        ? 'Semua siswa dalam rentang 5 hari terakhir (22-26 September) sudah tervalidasi.'
+        ? `Semua siswa dalam rentang ${availableJournalDates.length} hari terakhir (${getShortDateLabel(availableJournalDates[0])} - ${getShortDateLabel(availableJournalDates[availableJournalDates.length - 1])}) sudah tervalidasi.`
         : `Semua siswa untuk tanggal ${getShortDateLabel(selectedJournalDate)} sudah tervalidasi.`);
       return;
     }
@@ -1237,7 +1263,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       }
     } catch (_e) {}
 
-    showToast(`Berhasil memvalidasi ${studentsWithToday.length} siswa untuk ${selectedJournalDate === 'ALL' ? 'seluruh rentang 5 hari terakhir (22-26 September)' : `tanggal ${getShortDateLabel(selectedJournalDate)}`}!`);
+    showToast(`Berhasil memvalidasi ${studentsWithToday.length} siswa untuk ${selectedJournalDate === 'ALL' ? `seluruh rentang ${availableJournalDates.length} hari terakhir (${getShortDateLabel(availableJournalDates[0])} - ${getShortDateLabel(availableJournalDates[availableJournalDates.length - 1])})` : `tanggal ${getShortDateLabel(selectedJournalDate)}`}!`);
   };
 
   // Synchronized aggregates (reset to 0 if no students or no journal entries)
@@ -2804,7 +2830,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             const isSelected = selectedJournalDate === dStr;
             const dayJournals = classJournals.filter((j) => (j.journalDate || (j as any).date) === dStr);
             const filledCount = dayJournals.length;
-            const isLatest = dStr === '2026-09-26';
+            const isLatest = dStr === availableJournalDates[availableJournalDates.length - 1];
 
             let dayName = '';
             let dateNum = '';
@@ -2856,7 +2882,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 : 'bg-slate-50 hover:bg-indigo-50 text-slate-700 border border-slate-200 hover:border-indigo-200'
             }`}
           >
-            <span>Semua 5 Hari Terakhir (22 - 26 Sep)</span>
+            <span>Semua {availableJournalDates.length} Hari Terakhir ({getShortDateLabel(availableJournalDates[0])} - {getShortDateLabel(availableJournalDates[availableJournalDates.length - 1])})</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
               selectedJournalDate === 'ALL' ? 'bg-indigo-700 text-white' : 'bg-indigo-100 text-indigo-800'
             }`}>
@@ -3956,7 +3982,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                Semua 5 Hari Terakhir (22-26 Sep)
+                Semua {availableJournalDates.length} Hari Terakhir ({getShortDateLabel(availableJournalDates[0])} - {getShortDateLabel(availableJournalDates[availableJournalDates.length - 1])})
               </button>
               {availableJournalDates.map((dStr) => {
                 const isSelected = selectedJournalDate === dStr;

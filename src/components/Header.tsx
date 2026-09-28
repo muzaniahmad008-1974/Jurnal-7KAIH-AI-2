@@ -198,8 +198,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Supabase Permanent Storage & Cloud DB Button (Dihilangkan khusus dashboard murid & orang tua) */}
-          {onOpenSupabaseModal && currentPersona.role !== 'STUDENT' && currentPersona.role !== 'PARENT' && (
+          {/* Supabase Permanent Storage & Cloud DB Button (Hanya tampil pada dashboard admin dan superadmin) */}
+          {onOpenSupabaseModal && (currentPersona.role === 'SCHOOL_ADMIN' || currentPersona.role === 'SUPER_ADMIN') && (
             <button
               id="btn-header-supabase"
               onClick={onOpenSupabaseModal}

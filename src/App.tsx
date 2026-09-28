@@ -184,7 +184,7 @@ export default function App() {
   // Sinkronkan data jurnal murni sesuai data riil yang diinput oleh siswa
   const [journals, setJournals] = useState<DailyJournal[]>(() => {
     try {
-      const resetKey = 'si7kaih_jorong_real_synced_7b_v9_permanent';
+      const resetKey = 'si7kaih_jorong_real_synced_7b_v10_sep27';
       const studentResetKey = 'si7kaih_students_clean_v7_nodummy';
 
       // Bersihkan cache siswa lama untuk menghapus 32 data dummy legacy 8-C
@@ -202,11 +202,11 @@ export default function App() {
         }
       }
 
-      // Bersihkan cache data jurnal lama, gantikan dengan data real input siswa (termasuk 7-B 5 hari terakhir)
+      // Bersihkan cache data jurnal lama, gantikan dengan data real input siswa (termasuk 7-B update terkini 27 September)
       localStorage.setItem('si7kaih_journals_prod', JSON.stringify(RESTORED_JOURNALS_REAL));
       localStorage.setItem(resetKey, 'true');
 
-      // Bersihkan tombstone tanggal 20-26 September jika ada
+      // Bersihkan tombstone tanggal jika ada
       const rawTs = localStorage.getItem('si7kaih_deleted_journals_tombstones');
       if (rawTs) {
         const tsObj = JSON.parse(rawTs);
@@ -223,6 +223,7 @@ export default function App() {
           '2026-09-24',
           '2026-09-25',
           '2026-09-26',
+          '2026-09-27',
         ];
         let tsChanged = false;
         Object.keys(tsObj).forEach((k) => {
@@ -1559,8 +1560,8 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs sm:text-sm text-slate-500">
-              {/* Basis Data Cloud/Supabase: Dihilangkan khusus dashboard murid & orang tua */}
-              {currentPersona.role !== 'STUDENT' && currentPersona.role !== 'PARENT' && (
+              {/* Basis Data Cloud/Supabase: Hanya tampil pada dashboard admin dan superadmin */}
+              {(currentPersona.role === 'SCHOOL_ADMIN' || currentPersona.role === 'SUPER_ADMIN') && (
                 <>
                   <button
                     id="btn-footer-supabase"

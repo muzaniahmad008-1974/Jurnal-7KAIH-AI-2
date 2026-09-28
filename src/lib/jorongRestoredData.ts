@@ -8,6 +8,7 @@ import { SchoolMaster } from './schoolMasterData';
 import { Rombel, Student } from './studentData';
 import { UserPersona } from './constants';
 import { DailyJournal } from '../../packages/types/src/index';
+import { RESTORED_JOURNALS_7B_SEP_27 } from './jorongJournalsSep27';
 
 export const RESTORED_SCHOOL: SchoolMaster = {
   "id": "sch-smpn1-jorong",
@@ -5748,7 +5749,7 @@ export const RESTORED_ALL_USERS: UserPersona[] = [
 ];
 
 // Data Jurnal Asli Pengisian Siswa UPTD SMPN 1 Jorong (Termasuk Kelas 7-B, 8-C, dan 9-C)
-export const RESTORED_JOURNALS_REAL: DailyJournal[] = [
+const RESTORED_JOURNALS_BASE: DailyJournal[] = [
   {
     "id": "journal-2026-09-26-usr-custom-1789698098131",
     "status": "SUBMITTED_COMPLETED",
@@ -30917,6 +30918,11 @@ export const RESTORED_JOURNALS_REAL: DailyJournal[] = [
     "createdAt": "2026-09-26T10:30:00.000Z",
     "updatedAt": "2026-09-26T10:30:00.000Z"
   }
+];
+
+export const RESTORED_JOURNALS_REAL: DailyJournal[] = [
+  ...RESTORED_JOURNALS_BASE,
+  ...RESTORED_JOURNALS_7B_SEP_27,
 ];
 
 export const RESTORED_JOURNALS_SEP_20_26: DailyJournal[] = RESTORED_JOURNALS_REAL;

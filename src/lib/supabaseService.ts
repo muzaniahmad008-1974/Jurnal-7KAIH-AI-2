@@ -477,6 +477,16 @@ export async function fetchUsersFromSupabase(): Promise<UserPersona[] | null> {
   }
 }
 
+export function mapRoleToSupabaseDb(role: string): string {
+  const r = (role || '').toLowerCase();
+  if (r === 'student' || r === 'siswa') return 'siswa';
+  if (r === 'teacher' || r === 'guru') return 'guru';
+  if (r === 'principal' || r === 'kepala_sekolah') return 'kepala_sekolah';
+  if (r === 'parent' || r === 'orang_tua') return 'orang_tua';
+  if (r === 'supervisor' || r === 'pengawas' || r === 'super_admin' || r === 'school_admin') return 'pengawas';
+  return 'siswa';
+}
+
 export async function saveUsersToSupabase(users: UserPersona[]): Promise<boolean> {
   if (!users || users.length === 0) return false;
   // Pastikan akun yang ditombstone tidak pernah di-upsert ulang ke Supabase
@@ -488,7 +498,7 @@ export async function saveUsersToSupabase(users: UserPersona[]): Promise<boolean
       id: u.id,
       username: u.username,
       name: u.name,
-      role: u.role,
+      role: mapRoleToSupabaseDb(u.role),
       school_id: u.schoolId || null,
       data: u,
       updated_at: new Date().toISOString(),
@@ -527,7 +537,7 @@ export async function saveSingleUserToSupabase(user: UserPersona): Promise<boole
       id: user.id,
       username: user.username,
       name: user.name,
-      role: user.role,
+      role: mapRoleToSupabaseDb(user.role),
       school_id: user.schoolId || null,
       data: user,
       updated_at: new Date().toISOString(),
@@ -1822,5 +1832,95 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
       } catch (_e) {}
     }
   };
+}
+
+// ----------------------------------------------------------------------------
+// 12. PARENT LINKS & SUPERVISOR SCHOOLS REPOSITORY (RLS RELATIONS)
+// ----------------------------------------------------------------------------
+
+export interface ParentStudentLink {
+  id: string;
+  parentUserId: string;
+  studentId: string;
+  createdAt?: string;
+}
+
+export interface SupervisorSchoolLink {
+  id: string;
+  supervisorId: string;
+  schoolId: string;
+  createdAt?: string;
+}
+
+export async function fetchParentLinksFromSupabase(): Promise<ParentStudentLink[]> {
+  try {
+    const { data, error } = await supabase.from('si7kaih_parent_links').select('*');
+    if (error || !Array.isArray(data)) return [];
+    return data.map((item: any) => ({
+      id: item.id,
+      parentUserId: item.parent_user_id,
+      studentId: item.student_id,
+      createdAt: item.created_at,
+    }));
+  } catch (_e) {
+    return [];
+  }
+}
+
+export async function saveParentLinkToSupabase(link: {
+  parentUserId: string;
+  studentId: string;
+}): Promise<boolean> {
+  try {
+    const id = `plink-${link.parentUserId}-${link.studentId}`;
+    const { error } = await supabase.from('si7kaih_parent_links').upsert(
+      {
+        id,
+        parent_user_id: link.parentUserId,
+        student_id: link.studentId,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: 'parent_user_id,student_id' }
+    );
+    return !error;
+  } catch (_e) {
+    return false;
+  }
+}
+
+export async function fetchSupervisorSchoolsFromSupabase(): Promise<SupervisorSchoolLink[]> {
+  try {
+    const { data, error } = await supabase.from('si7kaih_supervisor_schools').select('*');
+    if (error || !Array.isArray(data)) return [];
+    return data.map((item: any) => ({
+      id: item.id,
+      supervisorId: item.supervisor_id,
+      schoolId: item.school_id,
+      createdAt: item.created_at,
+    }));
+  } catch (_e) {
+    return [];
+  }
+}
+
+export async function saveSupervisorSchoolToSupabase(link: {
+  supervisorId: string;
+  schoolId: string;
+}): Promise<boolean> {
+  try {
+    const id = `sslink-${link.supervisorId}-${link.schoolId}`;
+    const { error } = await supabase.from('si7kaih_supervisor_schools').upsert(
+      {
+        id,
+        supervisor_id: link.supervisorId,
+        school_id: link.schoolId,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: 'supervisor_id,school_id' }
+    );
+    return !error;
+  } catch (_e) {
+    return false;
+  }
 }
 
