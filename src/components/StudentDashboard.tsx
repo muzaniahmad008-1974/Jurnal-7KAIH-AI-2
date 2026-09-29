@@ -10,6 +10,8 @@ import {
   HabitCode,
 } from '../../packages/types/src/index';
 import { HABIT_LIST, isDeprecatedOrDummyJournal } from '../lib/constants';
+import { isJournalTombstoned } from '../lib/supabaseService';
+import { normalizeClassName } from '../lib/studentData';
 import {
   calculateMonthlyHabitSummary,
   calculateHabitualThreshold,
@@ -256,42 +258,56 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
     const filtered = baseList.filter((j) => {
       if (isDeprecatedOrDummyJournal(j)) return false;
+      if (isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)) return false;
       const jId = (j.studentId || '').trim().toLowerCase();
       const jNisn = (j.studentNisn || '').trim();
       const jName = (j.studentName || '').trim().toLowerCase();
 
       if (targetId && jId && jId === targetId) return true;
       if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return true;
-      if (targetName && jName && jName === targetName) return true;
+      if (targetName && jName && jName === targetName) {
+        if (!className || !j.className || normalizeClassName(className) === normalizeClassName(j.className)) {
+          return true;
+        }
+      }
       return false;
     });
 
     // Merge with todayJournal to guarantee 0-latency reflection of today's journal state
     if (todayJournal?.journalDate && !isDeprecatedOrDummyJournal(todayJournal)) {
-      const existsIdx = filtered.findIndex((j) => j.journalDate === todayJournal.journalDate);
-      const isTodayEmpty =
-        (todayJournal.completedCount || 0) === 0 &&
-        (!todayJournal.entries || !Object.values(todayJournal.entries).some((e: any) => e?.completed));
+      const isMatchingStudent =
+        (todayJournal.studentId && targetId && todayJournal.studentId.toLowerCase() === targetId) ||
+        (todayJournal.studentNisn && targetNisn && todayJournal.studentNisn === targetNisn) ||
+        (todayJournal.studentName && targetName && todayJournal.studentName.toLowerCase() === targetName);
 
-      if (existsIdx >= 0) {
-        if (isTodayEmpty) {
-          // If today's journal has been reset/emptied, remove it from filtered so it doesn't show completed
-          filtered.splice(existsIdx, 1);
-        } else {
-          const existing = filtered[existsIdx];
-          const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-          const propTime = todayJournal.updatedAt ? new Date(todayJournal.updatedAt).getTime() : 0;
-          if (propTime >= existingTime) {
-            filtered[existsIdx] = todayJournal;
+      if (isMatchingStudent) {
+        const existsIdx = filtered.findIndex((j) => j.journalDate === todayJournal.journalDate);
+        const isTodayEmpty =
+          (todayJournal.completedCount || 0) === 0 &&
+          (!todayJournal.entries || !Object.values(todayJournal.entries).some((e: any) => e?.completed));
+
+        if (existsIdx >= 0) {
+          if (isTodayEmpty) {
+            // Hanya hapus entri dari linimasa jika jurnal tersebut benar-benar ditombstone / direset
+            if (isJournalTombstoned(todayJournal.studentId, todayJournal.journalDate, todayJournal.studentNisn, todayJournal.studentName, todayJournal.id)) {
+              filtered.splice(existsIdx, 1);
+            }
+          } else {
+            const existing = filtered[existsIdx];
+            const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            const propTime = todayJournal.updatedAt ? new Date(todayJournal.updatedAt).getTime() : 0;
+            if (propTime >= existingTime) {
+              filtered[existsIdx] = todayJournal;
+            }
           }
+        } else if (!isTodayEmpty) {
+          filtered.push(todayJournal);
         }
-      } else if (!isTodayEmpty) {
-        filtered.push(todayJournal);
       }
     }
 
     return filtered;
-  }, [syncedJournals, allJournals, studentId, studentNisn, todayJournal, studentName]);
+  }, [syncedJournals, allJournals, studentId, studentNisn, todayJournal, studentName, className]);
 
   // 1b. Lencana Pencapaian Karakter yang tersinkronisasi otomatis dengan pembaruan jurnal aktif murid
   const syncedBadges = useMemo(() => {
@@ -580,7 +596,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         const targetName = (studentName || '').trim().toLowerCase();
         if (targetId && jId && jId === targetId) return false;
         if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return false;
-        if (targetName && jName && jName === targetName) return false;
+        if (targetName && jName && jName === targetName) {
+          if (!className || !j.className || normalizeClassName(className) === normalizeClassName(j.className)) {
+            return false;
+          }
+        }
         return true;
       })
     );

@@ -923,15 +923,24 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       // 1. Lingkup Autentikasi: ORANG TUA / WALI
       if (selectedRoleScope === 'PARENT') {
         // Cek apakah ada akun eksplisit bertipe PARENT di master akun pengguna
-        const matchedParent = freshUsers.find(
+        let matchedParent = freshUsers.find(
           (u) =>
             u.role === 'PARENT' &&
             (u.username.toLowerCase() === cleanId ||
-              u.identifierValue.toLowerCase() === cleanId ||
-              u.email.toLowerCase() === cleanId ||
-              u.name.toLowerCase().includes(cleanId) ||
-              (u.childNisn && u.childNisn.toLowerCase() === cleanId))
+              (u.identifierValue && u.identifierValue.toLowerCase() === cleanId) ||
+              u.id.toLowerCase() === cleanId ||
+              (u.childNisn && u.childNisn.toLowerCase() === cleanId) ||
+              u.name.toLowerCase().trim() === cleanId)
         );
+
+        if (!matchedParent && cleanId.length >= 3) {
+          matchedParent = freshUsers.find(
+            (u) =>
+              u.role === 'PARENT' &&
+              (u.name.toLowerCase().includes(cleanId) ||
+                (u.email && u.email.toLowerCase() === cleanId))
+          );
+        }
 
         if (matchedParent) {
           if (matchedParent.accountStatus === 'MANDIRI_NONAKTIF') {
@@ -953,14 +962,33 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
           return;
         }
 
-        // Dukungan login orang tua langsung via NISN / Username anak terdaftar
-        const matchedStudent = poolOfStudents.find(
+        // Dukungan login orang tua langsung via NISN / Username anak terdaftar (prioritas tepat dulu)
+        let matchedStudent = poolOfStudents.find(
           (s) =>
-            s.nisn.toLowerCase() === cleanId ||
-            s.username.toLowerCase() === cleanId ||
-            s.id.toLowerCase() === cleanId ||
-            s.name.toLowerCase().includes(cleanId)
+            (selectedClassForLogin === 'ALL' || !s.className || isSameClass(s.className, selectedClassForLogin)) &&
+            (s.nisn.toLowerCase() === cleanId ||
+              (s.username && s.username.toLowerCase() === cleanId) ||
+              s.id.toLowerCase() === cleanId ||
+              s.name.toLowerCase().trim() === cleanId)
         );
+
+        if (!matchedStudent) {
+          matchedStudent = poolOfStudents.find(
+            (s) =>
+              s.nisn.toLowerCase() === cleanId ||
+              (s.username && s.username.toLowerCase() === cleanId) ||
+              s.id.toLowerCase() === cleanId ||
+              s.name.toLowerCase().trim() === cleanId
+          );
+        }
+
+        if (!matchedStudent && cleanId.length >= 3) {
+          matchedStudent = poolOfStudents.find(
+            (s) =>
+              (selectedClassForLogin === 'ALL' || !s.className || isSameClass(s.className, selectedClassForLogin)) &&
+              s.name.toLowerCase().includes(cleanId)
+          );
+        }
 
         if (matchedStudent) {
           const parentName =
@@ -1018,16 +1046,38 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
         return;
       }
 
-      // 2. Lingkup Autentikasi: SISWA / MURID
+      // 2. Lingkup Autentikasi: SISWA / MURID (Prioritas Exact Match agar kelas 9-C, 8-C, 7-B tidak berkonflik)
       if (selectedRoleScope === 'STUDENT') {
-        const matchedStudentUser = freshUsers.find(
+        let matchedStudentUser = freshUsers.find(
           (u) =>
             u.role === 'STUDENT' &&
+            (selectedClassForLogin === 'ALL' || !u.className || isSameClass(u.className, selectedClassForLogin)) &&
             (u.username.toLowerCase() === cleanId ||
-              u.identifierValue.toLowerCase() === cleanId ||
-              u.email.toLowerCase() === cleanId ||
-              u.name.toLowerCase().includes(cleanId))
+              (u.identifierValue && u.identifierValue.toLowerCase() === cleanId) ||
+              u.id.toLowerCase() === cleanId ||
+              u.name.toLowerCase().trim() === cleanId)
         );
+
+        if (!matchedStudentUser) {
+          matchedStudentUser = freshUsers.find(
+            (u) =>
+              u.role === 'STUDENT' &&
+              (u.username.toLowerCase() === cleanId ||
+                (u.identifierValue && u.identifierValue.toLowerCase() === cleanId) ||
+                u.id.toLowerCase() === cleanId ||
+                u.name.toLowerCase().trim() === cleanId)
+          );
+        }
+
+        if (!matchedStudentUser && cleanId.length >= 3) {
+          matchedStudentUser = freshUsers.find(
+            (u) =>
+              u.role === 'STUDENT' &&
+              (selectedClassForLogin === 'ALL' || !u.className || isSameClass(u.className, selectedClassForLogin)) &&
+              u.name.toLowerCase().includes(cleanId)
+          );
+        }
+
         if (matchedStudentUser) {
           if (matchedStudentUser.accountStatus === 'MANDIRI_NONAKTIF') {
             setIsSubmitting(false);
@@ -1048,13 +1098,34 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
           return;
         }
 
-        const matchedStudent = poolOfStudents.find(
+        // Cari di pool siswa dengan prioritas exact match pada kelas yang dipilih
+        let matchedStudent = poolOfStudents.find(
           (s) =>
-            s.nisn.toLowerCase() === cleanId ||
-            s.username.toLowerCase() === cleanId ||
-            s.id.toLowerCase() === cleanId ||
-            s.name.toLowerCase().includes(cleanId)
+            (selectedClassForLogin === 'ALL' || !s.className || isSameClass(s.className, selectedClassForLogin)) &&
+            (s.nisn.toLowerCase() === cleanId ||
+              (s.username && s.username.toLowerCase() === cleanId) ||
+              s.id.toLowerCase() === cleanId ||
+              s.name.toLowerCase().trim() === cleanId)
         );
+
+        if (!matchedStudent) {
+          matchedStudent = poolOfStudents.find(
+            (s) =>
+              s.nisn.toLowerCase() === cleanId ||
+              (s.username && s.username.toLowerCase() === cleanId) ||
+              s.id.toLowerCase() === cleanId ||
+              s.name.toLowerCase().trim() === cleanId
+          );
+        }
+
+        if (!matchedStudent && cleanId.length >= 3) {
+          matchedStudent = poolOfStudents.find(
+            (s) =>
+              (selectedClassForLogin === 'ALL' || !s.className || isSameClass(s.className, selectedClassForLogin)) &&
+              s.name.toLowerCase().includes(cleanId)
+          );
+        }
+
         if (matchedStudent) {
           const resolvedSchoolName =
             matchedStudent.schoolName ||

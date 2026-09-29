@@ -217,13 +217,24 @@ export const DailyJournalModal: React.FC<DailyJournalModalProps> = ({
     (sleepEarly.completed ? 1 : 0);
 
   const handleSubmit = (isDraft = false) => {
-    const studentId = initialJournal?.studentId || currentPersona?.id || 'usr-student-01';
-    const schoolId = initialJournal?.schoolId || currentPersona?.schoolId || 's1000000-0000-0000-0000-000000000001';
-    const schoolName = initialJournal?.schoolName || currentPersona?.schoolName || 'Satuan Pendidikan';
-    const className = initialJournal?.className || currentPersona?.className || '';
-    const studentName = initialJournal?.studentName || currentPersona?.name || 'Siswa';
-    const studentNisn = initialJournal?.studentNisn || currentPersona?.identifierValue || '';
-    const journalId = initialJournal?.id || `journal-${journalDate}-${studentId}`;
+    const isStudentRole = currentPersona?.role === 'STUDENT';
+    const studentId = isStudentRole
+      ? currentPersona.id || 'usr-student-01'
+      : initialJournal?.studentId || currentPersona?.id || 'usr-student-01';
+    const schoolId = currentPersona?.schoolId || initialJournal?.schoolId || 's1000000-0000-0000-0000-000000000001';
+    const schoolName = currentPersona?.schoolName || initialJournal?.schoolName || 'Satuan Pendidikan';
+    const className = isStudentRole && currentPersona.className
+      ? currentPersona.className
+      : initialJournal?.className || currentPersona?.className || '';
+    const studentName = isStudentRole && currentPersona.name
+      ? currentPersona.name
+      : initialJournal?.studentName || currentPersona?.name || 'Siswa';
+    const studentNisn = isStudentRole && currentPersona.identifierValue
+      ? currentPersona.identifierValue
+      : initialJournal?.studentNisn || currentPersona?.identifierValue || '';
+    const journalId = (initialJournal?.id && (!isStudentRole || initialJournal.studentId === studentId))
+      ? initialJournal.id
+      : `journal-${journalDate}-${studentId}`;
 
     const now = new Date();
     const realtimeInfo = formatRealtimeSaveTime(now);

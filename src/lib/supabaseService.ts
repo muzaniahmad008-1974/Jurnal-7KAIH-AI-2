@@ -97,6 +97,33 @@ export async function refreshSupabaseStatus(): Promise<SupabaseSyncStatus> {
 // ----------------------------------------------------------------------------
 
 const TOMBSTONE_STORAGE_KEY = 'si7kaih_deleted_journals_tombstones';
+const memTombstones: Record<string, number> = {};
+
+function getTombstonesFromStorage(): Record<string, number> {
+  const tombstones: Record<string, number> = { ...memTombstones };
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(TOMBSTONE_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        Object.assign(tombstones, parsed);
+      }
+    }
+  } catch (_e) {}
+  return tombstones;
+}
+
+function saveTombstonesToStorage(tombstones: Record<string, number>): void {
+  for (const k of Object.keys(memTombstones)) {
+    if (!(k in tombstones)) delete memTombstones[k];
+  }
+  Object.assign(memTombstones, tombstones);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+    }
+  } catch (_e) {}
+}
 
 export function recordDeletedJournalTombstone(
   studentId?: string,
@@ -107,8 +134,7 @@ export function recordDeletedJournalTombstone(
 ): void {
   if (!date && !journalId) return;
   try {
-    const raw = localStorage.getItem(TOMBSTONE_STORAGE_KEY);
-    const tombstones: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const tombstones = getTombstonesFromStorage();
     
     // Purge any legacy 'any_*' keys that cause conflicts across classmates
     Object.keys(tombstones).forEach((k) => {
@@ -116,12 +142,29 @@ export function recordDeletedJournalTombstone(
     });
 
     const now = Date.now();
-    if (journalId) tombstones[`id_${journalId}`] = now;
-    if (studentId && date) tombstones[`${studentId.trim()}_${date}`] = now;
-    if (studentNisn && date) tombstones[`${studentNisn.trim()}_${date}`] = now;
-    if (studentName && date) tombstones[`${studentName.trim().toLowerCase()}_${date}`] = now;
+    const cleanDate = date ? date.trim() : '';
 
-    localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+    if (journalId) {
+      const cleanJId = journalId.trim();
+      tombstones[`id_${cleanJId}`] = now;
+      tombstones[`id_${cleanJId.toLowerCase()}`] = now;
+    }
+    if (studentId && cleanDate) {
+      const cleanSId = studentId.trim();
+      tombstones[`${cleanSId}_${cleanDate}`] = now;
+      tombstones[`${cleanSId.toLowerCase()}_${cleanDate}`] = now;
+    }
+    if (studentNisn && cleanDate) {
+      const cleanNisn = studentNisn.trim();
+      tombstones[`${cleanNisn}_${cleanDate}`] = now;
+      tombstones[`${cleanNisn.toLowerCase()}_${cleanDate}`] = now;
+    }
+    if (studentName && cleanDate) {
+      const cleanName = studentName.trim().toLowerCase();
+      tombstones[`${cleanName}_${cleanDate}`] = now;
+    }
+
+    saveTombstonesToStorage(tombstones);
   } catch (_e) {}
 }
 
@@ -133,17 +176,32 @@ export function clearJournalTombstone(
   journalId?: string
 ): void {
   try {
-    const raw = localStorage.getItem(TOMBSTONE_STORAGE_KEY);
-    if (!raw) return;
-    const tombstones: Record<string, number> = JSON.parse(raw);
+    const tombstones = getTombstonesFromStorage();
+    const cleanDate = date ? date.trim() : '';
 
-    if (journalId) delete tombstones[`id_${journalId}`];
-    if (studentId && date) delete tombstones[`${studentId.trim()}_${date}`];
-    if (studentNisn && date) delete tombstones[`${studentNisn.trim()}_${date}`];
-    if (studentName && date) delete tombstones[`${studentName.trim().toLowerCase()}_${date}`];
-    if (date) delete tombstones[`any_${date}`];
+    if (journalId) {
+      const cleanJId = journalId.trim();
+      delete tombstones[`id_${cleanJId}`];
+      delete tombstones[`id_${cleanJId.toLowerCase()}`];
+    }
+    if (studentId && cleanDate) {
+      const cleanSId = studentId.trim();
+      delete tombstones[`${cleanSId}_${cleanDate}`];
+      delete tombstones[`${cleanSId.toLowerCase()}_${cleanDate}`];
+    }
+    if (studentNisn && cleanDate) {
+      const cleanNisn = studentNisn.trim();
+      delete tombstones[`${cleanNisn}_${cleanDate}`];
+      delete tombstones[`${cleanNisn.toLowerCase()}_${cleanDate}`];
+    }
+    if (studentName && cleanDate) {
+      delete tombstones[`${studentName.trim().toLowerCase()}_${cleanDate}`];
+    }
+    if (cleanDate) {
+      delete tombstones[`any_${cleanDate}`];
+    }
 
-    localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+    saveTombstonesToStorage(tombstones);
   } catch (_e) {}
 }
 
@@ -156,9 +214,7 @@ export function isJournalTombstoned(
 ): boolean {
   if (!date && !journalId) return false;
   try {
-    const raw = localStorage.getItem(TOMBSTONE_STORAGE_KEY);
-    if (!raw) return false;
-    const tombstones: Record<string, number> = JSON.parse(raw);
+    const tombstones = getTombstonesFromStorage();
 
     // Clean any legacy wildcard keys that caused false-positive tombstones
     let cleaned = false;
@@ -169,16 +225,30 @@ export function isJournalTombstoned(
       }
     });
     if (cleaned) {
-      try {
-        localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
-      } catch (_e) {}
+      saveTombstonesToStorage(tombstones);
     }
 
+    const cleanDate = date ? date.trim() : '';
     const keysToCheck: string[] = [];
-    if (journalId) keysToCheck.push(`id_${journalId}`);
-    if (studentId && date) keysToCheck.push(`${studentId.trim()}_${date}`);
-    if (studentNisn && date) keysToCheck.push(`${studentNisn.trim()}_${date}`);
-    if (studentName && date) keysToCheck.push(`${studentName.trim().toLowerCase()}_${date}`);
+
+    if (journalId) {
+      const cleanJId = journalId.trim();
+      keysToCheck.push(`id_${cleanJId}`);
+      keysToCheck.push(`id_${cleanJId.toLowerCase()}`);
+    }
+    if (studentId && cleanDate) {
+      const cleanSId = studentId.trim();
+      keysToCheck.push(`${cleanSId}_${cleanDate}`);
+      keysToCheck.push(`${cleanSId.toLowerCase()}_${cleanDate}`);
+    }
+    if (studentNisn && cleanDate) {
+      const cleanNisn = studentNisn.trim();
+      keysToCheck.push(`${cleanNisn}_${cleanDate}`);
+      keysToCheck.push(`${cleanNisn.toLowerCase()}_${cleanDate}`);
+    }
+    if (studentName && cleanDate) {
+      keysToCheck.push(`${studentName.trim().toLowerCase()}_${cleanDate}`);
+    }
 
     if (keysToCheck.length === 0) return false;
 
@@ -189,7 +259,7 @@ export function isJournalTombstoned(
     // Expire tombstone after 7 days
     if (Date.now() - ts > 7 * 24 * 60 * 60 * 1000) {
       delete tombstones[matchedKey];
-      localStorage.setItem(TOMBSTONE_STORAGE_KEY, JSON.stringify(tombstones));
+      saveTombstonesToStorage(tombstones);
       return false;
     }
     return true;
@@ -298,7 +368,7 @@ export async function deleteAllJournalsFromSupabase(studentId?: string): Promise
 export async function saveJournalToSupabase(journal: DailyJournal): Promise<boolean> {
   try {
     const journalDate = journal.journalDate || (journal as any).date || new Date().toISOString().split('T')[0];
-    clearJournalTombstone(journal.studentId, journalDate);
+    clearJournalTombstone(journal.studentId, journalDate, journal.studentNisn, journal.studentName, journal.id);
     const isParentVal =
       (journal as any).parentSignature ??
       Object.values(journal.entries || {}).some((e: any) => e.parentValidated);
@@ -1498,7 +1568,7 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
           if (payload.new && payload.new.data) {
             const updatedJournal = payload.new.data as DailyJournal;
             const date = updatedJournal.journalDate || (updatedJournal as any).date;
-            if (isJournalTombstoned(updatedJournal.studentId, date)) {
+            if (isJournalTombstoned(updatedJournal.studentId, date, updatedJournal.studentNisn, updatedJournal.studentName, updatedJournal.id)) {
               return;
             }
             callbacks.onJournalUpdate(updatedJournal, 'realtime');
@@ -1679,7 +1749,7 @@ export function startAutomaticSynchronization(callbacks: AutoSyncCallbacks): () 
     if (isCleanedUp || !event.data) return;
     if (event.data.type === 'JOURNAL_SAVED' && event.data.journal) {
       const date = event.data.journal.journalDate || (event.data.journal as any).date;
-      if (!isJournalTombstoned(event.data.journal.studentId, date)) {
+      if (!isJournalTombstoned(event.data.journal.studentId, date, event.data.journal.studentNisn, event.data.journal.studentName, event.data.journal.id)) {
         callbacks.onJournalUpdate(event.data.journal, 'broadcast');
         currentStatus.syncCount++;
         currentStatus.lastSyncedAt = new Date().toISOString();

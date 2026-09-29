@@ -11,6 +11,8 @@ import {
   HabitCode,
 } from '../../packages/types/src/index';
 import { HABIT_LIST, isDeprecatedOrDummyJournal } from '../lib/constants';
+import { isJournalTombstoned } from '../lib/supabaseService';
+import { normalizeClassName } from '../lib/studentData';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -38,6 +40,7 @@ interface CalendarViewProps {
   studentName: string;
   studentId?: string;
   studentNisn?: string;
+  className?: string;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -46,6 +49,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   studentName,
   studentId,
   studentNisn,
+  className,
 }) => {
   const [selectedHabitFilter, setSelectedHabitFilter] = useState<HabitCode | 'ALL'>('ALL');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
@@ -92,13 +96,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
     return list.filter((j) => {
       if (isDeprecatedOrDummyJournal(j)) return false;
+      if (isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)) return false;
       if (targetId && j.studentId && j.studentId.toLowerCase() === targetId) return true;
       if (targetNisn && j.studentNisn && j.studentNisn === targetNisn) return true;
-      if (targetName && j.studentName && j.studentName.trim().toLowerCase() === targetName) return true;
-      if (!j.studentId && !j.studentNisn && !j.studentName) return true;
+      if (targetName && j.studentName && j.studentName.trim().toLowerCase() === targetName) {
+        if (!className || !j.className || normalizeClassName(className) === normalizeClassName(j.className)) {
+          return true;
+        }
+      }
       return false;
     });
-  }, [journals, studentId, studentNisn, studentName]);
+  }, [journals, studentId, studentNisn, studentName, className]);
 
   // Map journals by date
   const journalMap = useMemo(() => {

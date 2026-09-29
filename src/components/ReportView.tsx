@@ -395,20 +395,26 @@ export const ReportView: React.FC<ReportViewProps> = ({
     const listToFilter = syncedJournals.length > 0 ? syncedJournals : (journals || []);
     if (!listToFilter || listToFilter.length === 0) return [];
 
-    // Filter berdasarkan identitas siswa
+    // Filter berdasarkan identitas siswa (presisi dan terisolasi per kelas)
     const matchedForStudent = listToFilter.filter((j) => {
       if (isDeprecatedOrDummyJournal(j)) return false;
       const sid = (activeStudent.id || '').toLowerCase().trim();
       const snisn = (activeStudent.nisn || '').toLowerCase().trim();
       const sname = (activeStudent.name || '').toLowerCase().trim();
+      const sClass = activeStudent.className || '';
 
       const jSid = (j.studentId || '').toLowerCase().trim();
       const jSnisn = (j.studentNisn || '').toLowerCase().trim();
       const jSname = ((j as any).studentName || '').toLowerCase().trim();
+      const jClass = j.className || '';
 
       if (sid && (jSid === sid || jSnisn === sid)) return true;
       if (snisn && (jSid === snisn || jSnisn === snisn)) return true;
-      if (sname && jSname && (jSname === sname || jSname.includes(sname) || sname.includes(jSname))) return true;
+      if (sname && jSname && jSname === sname) {
+        if (!sClass || !jClass || isSameClass(sClass, jClass)) {
+          return true;
+        }
+      }
       return false;
     });
 

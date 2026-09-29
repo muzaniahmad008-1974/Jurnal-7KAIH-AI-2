@@ -40,6 +40,8 @@ import {
   SleepEarlyData,
 } from '../../packages/types/src/index';
 import { HABIT_LIST, UserPersona, isDeprecatedOrDummyJournal } from '../lib/constants';
+import { isJournalTombstoned } from '../lib/supabaseService';
+import { normalizeClassName } from '../lib/studentData';
 import { formatRealtimeSaveTime, getLocalDateString } from '../lib/dateUtils';
 
 interface StudentJournalViewProps {
@@ -112,16 +114,21 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
 
     return syncedJournals.filter((j) => {
       if (isDeprecatedOrDummyJournal(j)) return false;
+      if (isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)) return false;
       const jId = (j.studentId || '').trim().toLowerCase();
       const jNisn = (j.studentNisn || '').trim();
       const jName = (j.studentName || '').trim().toLowerCase();
 
       if (targetId && jId && jId === targetId) return true;
       if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return true;
-      if (targetName && jName && jName === targetName) return true;
+      if (targetName && jName && jName === targetName) {
+        if (!className || !j.className || normalizeClassName(className) === normalizeClassName(j.className)) {
+          return true;
+        }
+      }
       return false;
     });
-  }, [syncedJournals, studentId, studentNisn, studentName]);
+  }, [syncedJournals, studentId, studentNisn, studentName, className]);
 
   // Find existing journal for selectedDate matching this student
   const currentJournal = useMemo(() => {
@@ -426,7 +433,11 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
         const targetName = (studentName || '').trim().toLowerCase();
         if (targetId && jId && jId === targetId) return false;
         if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return false;
-        if (targetName && jName && jName === targetName) return false;
+        if (targetName && jName && jName === targetName) {
+          if (!className || !j.className || normalizeClassName(className) === normalizeClassName(j.className)) {
+            return false;
+          }
+        }
         return true;
       })
     );

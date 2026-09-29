@@ -30920,9 +30920,29 @@ const RESTORED_JOURNALS_BASE: DailyJournal[] = [
   }
 ];
 
+const TARGET_RESET_7B_DATES = new Set([
+  '2026-09-22',
+  '2026-09-23',
+  '2026-09-24',
+  '2026-09-25',
+  '2026-09-26',
+  '2026-09-27',
+]);
+
 export const RESTORED_JOURNALS_REAL: DailyJournal[] = [
   ...RESTORED_JOURNALS_BASE,
   ...RESTORED_JOURNALS_7B_SEP_27,
-];
+].filter((j) => {
+  const sClass = (j as any).studentClass;
+  const is7B =
+    (j.className && (j.className.includes('7-B') || j.className.includes('7B'))) ||
+    (sClass && (sClass.includes('7-B') || sClass.includes('7B')));
+  const d = j.journalDate || (j as any).date;
+  // Reset isian jurnal siswa kelas 7-B menjadi kosong dari tanggal 22 September sampai 27 September
+  if (is7B && d && TARGET_RESET_7B_DATES.has(d)) {
+    return false;
+  }
+  return true;
+});
 
 export const RESTORED_JOURNALS_SEP_20_26: DailyJournal[] = RESTORED_JOURNALS_REAL;

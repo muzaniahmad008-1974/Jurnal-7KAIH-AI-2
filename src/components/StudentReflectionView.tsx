@@ -9,7 +9,8 @@ import {
   HabitCode,
   DailyJournal,
 } from '../../packages/types/src/index';
-import { HABIT_LIST } from '../lib/constants';
+import { HABIT_LIST, isDeprecatedOrDummyJournal } from '../lib/constants';
+import { isJournalTombstoned } from '../lib/supabaseService';
 import {
   BookOpen,
   Sparkles,
@@ -51,7 +52,20 @@ export const StudentReflectionView: React.FC<StudentReflectionViewProps> = ({
     const monthMap = new Map<string, { year: number; month: number; count: number; lastDate: string }>();
 
     if (journals && journals.length > 0) {
-      journals.forEach((j) => {
+      const targetId = (activeStudentId || '').trim().toLowerCase();
+      const targetName = (studentName || '').trim().toLowerCase();
+
+      const studentScopedJournals = journals.filter((j) => {
+        if (isDeprecatedOrDummyJournal(j)) return false;
+        if (isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)) return false;
+        const jId = (j.studentId || '').trim().toLowerCase();
+        const jName = (j.studentName || '').trim().toLowerCase();
+        if (targetId && jId && jId === targetId) return true;
+        if (targetName && jName && jName === targetName) return true;
+        return false;
+      });
+
+      studentScopedJournals.forEach((j) => {
         const dateStr = j.journalDate || (j as any).date;
         if (dateStr && typeof dateStr === 'string') {
           const parts = dateStr.split('-');
@@ -100,7 +114,7 @@ export const StudentReflectionView: React.FC<StudentReflectionViewProps> = ({
     // Sort descending so the latest month with journal activity comes first
     list.sort((a, b) => b.key.localeCompare(a.key));
     return list;
-  }, [journals]);
+  }, [journals, activeStudentId, studentName]);
 
   // Active selected month key (defaults to the latest journal month)
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(() => {

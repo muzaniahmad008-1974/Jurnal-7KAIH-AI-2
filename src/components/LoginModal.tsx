@@ -61,14 +61,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    // Match against internal users pool
-    const matched = users.find(
+    // Match against internal users pool (exact match prioritized)
+    let matched = users.find(
       (u) =>
         u.username.toLowerCase() === cleanId ||
         u.identifierValue.toLowerCase() === cleanId ||
-        u.email.toLowerCase() === cleanId ||
-        u.name.toLowerCase().includes(cleanId)
+        u.id.toLowerCase() === cleanId ||
+        u.name.toLowerCase().trim() === cleanId
     );
+
+    if (!matched && cleanId.length >= 3) {
+      matched = users.find(
+        (u) =>
+          u.name.toLowerCase().includes(cleanId) ||
+          (u.email && u.email.toLowerCase() === cleanId)
+      );
+    }
 
     if (!matched) {
       setErrorMessage('Akun mandiri tidak ditemukan. Pastikan akun telah didaftarkan oleh Administrator.');

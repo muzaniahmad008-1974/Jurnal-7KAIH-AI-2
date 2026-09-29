@@ -74,6 +74,7 @@ import {
   applySuperAdminMasterDataToStorage,
   saveJournalToSupabase,
   saveAllJournalsToSupabase,
+  isJournalTombstoned,
 } from '../lib/supabaseService';
 import {
   formatAcademicYearAndSemester,
@@ -254,14 +255,32 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   useEffect(() => {
     if (Array.isArray(journals) && journals.length > 0) {
-      setSyncedJournals(sanitizeJournalsList(journals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))));
+      setSyncedJournals(
+        sanitizeJournalsList(
+          journals.filter(
+            (j: DailyJournal) =>
+              !isDeprecatedOrDummyJournal(j) &&
+              !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+          )
+        )
+      );
+    } else if (Array.isArray(journals) && journals.length === 0) {
+      setSyncedJournals([]);
     } else {
       try {
         const raw = localStorage.getItem('si7kaih_journals_prod');
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setSyncedJournals(sanitizeJournalsList(parsed.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))));
+            setSyncedJournals(
+              sanitizeJournalsList(
+                parsed.filter(
+                  (j: DailyJournal) =>
+                    !isDeprecatedOrDummyJournal(j) &&
+                    !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+                )
+              )
+            );
           }
         }
       } catch (_e) {}
@@ -275,20 +294,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       try {
         const remote = await fetchJournalsFromSupabase();
         if (isMounted && remote && remote.length > 0) {
-          const cleaned = sanitizeJournalsList(remote.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          const cleaned = sanitizeJournalsList(
+            remote.filter(
+              (j: DailyJournal) =>
+                !isDeprecatedOrDummyJournal(j) &&
+                !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+            )
+          );
           setSyncedJournals((prev) => {
             const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
             const merged = [...cleaned];
             prev.forEach((pj) => {
-              if (!remoteMap.has(pj.id) && !isDeprecatedOrDummyJournal(pj)) {
+              if (
+                !remoteMap.has(pj.id) &&
+                !isDeprecatedOrDummyJournal(pj) &&
+                !isJournalTombstoned(pj.studentId, pj.journalDate || (pj as any).date, pj.studentNisn, pj.studentName, pj.id)
+              ) {
                 merged.push(pj);
               }
             });
-            const sanitizedMerged = sanitizeJournalsList(merged);
-            try {
-              localStorage.setItem('si7kaih_journals_prod', JSON.stringify(sanitizedMerged));
-            } catch (_e) {}
-            return sanitizedMerged;
+            return sanitizeJournalsList(merged);
           });
           setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
         }
@@ -342,7 +367,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           } catch (_e) {}
         }
         if (Array.isArray(updatedList)) {
-          const cleaned = sanitizeJournalsList(updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+          const cleaned = sanitizeJournalsList(
+            updatedList.filter(
+              (j: DailyJournal) =>
+                !isDeprecatedOrDummyJournal(j) &&
+                !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+            )
+          );
           setSyncedJournals(cleaned);
           setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
@@ -389,7 +420,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         bc = new BroadcastChannel('si7kaih_sync_channel');
         bc.onmessage = (ev) => {
           if (!ev.data) return;
-          if (ev.data.type === 'JOURNALS_UPDATED' || ev.data.type === 'JOURNAL_SUBMITTED') {
+          if (ev.data.type === 'JOURNAL_DELETED' && ev.data.date) {
+            const delDate = ev.data.date;
+            const delSId = (ev.data.studentId || '').trim().toLowerCase();
+            const delNisn = (ev.data.studentNisn || '').trim();
+            const delName = (ev.data.studentName || '').trim().toLowerCase();
+
+            setSyncedJournals((prev) => {
+              return prev.filter((j) => {
+                const jDate = j.journalDate || (j as any).date;
+                if (jDate !== delDate) return true;
+                const jId = (j.studentId || '').trim().toLowerCase();
+                const jNisn = (j.studentNisn || '').trim();
+                const jName = (j.studentName || '').trim().toLowerCase();
+
+                if (delSId && jId && jId === delSId) return false;
+                if (delNisn && (jNisn === delNisn || jId === delNisn)) return false;
+                if (delName && jName && jName === delName) return false;
+                return true;
+              });
+            });
+            setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+          } else if (ev.data.type === 'JOURNALS_UPDATED' || ev.data.type === 'JOURNAL_SUBMITTED') {
             let updatedList = ev.data.journals;
             if (!Array.isArray(updatedList) || updatedList.length === 0) {
               try {
@@ -398,7 +450,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               } catch (_e) {}
             }
             if (Array.isArray(updatedList)) {
-              const cleaned = sanitizeJournalsList(updatedList.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+              const cleaned = sanitizeJournalsList(
+                updatedList.filter(
+                  (j: DailyJournal) =>
+                    !isDeprecatedOrDummyJournal(j) &&
+                    !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+                )
+              );
               setSyncedJournals(cleaned);
             }
             setLastSyncTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -463,12 +521,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       // 1. Ambil data riil jurnal pengisian siswa dari Supabase
       const remoteJournals = await fetchJournalsFromSupabase().catch(() => null);
       if (remoteJournals && remoteJournals.length > 0) {
-        const cleaned = sanitizeJournalsList(remoteJournals.filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j)));
+        const cleaned = sanitizeJournalsList(
+          remoteJournals.filter(
+            (j: DailyJournal) =>
+              !isDeprecatedOrDummyJournal(j) &&
+              !isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)
+          )
+        );
         setSyncedJournals((prev) => {
           const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
           const merged = [...cleaned];
           prev.forEach((pj) => {
-            if (!remoteMap.has(pj.id) && !isDeprecatedOrDummyJournal(pj)) {
+            if (
+              !remoteMap.has(pj.id) &&
+              !isDeprecatedOrDummyJournal(pj) &&
+              !isJournalTombstoned(pj.studentId, pj.journalDate || (pj as any).date, pj.studentNisn, pj.studentName, pj.id)
+            ) {
               merged.push(pj);
             }
           });
@@ -775,6 +843,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const normActiveRombel = normalizeClassName(activeRombel.name);
 
     return syncedJournals.filter((j) => {
+      if (isDeprecatedOrDummyJournal(j)) return false;
+      if (isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)) return false;
       if (j.studentId && (studentIds.has(j.studentId) || studentNisns.has(j.studentId))) return true;
       if (j.studentNisn && (studentNisns.has(j.studentNisn) || studentIds.has(j.studentNisn))) return true;
       if (j.studentName && studentNames.has(j.studentName.toLowerCase().trim())) return true;
@@ -786,10 +856,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
   }, [rawClassStudents, syncedJournals, activeRombel]);
 
-  // Tanggal aktif monitoring pengisian jurnal siswa (Default: 27 September 2026 sebagai update terkini)
-  const [selectedJournalDate, setSelectedJournalDate] = useState<string>('2026-09-27');
+  // Tanggal aktif monitoring pengisian jurnal siswa (Default: tanggal hari ini atau update terkini)
+  const todayDateStr = useMemo(() => getLocalDateString(), []);
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string>(() => todayDateStr || '2026-09-28');
 
-  // Daftar tanggal pengisian jurnal yang tersedia secara kronologis (termasuk update terkini 27 Sep 2026)
+  // Daftar tanggal pengisian jurnal yang tersedia secara kronologis (termasuk update terkini 28 Sep 2026)
   const availableJournalDates = useMemo(() => {
     const set = new Set<string>();
     classJournals.forEach((j) => {
@@ -798,13 +869,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         set.add(d.trim());
       }
     });
-    // Pastikan tanggal aktif (22 s.d. 27 September) tersedia untuk Kelas 7-B
-    if (activeRombel.name.includes('7-B') || (activeRombel.code && activeRombel.code.includes('7B'))) {
-      ['2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'].forEach((d) => set.add(d));
+    // Pastikan tanggal aktif (20 s.d. 28 September) tersedia untuk rombel aktif (7-B, 8-C, 9-C)
+    ['2026-09-20', '2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28'].forEach((d) => set.add(d));
+    if (todayDateStr) {
+      set.add(todayDateStr);
     }
     const sorted = Array.from(set).sort();
-    return sorted.length > 0 ? sorted : ['2026-09-27'];
-  }, [classJournals, activeRombel]);
+    return sorted.length > 0 ? sorted : [todayDateStr || '2026-09-28'];
+  }, [classJournals, activeRombel, todayDateStr]);
 
   // Otomatis arahkan ke tanggal submit terbaru jika tanggal saat ini tidak valid
   useEffect(() => {
@@ -851,6 +923,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const studentsList: StudentClassRow[] = useMemo(() => {
     return rawClassStudents.map((st) => {
       const studentJournals = syncedJournals.filter((j) => {
+        if (isDeprecatedOrDummyJournal(j)) return false;
+        if (isJournalTombstoned(j.studentId, j.journalDate || (j as any).date, j.studentNisn, j.studentName, j.id)) return false;
         if (j.studentId && (j.studentId === st.id || j.studentId === st.nisn)) return true;
         if (j.studentNisn && st.nisn && j.studentNisn === st.nisn) return true;
         if (j.studentName && st.name && j.studentName.toLowerCase().trim() === st.name.toLowerCase().trim()) return true;
