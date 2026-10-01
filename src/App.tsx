@@ -204,9 +204,14 @@ export default function App() {
         '2026-09-27',
       ]);
 
+      const s7BIds = new Set(RESTORED_STUDENTS.filter((s) => normalizeClassName(s.className) === '7-B').map((s) => s.id));
+      const s7BNisns = new Set(RESTORED_STUDENTS.filter((s) => normalizeClassName(s.className) === '7-B').map((s) => s.nisn));
+
       const is7BTargetDate = (j: DailyJournal) => {
         const sClass = (j as any).studentClass;
         const is7B =
+          s7BIds.has(j.studentId) ||
+          s7BNisns.has(j.studentNisn) ||
           (j.className && (j.className.includes('7-B') || j.className.includes('7B'))) ||
           (sClass && (sClass.includes('7-B') || sClass.includes('7B'))) ||
           normalizeClassName(j.className) === '7-B';
@@ -631,6 +636,16 @@ export default function App() {
           if (masterData.schools && Array.isArray(masterData.schools)) {
             try {
               window.dispatchEvent(new CustomEvent('si7kaih_schools_updated', { detail: masterData.schools }));
+            } catch (_e) {}
+          }
+          if (masterData.rombels && Array.isArray(masterData.rombels)) {
+            try {
+              window.dispatchEvent(new CustomEvent('si7kaih_rombels_updated', { detail: masterData.rombels }));
+            } catch (_e) {}
+          }
+          if (masterData.students && Array.isArray(masterData.students)) {
+            try {
+              window.dispatchEvent(new CustomEvent('si7kaih_students_updated', { detail: masterData.students }));
             } catch (_e) {}
           }
         }
@@ -1650,6 +1665,7 @@ export default function App() {
           currentPersona={currentPersona}
           journals={journals}
           followUps={followUps}
+          onSelectTab={setActiveTab}
         />
       );
     }

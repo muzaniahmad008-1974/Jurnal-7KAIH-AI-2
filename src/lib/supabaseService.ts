@@ -27,7 +27,8 @@ import {
   isUserDeleted,
 } from './constants';
 import { SchoolMaster, getStoredSchools, RESTORED_SCHOOLS } from './schoolMasterData';
-import { Student, Rombel, getStoredStudents, getStoredRombels } from './studentData';
+import { Student, Rombel, getStoredStudents, getStoredRombels, normalizeClassName } from './studentData';
+import { RESTORED_ROMBELS, RESTORED_STUDENTS } from './jorongRestoredData';
 
 export interface SupabaseSyncStatus {
   isConfigured: boolean;
@@ -285,10 +286,31 @@ export async function fetchJournalsFromSupabase(): Promise<DailyJournal[] | null
       currentStatus.isConnected = true;
       currentStatus.tablesReady = true;
       notifyListeners();
+      const TARGET_RESET_7B_DATES = new Set([
+        '2026-09-22',
+        '2026-09-23',
+        '2026-09-24',
+        '2026-09-25',
+        '2026-09-26',
+        '2026-09-27',
+      ]);
+      const s7BIds = new Set(RESTORED_STUDENTS.filter((s) => normalizeClassName(s.className) === '7-B').map((s) => s.id));
+      const s7BNisns = new Set(RESTORED_STUDENTS.filter((s) => normalizeClassName(s.className) === '7-B').map((s) => s.nisn));
+
       return data
         .map((item: any) => item.data as DailyJournal)
         .filter((j) => {
           const date = j.journalDate || (j as any).date;
+          const sClass = (j as any).studentClass;
+          const is7B =
+            s7BIds.has(j.studentId) ||
+            s7BNisns.has(j.studentNisn) ||
+            (j.className && (j.className.includes('7-B') || j.className.includes('7B'))) ||
+            (sClass && (sClass.includes('7-B') || sClass.includes('7B'))) ||
+            normalizeClassName(j.className) === '7-B';
+          if (is7B && date && TARGET_RESET_7B_DATES.has(date)) {
+            return false;
+          }
           return !isJournalTombstoned(j.studentId, date, j.studentNisn, j.studentName, j.id);
         });
     }
@@ -1268,13 +1290,16 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.rombels && Array.isArray(data.rombels)) {
-      const finalRombels = data.rombels.filter(
-        (r) =>
-          r &&
-          r.schoolId !== 'sch-smpn1-jorong' &&
-          (r.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong' &&
-          (r.schoolId || r.schoolName)
-      );
+      const currentLocal = getStoredRombels();
+      const rombelMap = new Map<string, Rombel>();
+      RESTORED_ROMBELS.forEach((r) => rombelMap.set(r.id || `${r.schoolName || ''}_${r.name}`, r));
+      currentLocal.forEach((r) => rombelMap.set(r.id || `${r.schoolName || ''}_${r.name}`, r));
+      data.rombels.forEach((r) => {
+        if (r && (r.name || r.code)) {
+          rombelMap.set(r.id || `${r.schoolName || ''}_${r.name}`, r);
+        }
+      });
+      const finalRombels = Array.from(rombelMap.values());
       const current = localStorage.getItem('si7kaih_rombels_mandiri');
       const serialized = JSON.stringify(finalRombels);
       if (!current || current !== serialized) {
@@ -1296,12 +1321,20 @@ export function applySuperAdminMasterDataToStorage(data: SuperAdminMasterPayload
     }
 
     if (data.students && Array.isArray(data.students)) {
-      const finalStudents = data.students.filter(
+      const currentLocal = getStoredStudents();
+      const studentMap = new Map<string, Student>();
+      RESTORED_STUDENTS.forEach((s) => studentMap.set(s.id || s.nisn, s));
+      currentLocal.forEach((s) => studentMap.set(s.id || s.nisn, s));
+      data.students.forEach((s) => {
+        if (s && (s.id || s.nisn || s.name)) {
+          studentMap.set(s.id || s.nisn, s);
+        }
+      });
+      const finalStudents = Array.from(studentMap.values()).filter(
         (s) =>
-          s &&
-          s.schoolId !== 'sch-smpn1-jorong' &&
-          (s.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong' &&
-          (s.schoolId || s.schoolName || s.name)
+          s.source !== 'SISTEM_AWAL' &&
+          !(s.id && s.id.startsWith('std-jorong-8c-')) &&
+          !(s.nisn && s.nisn.startsWith('00912340'))
       );
       const current = localStorage.getItem('si7kaih_students_mandiri');
       const serialized = JSON.stringify(finalStudents);
@@ -1385,55 +1418,32 @@ export async function syncOnSuperAdminLogin(
     const localUsers = getStoredUsers();
 
     // 3. Rekonsiliasi cerdas
-    // - Sekolah: gabungkan master sekolah berdasarkan ID (hapus data default satuan pendidikan)
-    const defaultSchoolIds = new Set(['sch-smpn1-jorong']);
-    const defaultSchoolNames = new Set(['uptd smpn 1 jorong']);
-
+    // - Sekolah: gabungkan master sekolah berdasarkan ID
     const schoolMap = new Map<string, SchoolMaster>();
     RESTORED_SCHOOLS.forEach((s) => schoolMap.set(s.id, s));
+    localSchools.forEach((s) => schoolMap.set(s.id, s));
     if (remoteMaster?.schools && remoteMaster.schools.length > 0) {
-      remoteMaster.schools.forEach((s) => {
-        if (!defaultSchoolIds.has(s.id) && !defaultSchoolNames.has((s.name || '').trim().toLowerCase())) {
-          schoolMap.set(s.id, s);
-        }
-      });
+      remoteMaster.schools.forEach((s) => schoolMap.set(s.id, s));
     }
-    localSchools.forEach((s) => {
-      if (!defaultSchoolIds.has(s.id) && !defaultSchoolNames.has((s.name || '').trim().toLowerCase())) {
-        schoolMap.set(s.id, s);
-      }
-    });
     const finalSchools = Array.from(schoolMap.values());
 
-    // - Rombel: gabungkan master rombel
-    let finalRombels = localRombels.filter(
-      (r) => r.schoolId !== 'sch-smpn1-jorong' && (r.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong'
-    );
+    // - Rombel: gabungkan master rombel dari sumber dasar, lokal (Admin Sekolah), dan cloud
+    const rombelMap = new Map<string, Rombel>();
+    RESTORED_ROMBELS.forEach((r) => rombelMap.set(r.id || `${r.schoolName || ''}_${r.name}`, r));
+    localRombels.forEach((r) => rombelMap.set(r.id || `${r.schoolName || ''}_${r.name}`, r));
     if (remoteMaster?.rombels && remoteMaster.rombels.length > 0) {
-      const map = new Map<string, Rombel>();
-      remoteMaster.rombels.forEach((r) => {
-        if (r.schoolId !== 'sch-smpn1-jorong' && (r.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong') {
-          map.set(r.code || r.name, r);
-        }
-      });
-      finalRombels.forEach((r) => map.set(r.code || r.name, r));
-      finalRombels = Array.from(map.values());
+      remoteMaster.rombels.forEach((r) => rombelMap.set(r.id || `${r.schoolName || ''}_${r.name}`, r));
     }
+    const finalRombels = Array.from(rombelMap.values());
 
-    // - Peserta Didik: gabungkan berdasarkan NISN
-    let finalStudents = localStudents.filter(
-      (s) => s.schoolId !== 'sch-smpn1-jorong' && (s.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong'
-    );
+    // - Peserta Didik: gabungkan berdasarkan NISN / ID dari sumber dasar, lokal, dan cloud
+    const studentMap = new Map<string, Student>();
+    RESTORED_STUDENTS.forEach((s) => studentMap.set(s.nisn || s.id, s));
+    localStudents.forEach((s) => studentMap.set(s.nisn || s.id, s));
     if (remoteMaster?.students && remoteMaster.students.length > 0) {
-      const map = new Map<string, Student>();
-      remoteMaster.students.forEach((s) => {
-        if (s.schoolId !== 'sch-smpn1-jorong' && (s.schoolName || '').trim().toLowerCase() !== 'uptd smpn 1 jorong') {
-          map.set(s.nisn, s);
-        }
-      });
-      finalStudents.forEach((s) => map.set(s.nisn, s));
-      finalStudents = Array.from(map.values());
+      remoteMaster.students.forEach((s) => studentMap.set(s.nisn || s.id, s));
     }
+    const finalStudents = Array.from(studentMap.values());
 
     // - 7 Kebiasaan:
     let finalHabits = localHabits;

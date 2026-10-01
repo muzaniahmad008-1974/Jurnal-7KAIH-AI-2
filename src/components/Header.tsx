@@ -121,15 +121,8 @@ export const Header: React.FC<HeaderProps> = ({
           { id: 'account-settings', label: 'Pengaturan Akun', icon: Settings },
         ];
       case 'SUPERVISOR':
-        return [
-          { id: 'dashboard', label: 'Dashboard Wilayah', icon: Compass },
-          { id: 'schools-comparison', label: 'Perbandingan 4 Sekolah', icon: Building2 },
-          { id: 'monitoring', label: 'Portofolio 7KAIH Wilayah', icon: Calendar },
-          { id: 'trends', label: 'Grafik Tren Bulanan', icon: TrendingUp },
-          { id: 'rtl', label: 'RTL Pengawasan', icon: FileText },
-          { id: 'ai-supervisor', label: 'AI Analysis Wilayah', icon: Sparkles },
-          { id: 'account-settings', label: 'Pengaturan Akun', icon: Settings },
-        ];
+        // Ditiadakan karena navigasi Pengawas Pembina telah dipindahkan ke bilah sisi kiri memanjang ke bawah
+        return [];
       case 'SCHOOL_ADMIN':
         return [
           { id: 'dashboard', label: 'Manajemen Data', icon: Settings },
@@ -520,30 +513,32 @@ export const Header: React.FC<HeaderProps> = ({
         onLogout={onOpenLoginModal}
       />
 
-      {/* Navigation Tabs Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100 overflow-x-auto scrollbar-none">
-        <nav className="flex space-x-1 py-1" aria-label="Tabs">
-          {navTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                id={`tab-${tab.id}`}
-                onClick={() => onSelectTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold rounded-xl whitespace-nowrap transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-[#0753A5] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+      {/* Navigation Tabs Bar (Dihapus untuk Pengawas Pembina karena telah menggunakan navigasi bilah sisi kiri memanjang ke bawah) */}
+      {navTabs.length > 0 && currentPersona.role !== 'SUPERVISOR' && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100 overflow-x-auto scrollbar-none">
+          <nav className="flex space-x-1 py-1" aria-label="Tabs">
+            {navTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  id={`tab-${tab.id}`}
+                  onClick={() => onSelectTab(tab.id)}
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold rounded-xl whitespace-nowrap transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-[#0753A5] text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      )}
     </header>
   );
 };

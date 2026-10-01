@@ -71,6 +71,22 @@ export const getStoredSchools = (): SchoolMaster[] => {
           'smp bintang juara',
         ]);
 
+        // Hitung jumlah murid & rombel riil yang tersimpan dari update Admin Sekolah
+        let storedStudentsList: any[] = [];
+        let storedRombelsList: any[] = [];
+        try {
+          const rawStudents = localStorage.getItem('si7kaih_students_mandiri');
+          if (rawStudents) {
+            const parsedS = JSON.parse(rawStudents);
+            if (Array.isArray(parsedS)) storedStudentsList = parsedS;
+          }
+          const rawRombels = localStorage.getItem('si7kaih_rombels_mandiri');
+          if (rawRombels) {
+            const parsedR = JSON.parse(rawRombels);
+            if (Array.isArray(parsedR)) storedRombelsList = parsedR;
+          }
+        } catch (_e) {}
+
         const sanitized = parsed
           .filter(
             (s: SchoolMaster) =>
@@ -80,12 +96,30 @@ export const getStoredSchools = (): SchoolMaster[] => {
           .map((s: SchoolMaster) => {
             const cleanName = (s.name || '').replace(/\s*\(Sekolah Dihapus\)/gi, '').trim();
             const isJorong = cleanName.toLowerCase().includes('jorong') || s.id === 'sch-smpn1-jorong' || s.id === 's-1789602026315';
+            
+            // Hitung murid aktif di sekolah ini dari data terkini Admin Sekolah
+            const liveStudentsCount = storedStudentsList.filter((std) => {
+              if (!std) return false;
+              if (isJorong) {
+                return (std.schoolName && std.schoolName.toLowerCase().includes('jorong')) || std.schoolId === 'sch-smpn1-jorong';
+              }
+              return (std.schoolName && std.schoolName.toLowerCase() === cleanName.toLowerCase()) || std.schoolId === s.id;
+            }).length;
+
+            const liveClassesCount = storedRombelsList.filter((r) => {
+              if (!r) return false;
+              if (isJorong) {
+                return (r.schoolName && r.schoolName.toLowerCase().includes('jorong')) || r.schoolId === 'sch-smpn1-jorong';
+              }
+              return (r.schoolName && r.schoolName.toLowerCase() === cleanName.toLowerCase()) || r.schoolId === s.id;
+            }).length;
+
             return {
               ...s,
               name: isJorong ? 'UPTD SMPN 1 Jorong' : cleanName,
               activeStatus: isJorong ? ('AKTIF' as const) : s.activeStatus,
-              totalStudents: isJorong ? 82 : s.totalStudents,
-              totalClasses: isJorong ? 3 : s.totalClasses,
+              totalStudents: liveStudentsCount > 0 ? liveStudentsCount : (s.totalStudents ?? (isJorong ? 82 : 0)),
+              totalClasses: liveClassesCount > 0 ? liveClassesCount : (s.totalClasses ?? (isJorong ? 3 : 0)),
             };
           });
 

@@ -32,6 +32,13 @@ import {
   Calendar,
   CalendarDays,
   Clock,
+  Check,
+  Table,
+  LayoutGrid,
+  AlertTriangle,
+  Layers,
+  Info,
+  Settings,
 } from 'lucide-react';
 import { SchoolMaster, getStoredSchools } from '../lib/schoolMasterData';
 import { Rombel, Student, getStoredRombels, getStoredStudents } from '../lib/studentData';
@@ -46,6 +53,7 @@ interface SupervisorDashboardProps {
   currentPersona?: UserPersona;
   journals?: DailyJournal[];
   followUps?: FollowUpPlan[];
+  onSelectTab?: (tab: string) => void;
 }
 
 const getStoredSupervisorFollowUps = (): FollowUpPlan[] => {
@@ -86,12 +94,22 @@ const saveStoredSupervisionNotes = (notes: Record<string, string>) => {
   } catch (_e) {}
 };
 
+const getStoredTeacherValidations = (): Record<string, boolean> => {
+  try {
+    const raw = localStorage.getItem('si7kaih_teacher_validations_prod');
+    return raw ? JSON.parse(raw) : {};
+  } catch (_e) {
+    return {};
+  }
+};
+
 export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
   onOpenReportModal,
   activeNavTab,
   currentPersona,
   journals = [],
   followUps = [],
+  onSelectTab,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'REGIONAL_OVERVIEW' | 'COMPARISON' | 'MONITORING' | 'TRENDS' | 'RTL' | 'AI_REGIONAL'
@@ -102,6 +120,12 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [supervisionNotes, setSupervisionNotes] = useState<Record<string, string>>(() => getStoredSupervisionNotes());
   const [currentNoteInput, setCurrentNoteInput] = useState('');
+  const [teacherValidations, setTeacherValidations] = useState<Record<string, boolean>>(() => getStoredTeacherValidations());
+  const [aggregateConditionFilter, setAggregateConditionFilter] = useState<'ALL' | 'GREEN' | 'YELLOW' | 'RED'>('ALL');
+  const [sidebarConditionFilter, setSidebarConditionFilter] = useState<'ALL' | 'GREEN' | 'YELLOW' | 'RED'>('ALL');
+  const [showConditionLegend, setShowConditionLegend] = useState(false);
+  const [showRegionalStatsModal, setShowRegionalStatsModal] = useState(false);
+  const [aggregateViewMode, setAggregateViewMode] = useState<'TABLE' | 'CARDS'>('TABLE');
 
   // Synchronized Master & Mandiri Data States
   const [schools, setSchools] = useState<SchoolMaster[]>(() => getStoredSchools());
@@ -255,6 +279,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
     setUserAccounts(freshUsers);
     setLocalFollowUps(getStoredSupervisorFollowUps());
     setSupervisionNotes(getStoredSupervisionNotes());
+    setTeacherValidations(getStoredTeacherValidations());
 
     let freshJournals: DailyJournal[] = [];
     try {
@@ -288,6 +313,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
     window.addEventListener('si7kaih_followups_updated', handleSync);
     window.addEventListener('si7kaih_journals_updated', handleSync);
     window.addEventListener('si7kaih_programs_updated', handleSync);
+    window.addEventListener('si7kaih_validations_updated', handleSync);
 
     let bc: BroadcastChannel | null = null;
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -308,6 +334,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
       window.removeEventListener('si7kaih_followups_updated', handleSync);
       window.removeEventListener('si7kaih_journals_updated', handleSync);
       window.removeEventListener('si7kaih_programs_updated', handleSync);
+      window.removeEventListener('si7kaih_validations_updated', handleSync);
       if (bc) bc.close();
     };
   }, []);
@@ -478,6 +505,169 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
           (s.name && f.finding && f.finding.toLowerCase().includes(s.name.toLowerCase()))
       );
       const activeRtl = schoolFollowUps.filter((f) => f.status !== 'COMPLETED').length;
+      const totalFollowUps = schoolFollowUps.length;
+      const completedFollowUps = schoolFollowUps.filter((f) => f.status === 'COMPLETED' || (f.progressPercent || 0) >= 100).length;
+      const inProgressFollowUps = schoolFollowUps.filter((f) => f.status === 'IN_PROGRESS' || ((f.progressPercent || 0) > 0 && (f.progressPercent || 0) < 100)).length;
+      const followUpExecutionRate = totalFollowUps > 0
+        ? Math.round(
+            schoolFollowUps.reduce((acc, f) => acc + (f.status === 'COMPLETED' ? 100 : (f.progressPercent || 0)), 0) /
+              totalFollowUps
+          )
+        : 0;
+
+      // 1. Murid Aktif
+      const activeStudentIds = new Set<string>();
+      const activeStudentKeys = new Set<string>();
+      schoolJournals.forEach((j) => {
+        if (j.studentId) activeStudentIds.add(j.studentId);
+        const key = (j.studentId || j.studentNisn || j.studentName || '').toLowerCase().trim();
+        if (key) activeStudentKeys.add(key);
+      });
+
+      const activeStudentsCount = schoolStudents.length > 0
+        ? schoolStudents.filter(
+            (st) =>
+              activeStudentIds.has(st.id) ||
+              (st.nisn && schoolJournals.some((j) => j.studentNisn === st.nisn)) ||
+              (st.name && schoolJournals.some((j) => j.studentName && j.studentName.toLowerCase() === st.name.toLowerCase()))
+          ).length
+        : activeStudentKeys.size;
+      const finalActiveStudents = Math.max(activeStudentsCount, activeStudentKeys.size);
+      const activeStudentsPercent = studentCount > 0 ? Math.min(100, Math.round((finalActiveStudents / studentCount) * 100)) : 0;
+
+      // 2. Validasi oleh Guru dan Orang Tua
+      const totalJournalsCount = schoolJournals.length;
+      let teacherValidatedCount = 0;
+      let parentValidatedCount = 0;
+
+      schoolJournals.forEach((j) => {
+        const date = j.journalDate || (j as any).date;
+        const isTeacherValid =
+          Boolean(j.teacherValidated) ||
+          Boolean(j.studentId && teacherValidations[j.studentId]) ||
+          Boolean(j.studentId && date && teacherValidations[`${j.studentId}_${date}`]) ||
+          Boolean(j.studentNisn && teacherValidations[j.studentNisn]);
+        if (isTeacherValid) teacherValidatedCount += 1;
+
+        const isParentValid =
+          Boolean(j.parentValidated) ||
+          Boolean(j.parentSignature) ||
+          Boolean(j.parentValidatorName) ||
+          Boolean(j.entries && Object.values(j.entries).some((e: any) => e?.parentValidated));
+        if (isParentValid) parentValidatedCount += 1;
+      });
+
+      const teacherValidationRate = totalJournalsCount > 0
+        ? Math.min(100, Math.round((teacherValidatedCount / totalJournalsCount) * 100))
+        : 0;
+      const parentValidationRate = totalJournalsCount > 0
+        ? Math.min(100, Math.round((parentValidatedCount / totalJournalsCount) * 100))
+        : 0;
+      const avgValidationRate = totalJournalsCount > 0
+        ? Math.round((teacherValidationRate + parentValidationRate) / 2)
+        : 0;
+
+      // 3. Persentase Murid Mencapai Ambang Pembiasaan pada Setiap Kebiasaan (Ambang Konsistensi >= 75%)
+      const studentJournalsMap = new Map<string, DailyJournal[]>();
+      schoolJournals.forEach((j) => {
+        const key = (j.studentId || j.studentNisn || j.studentName || 'unknown').toLowerCase().trim();
+        if (!studentJournalsMap.has(key)) {
+          studentJournalsMap.set(key, []);
+        }
+        studentJournalsMap.get(key)!.push(j);
+      });
+
+      const studentsWithJournalsCount = studentJournalsMap.size;
+      const habitThresholdHits: Record<string, number> = {
+        WAKE_EARLY: 0,
+        WORSHIP: 0,
+        EXERCISE: 0,
+        HEALTHY_EATING: 0,
+        LEARNING: 0,
+        SOCIAL: 0,
+        SLEEP_EARLY: 0,
+      };
+
+      studentJournalsMap.forEach((sJournals) => {
+        const jCount = sJournals.length;
+        if (jCount === 0) return;
+        const codes = ['WAKE_EARLY', 'WORSHIP', 'EXERCISE', 'HEALTHY_EATING', 'LEARNING', 'SOCIAL', 'SLEEP_EARLY'] as const;
+        codes.forEach((code) => {
+          const hit = sJournals.filter((j) => (j.entries as any)?.[code]?.completed).length;
+          const consistencyPct = (hit / jCount) * 100;
+          if (consistencyPct >= 75) {
+            habitThresholdHits[code] += 1;
+          }
+        });
+      });
+
+      const habitThresholdRates = {
+        wakeEarly: studentsWithJournalsCount > 0 ? Math.round((habitThresholdHits.WAKE_EARLY / studentsWithJournalsCount) * 100) : 0,
+        worship: studentsWithJournalsCount > 0 ? Math.round((habitThresholdHits.WORSHIP / studentsWithJournalsCount) * 100) : 0,
+        exercise: studentsWithJournalsCount > 0 ? Math.round((habitThresholdHits.EXERCISE / studentsWithJournalsCount) * 100) : 0,
+        healthyEat: studentsWithJournalsCount > 0 ? Math.round((habitThresholdHits.HEALTHY_EATING / studentsWithJournalsCount) * 100) : 0,
+        learning: studentsWithJournalsCount > 0 ? Math.round((habitThresholdHits.LEARNING / studentsWithJournalsCount) * 100) : 0,
+        social: studentsWithJournalsCount > 0 ? Math.round((habitThresholdHits.SOCIAL / studentsWithJournalsCount) * 100) : 0,
+        sleepEarly: studentsWithJournalsCount > 0 ? Math.round((habitThresholdHits.SLEEP_EARLY / studentsWithJournalsCount) * 100) : 0,
+      };
+
+      const avgHabitThresholdPct = studentsWithJournalsCount > 0
+        ? Math.round(
+            (habitThresholdRates.wakeEarly +
+              habitThresholdRates.worship +
+              habitThresholdRates.exercise +
+              habitThresholdRates.healthyEat +
+              habitThresholdRates.learning +
+              habitThresholdRates.social +
+              habitThresholdRates.sleepEarly) / 7
+          )
+        : 0;
+
+      // 4. Penanda Hijau, Kuning, atau Merah Kondisi Implementasi Program
+      let conditionColor: 'GREEN' | 'YELLOW' | 'RED' = 'RED';
+      let conditionLabel = 'Kritis / Intervensi';
+      let conditionBadgeBg = 'bg-rose-100 text-rose-800 border-rose-300';
+      let conditionDot = 'bg-rose-500';
+      let conditionSummary = '';
+
+      const hasMinimalActivity = studentCount > 0 && totalJournalsCount > 0;
+
+      if (!hasMinimalActivity) {
+        conditionColor = 'RED';
+        conditionLabel = 'Kritis (Belum Ada Data)';
+        conditionBadgeBg = 'bg-rose-100 text-rose-800 border-rose-300';
+        conditionDot = 'bg-rose-500';
+        conditionSummary = 'Belum ada data jurnal atau aktivitas pembiasaan murid yang terisi.';
+      } else {
+        const meetsCompleteness = completeness >= 75;
+        const meetsValidation = avgValidationRate >= 70;
+        const meetsHabits = avgHabitThresholdPct >= 70;
+        const meetsFollowUp = totalFollowUps === 0 || followUpExecutionRate >= 60;
+
+        if (meetsCompleteness && meetsValidation && meetsHabits && meetsFollowUp) {
+          conditionColor = 'GREEN';
+          conditionLabel = 'Optimal (Memenuhi Ambang)';
+          conditionBadgeBg = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+          conditionDot = 'bg-emerald-500';
+          conditionSummary = 'Implementasi program berjalan prima. Kelengkapan, validasi ganda, dan ambang 7 kebiasaan tercapai optimal.';
+        } else if (
+          completeness >= 45 ||
+          avgValidationRate >= 40 ||
+          avgHabitThresholdPct >= 40
+        ) {
+          conditionColor = 'YELLOW';
+          conditionLabel = 'Cukup (Perlu Pendampingan)';
+          conditionBadgeBg = 'bg-amber-100 text-amber-800 border-amber-300';
+          conditionDot = 'bg-amber-500';
+          conditionSummary = 'Program telah berjalan di sekolah namun membutuhkan penguatan pendampingan pada validasi atau konsistensi pembiasaan.';
+        } else {
+          conditionColor = 'RED';
+          conditionLabel = 'Kritis (Perlu Intervensi)';
+          conditionBadgeBg = 'bg-rose-100 text-rose-800 border-rose-300';
+          conditionDot = 'bg-rose-500';
+          conditionSummary = 'Tingkat kelengkapan atau validasi rendah (<45%). Diperlukan intervensi langsung pengawas pembina.';
+        }
+      }
 
       const hasActivity =
         studentCount > 0 ||
@@ -518,10 +708,31 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
         city: s.city || 'Kota Administrasi',
         address: s.address || '',
         students: studentCount,
+        activeStudents: finalActiveStudents,
+        activeStudentsPercent,
+        totalJournals: totalJournalsCount,
         teachers: teacherCount,
         classes: classCount,
         completeness,
         consistency,
+        teacherValidationRate,
+        teacherValidatedCount,
+        parentValidationRate,
+        parentValidatedCount,
+        avgValidationRate,
+        habitThresholdRates,
+        avgHabitThresholdPct,
+        totalFollowUps,
+        completedFollowUps,
+        inProgressFollowUps,
+        followUpExecutionRate,
+        condition: {
+          color: conditionColor,
+          label: conditionLabel,
+          badgeBg: conditionBadgeBg,
+          dot: conditionDot,
+          summary: conditionSummary,
+        },
         status,
         activeRtl,
         schoolFollowUps,
@@ -539,6 +750,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
     rombels,
     userAccounts,
     supervisionNotes,
+    teacherValidations,
     journals,
     localFollowUps,
     filterStartDate,
@@ -574,6 +786,12 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
       return matchQuery && matchJenjang;
     });
   }, [fosterSchools, searchQuery, filterJenjang]);
+
+  // Filtered schools for aggregate indicator summary (by green/yellow/red condition)
+  const aggregateSchools = useMemo(() => {
+    if (aggregateConditionFilter === 'ALL') return fosterSchools;
+    return fosterSchools.filter((s) => s.condition.color === aggregateConditionFilter);
+  }, [fosterSchools, aggregateConditionFilter]);
 
   // Regional Aggregate Metrics
   const totalSchoolsCount = fosterSchools.length;
@@ -618,101 +836,52 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
   );
   const warningStatusCount = totalSchoolsCount - goodStatusCount - unupdatedStatusCount;
 
-  // ==========================================================================
-  // STATISTIK PERSENTASE MURID MENGISI JURNAL DALAM RENTANG DATA HARI TERISI
-  // Sinkronisasi otomatis sesuai isian jurnal murid terupdate seluruh sekolah binaan
-  // ==========================================================================
-  const supervisorJournalRangeStats = useMemo(() => {
-    const dateMap = new Map<string, DailyJournal[]>();
-    syncedJournals.forEach((j) => {
-      if (isDeprecatedOrDummyJournal(j)) return;
-      const dStr = j.journalDate || (j as any).date;
-      if (dStr && typeof dStr === 'string' && dStr.trim()) {
-        const cleanDate = dStr.trim();
-        if (!dateMap.has(cleanDate)) {
-          dateMap.set(cleanDate, []);
-        }
-        dateMap.get(cleanDate)!.push(j);
-      }
-    });
+  // Kondisi Implementasi Program Penanda Hijau, Kuning, Merah
+  const greenStatusCount = useMemo(
+    () => fosterSchools.filter((s) => s.condition.color === 'GREEN').length,
+    [fosterSchools]
+  );
+  const yellowStatusCount = useMemo(
+    () => fosterSchools.filter((s) => s.condition.color === 'YELLOW').length,
+    [fosterSchools]
+  );
+  const redStatusCount = useMemo(
+    () => fosterSchools.filter((s) => s.condition.color === 'RED').length,
+    [fosterSchools]
+  );
 
-    const allActiveDatesSorted = Array.from(dateMap.keys()).sort((a, b) => a.localeCompare(b));
-    const totalStudents = totalStudentsCount;
-    const now = new Date();
-    const todayStr = getLocalDateString(now);
+  const totalActiveStudentsRegional = useMemo(
+    () => fosterSchools.reduce((acc, s) => acc + s.activeStudents, 0),
+    [fosterSchools]
+  );
 
-    if (allActiveDatesSorted.length === 0 || totalStudents === 0) {
-      return {
-        hasData: false,
-        totalActiveDaysCount: 0,
-        startDate: null,
-        endDate: null,
-        startDateFormatted: '-',
-        endDateFormatted: '-',
-        rangeLabel: 'Belum ada hari yang terisi data jurnal',
-        totalRegisteredStudents: totalStudents,
-        uniqueStudentsFilledCount: 0,
-        uniqueStudentsPercentage: 0,
-        avgDailyFilledCount: 0,
-        avgDailyFilledPercentage: 0,
-        todayFilledCount: 0,
-        todayFilledPercentage: 0,
-        todayIsFilled: false,
-      };
-    }
+  const avgRegionalTeacherValidation = useMemo(() => {
+    if (fosterSchools.length === 0) return 0;
+    const sum = fosterSchools.reduce((acc, s) => acc + s.teacherValidationRate, 0);
+    return Math.round(sum / fosterSchools.length);
+  }, [fosterSchools]);
 
-    const startDate = allActiveDatesSorted[0];
-    const endDate = allActiveDatesSorted[allActiveDatesSorted.length - 1];
+  const avgRegionalParentValidation = useMemo(() => {
+    if (fosterSchools.length === 0) return 0;
+    const sum = fosterSchools.reduce((acc, s) => acc + s.parentValidationRate, 0);
+    return Math.round(sum / fosterSchools.length);
+  }, [fosterSchools]);
 
-    // Siswa unik yang mengisi setidaknya satu jurnal dalam rentang hari aktif
-    const uniqueStudentsSet = new Set<string>();
-    let totalEntriesSum = 0;
+  const avgRegionalHabitThreshold = useMemo(() => {
+    if (fosterSchools.length === 0) return 0;
+    const sum = fosterSchools.reduce((acc, s) => acc + s.avgHabitThresholdPct, 0);
+    return Math.round(sum / fosterSchools.length);
+  }, [fosterSchools]);
 
-    allActiveDatesSorted.forEach((d) => {
-      const dayJournals = dateMap.get(d) || [];
-      const dayStudents = new Set<string>();
-      dayJournals.forEach((j) => {
-        const key = (j.studentNisn || j.studentId || (j as any).studentName || '').toLowerCase().trim();
-        if (key) {
-          dayStudents.add(key);
-          uniqueStudentsSet.add(key);
-        }
-      });
-      totalEntriesSum += dayStudents.size;
-    });
+  const totalFosterCount = fosterSchools.length;
+  const greenPct = totalFosterCount > 0 ? Math.round((greenStatusCount / totalFosterCount) * 100) : 0;
+  const yellowPct = totalFosterCount > 0 ? Math.round((yellowStatusCount / totalFosterCount) * 100) : 0;
+  const redPct = totalFosterCount > 0 ? Math.max(0, 100 - greenPct - yellowPct) : 0;
 
-    const uniqueStudentsCount = Math.min(totalStudents, uniqueStudentsSet.size);
-    const uniqueStudentsPercentage = totalStudents > 0 ? Math.round((uniqueStudentsCount / totalStudents) * 100) : 0;
-    const avgDailyFilledCount = +(totalEntriesSum / allActiveDatesSorted.length).toFixed(1);
-    const avgDailyFilledPercentage = totalStudents > 0 ? Math.round((avgDailyFilledCount / totalStudents) * 100) : 0;
-
-    const todayJournals = dateMap.get(todayStr) || [];
-    const todayStudentsSet = new Set<string>();
-    todayJournals.forEach((j) => {
-      const key = (j.studentNisn || j.studentId || (j as any).studentName || '').toLowerCase().trim();
-      if (key) todayStudentsSet.add(key);
-    });
-    const todayFilledCount = Math.min(totalStudents, todayStudentsSet.size);
-    const todayFilledPercentage = totalStudents > 0 ? Math.round((todayFilledCount / totalStudents) * 100) : 0;
-
-    return {
-      hasData: true,
-      totalActiveDaysCount: allActiveDatesSorted.length,
-      startDate,
-      endDate,
-      startDateFormatted: formatIndonesianShortDate(startDate),
-      endDateFormatted: formatIndonesianShortDate(endDate),
-      rangeLabel: startDate === endDate ? formatIndonesianShortDate(startDate) : `${formatIndonesianShortDate(startDate)} s.d. ${formatIndonesianShortDate(endDate)}`,
-      totalRegisteredStudents: totalStudents,
-      uniqueStudentsFilledCount: uniqueStudentsCount,
-      uniqueStudentsPercentage,
-      avgDailyFilledCount,
-      avgDailyFilledPercentage,
-      todayFilledCount,
-      todayFilledPercentage,
-      todayIsFilled: todayFilledCount > 0,
-    };
-  }, [syncedJournals, totalStudentsCount]);
+  const sidebarFilteredSchools = useMemo(() => {
+    if (sidebarConditionFilter === 'ALL') return fosterSchools;
+    return fosterSchools.filter((s) => s.condition.color === sidebarConditionFilter);
+  }, [fosterSchools, sidebarConditionFilter]);
 
   // Habit Averages across schools for tab MONITORING
   const habitAverages = useMemo(() => {
@@ -757,17 +926,34 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
       'NPSN',
       'Nama Satuan Pendidikan',
       'Jenjang',
-      'Status',
+      'Status Sekolah',
       'Akreditasi',
       'Kepala Sekolah',
       'NIP Kepala Sekolah',
-      'Peserta Didik Terdata',
+      'Penanda Kondisi',
+      'Kondisi Implementasi',
+      'Total Murid Terdaftar',
+      'Murid Aktif Terdata',
+      'Persentase Murid Aktif (%)',
+      'Total Jurnal Terisi',
+      'Kelengkapan Jurnal (%)',
+      'Validasi Guru (%)',
+      'Validasi Orang Tua (%)',
+      'Rerata Validasi Guru-Ortu (%)',
+      'Ambang Bangun Pagi (≥75%) (%)',
+      'Ambang Beribadah (≥75%) (%)',
+      'Ambang Berolahraga (≥75%) (%)',
+      'Ambang Makan Sehat (≥75%) (%)',
+      'Ambang Gemar Belajar (≥75%) (%)',
+      'Ambang Bermasyarakat (≥75%) (%)',
+      'Ambang Tidur Cepat (≥75%) (%)',
+      'Rerata Ambang 7 Kebiasaan (%)',
+      'Keterlaksanaan Tindak Lanjut (%)',
+      'RTL Selesai',
+      'Total RTL',
+      'RTL Aktif',
       'Tenaga Pendidik',
       'Rombel',
-      'Kelengkapan Data (%)',
-      'Konsistensi 7KAIH (%)',
-      'Status Monitoring',
-      'RTL Aktif',
       'Fokus Prioritas',
       'Catatan Supervisi Pengawas',
     ];
@@ -779,13 +965,30 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
       s.akreditasi,
       `"${s.headmaster}"`,
       `"${s.headmasterNip}"`,
+      `"${s.condition.color}"`,
+      `"${s.condition.label}: ${s.condition.summary.replace(/"/g, '""')}"`,
       s.students,
+      s.activeStudents,
+      `${s.activeStudentsPercent}%`,
+      s.totalJournals,
+      `${s.completeness}%`,
+      `${s.teacherValidationRate}%`,
+      `${s.parentValidationRate}%`,
+      `${s.avgValidationRate}%`,
+      `${s.habitThresholdRates.wakeEarly}%`,
+      `${s.habitThresholdRates.worship}%`,
+      `${s.habitThresholdRates.exercise}%`,
+      `${s.habitThresholdRates.healthyEat}%`,
+      `${s.habitThresholdRates.learning}%`,
+      `${s.habitThresholdRates.social}%`,
+      `${s.habitThresholdRates.sleepEarly}%`,
+      `${s.avgHabitThresholdPct}%`,
+      `${s.followUpExecutionRate}%`,
+      s.completedFollowUps,
+      s.totalFollowUps,
+      s.activeRtl,
       s.teachers,
       s.classes,
-      s.completeness,
-      s.consistency,
-      `"${s.status}"`,
-      s.activeRtl,
       `"${s.priorityHabit}"`,
       `"${s.supervisionNote.replace(/"/g, '""')}"`,
     ]);
@@ -950,243 +1153,1147 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => setActiveTab('REGIONAL_OVERVIEW')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'REGIONAL_OVERVIEW' ? 'bg-white text-[#0753A5] shadow-xs' : 'text-slate-600'
-            }`}
+            type="button"
+            onClick={() => setPrintPdfMode('REGIONAL')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title="Cetak & Unduh Dokumen PDF Rekapitulasi Portofolio 7KAIH Wilayah Binaan"
           >
-            Ringkasan Wilayah
+            <Printer className="w-3.5 h-3.5" />
+            <span>Dokumen Cetak / PDF</span>
           </button>
           <button
-            onClick={() => setActiveTab('COMPARISON')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'COMPARISON' ? 'bg-white text-[#0753A5] shadow-xs' : 'text-slate-600'
-            }`}
+            type="button"
+            onClick={handleExportRegionalCsv}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title="Ekspor Seluruh Matriks Wilayah Binaan ke File CSV"
           >
-            Komparasi {totalSchoolsCount} Sekolah
-          </button>
-          <button
-            onClick={() => setActiveTab('MONITORING')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'MONITORING' ? 'bg-white text-[#0753A5] shadow-xs' : 'text-slate-600'
-            }`}
-          >
-            Portofolio 7KAIH
-          </button>
-          <button
-            onClick={() => setActiveTab('TRENDS')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'TRENDS' ? 'bg-white text-[#0753A5] shadow-xs' : 'text-slate-600'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Tren Bulanan (Line Chart)</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('RTL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'RTL' ? 'bg-white text-[#0753A5] shadow-xs' : 'text-slate-600'
-            }`}
-          >
-            RTL Pengawasan ({totalActiveRtl})
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('AI_REGIONAL');
-              if (!aiSupervisorResult) handleGenerateSupervisorAi();
-            }}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'AI_REGIONAL' ? 'bg-indigo-600 text-white shadow-xs' : 'text-indigo-700 bg-indigo-50'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Analisis Wilayah</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>Ekspor CSV</span>
           </button>
         </div>
       </div>
 
-      {activeTab === 'REGIONAL_OVERVIEW' && (
-        <div className="space-y-6">
-          {/* 5 Quick Stat Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Satuan Pendidikan Binaan
+      {/* Tata Letak 2-Kolom: Seluruh Tab/Tombol Dashboard Pengawas Diletakkan Disamping Kiri Memanjang ke Bawah */}
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        {/* Navigasi Bilah Sisi Kiri (Sidebar) Memanjang ke Bawah */}
+        <aside className="w-full lg:w-64 xl:w-72 shrink-0 space-y-4 lg:sticky lg:top-6">
+          <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+            <div className="px-2 py-1 border-b border-slate-100 pb-3">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Menu Pengawas Pembina
               </span>
-              <div className="text-2xl font-black text-slate-900 mt-1">{totalSchoolsCount} Sekolah</div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {totalSchoolsCount === 0
-                  ? 'Belum ada data satuan pendidikan'
-                  : `${goodStatusCount} Terpantau • ${unupdatedStatusCount > 0 ? `${unupdatedStatusCount} Belum Ada Data` : `${warningStatusCount} Penguatan`}`}
+              <h3 className="text-sm font-black text-slate-900 mt-0.5">
+                Navigasi Wilayah Binaan
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Pilih modul supervisi & evaluasi
               </p>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Total Siswa Binaan
-              </span>
-              <div className="text-2xl font-black text-slate-900 mt-1">{totalStudentsCount} Siswa</div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {totalStudentsCount === 0 && totalTeachersCount === 0
-                  ? 'Belum ada data siswa'
-                  : `${totalTeachersCount} Tenaga Pendidik`}
-              </p>
-            </div>
+            <nav className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('REGIONAL_OVERVIEW')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left ${
+                  activeTab === 'REGIONAL_OVERVIEW'
+                    ? 'bg-[#0753A5] text-white shadow-md shadow-blue-500/20 ring-1 ring-blue-600'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Compass className={`w-4 h-4 shrink-0 ${activeTab === 'REGIONAL_OVERVIEW' ? 'text-white' : 'text-[#0753A5]'}`} />
+                  <span className="leading-tight">Ringkasan Wilayah</span>
+                </div>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    activeTab === 'REGIONAL_OVERVIEW' ? 'bg-white/20 text-white' : 'bg-blue-100 text-[#0753A5]'
+                  }`}
+                >
+                  Utama
+                </span>
+              </button>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Rata-rata Kelengkapan
-              </span>
-              <div className="text-2xl font-black text-[#0753A5] mt-1">{avgCompleteness}%</div>
-              <p className={`text-[11px] font-semibold mt-1 ${avgCompleteness >= 80 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                {avgCompleteness >= 80
-                  ? 'Target tercapai (>80%)'
-                  : avgCompleteness > 0
-                  ? 'Perlu ditingkatkan'
-                  : 'Belum ada data jurnal terisi'}
-              </p>
-            </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('COMPARISON')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left ${
+                  activeTab === 'COMPARISON'
+                    ? 'bg-[#0753A5] text-white shadow-md shadow-blue-500/20 ring-1 ring-blue-600'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <School className={`w-4 h-4 shrink-0 ${activeTab === 'COMPARISON' ? 'text-white' : 'text-[#0753A5]'}`} />
+                  <span className="leading-tight">Komparasi Sekolah</span>
+                </div>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    activeTab === 'COMPARISON' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {totalSchoolsCount}
+                </span>
+              </button>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Rata-rata Konsistensi
-              </span>
-              <div className="text-2xl font-black text-slate-900 mt-1">{avgConsistency}%</div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {avgConsistency >= 80
-                  ? 'Kategori pembiasaan baik'
-                  : avgConsistency > 0
-                  ? 'Perlu pendampingan'
-                  : 'Belum ada data jurnal terisi'}
-              </p>
-            </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('MONITORING')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left ${
+                  activeTab === 'MONITORING'
+                    ? 'bg-[#0753A5] text-white shadow-md shadow-blue-500/20 ring-1 ring-blue-600'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <BookOpen className={`w-4 h-4 shrink-0 ${activeTab === 'MONITORING' ? 'text-white' : 'text-[#0753A5]'}`} />
+                  <span className="leading-tight">Portofolio 7KAIH</span>
+                </div>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    activeTab === 'MONITORING' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  PDF
+                </span>
+              </button>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                RTL Wilayah Aktif
-              </span>
-              <div className="text-2xl font-black text-indigo-700 mt-1">{totalActiveRtl} RTL</div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {totalActiveRtl > 0 ? 'Dalam pemantauan supervisi' : 'Belum ada rencana tindak lanjut'}
-              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab('TRENDS')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left ${
+                  activeTab === 'TRENDS'
+                    ? 'bg-[#0753A5] text-white shadow-md shadow-blue-500/20 ring-1 ring-blue-600'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <TrendingUp className={`w-4 h-4 shrink-0 ${activeTab === 'TRENDS' ? 'text-white' : 'text-[#0753A5]'}`} />
+                  <span className="leading-tight">Tren Bulanan</span>
+                </div>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    activeTab === 'TRENDS' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  Chart
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('RTL')}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left ${
+                  activeTab === 'RTL'
+                    ? 'bg-[#0753A5] text-white shadow-md shadow-blue-500/20 ring-1 ring-blue-600'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <FileText className={`w-4 h-4 shrink-0 ${activeTab === 'RTL' ? 'text-white' : 'text-[#0753A5]'}`} />
+                  <span className="leading-tight">RTL Pengawasan</span>
+                </div>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    activeTab === 'RTL' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'
+                  }`}
+                >
+                  {totalActiveRtl}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('AI_REGIONAL');
+                  if (!aiSupervisorResult) handleGenerateSupervisorAi();
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left ${
+                  activeTab === 'AI_REGIONAL'
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20'
+                    : 'text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/80'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
+                  <span className="leading-tight">AI Analisis Wilayah</span>
+                </div>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    activeTab === 'AI_REGIONAL' ? 'bg-white/20 text-white' : 'bg-indigo-200 text-indigo-900'
+                  }`}
+                >
+                  AI
+                </span>
+              </button>
+
+              {onSelectTab && (
+                <button
+                  type="button"
+                  onClick={() => onSelectTab('account-settings')}
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer text-left text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border-t border-slate-100 mt-1 pt-3"
+                  title="Buka Pengaturan Akun & Preferensi Pengawas"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Settings className="w-4 h-4 shrink-0 text-slate-500" />
+                    <span className="leading-tight">Pengaturan Akun</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    Akun
+                  </span>
+                </button>
+              )}
+            </nav>
+
+            {/* Widget Grafik & Tabel Kondisi Sekolah Binaan */}
+            <div className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-3 text-xs shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                    Kondisi Sekolah Binaan
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700">
+                  {totalFosterCount} Sekolah
+                </span>
+              </div>
+
+              {/* Grafik Distribusi Kondisi (Hijau, Kuning, Merah) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
+                  <span>Grafik Sebaran Kondisi</span>
+                  <span className="font-bold text-emerald-700">{greenPct}% Optimal</span>
+                </div>
+                <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
+                  {greenStatusCount > 0 && (
+                    <div
+                      style={{ width: `${greenPct}%` }}
+                      className="bg-emerald-500 h-full transition-all duration-300 hover:brightness-110"
+                      title={`Optimal (Hijau): ${greenStatusCount} sekolah (${greenPct}%)`}
+                    />
+                  )}
+                  {yellowStatusCount > 0 && (
+                    <div
+                      style={{ width: `${yellowPct}%` }}
+                      className="bg-amber-500 h-full transition-all duration-300 hover:brightness-110"
+                      title={`Pendampingan (Kuning): ${yellowStatusCount} sekolah (${yellowPct}%)`}
+                    />
+                  )}
+                  {redStatusCount > 0 && (
+                    <div
+                      style={{ width: `${redPct}%` }}
+                      className="bg-rose-500 h-full transition-all duration-300 hover:brightness-110"
+                      title={`Kritis (Merah): ${redStatusCount} sekolah (${redPct}%)`}
+                    />
+                  )}
+                </div>
+
+                {/* Filter Penanda & Quick Counts */}
+                <div className="grid grid-cols-4 gap-1 pt-1 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setSidebarConditionFilter('ALL')}
+                    className={`py-1 px-0.5 rounded-md text-center font-bold transition-all cursor-pointer truncate ${
+                      sidebarConditionFilter === 'ALL'
+                        ? 'bg-slate-800 text-white shadow-2xs'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Semua ({totalFosterCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarConditionFilter('GREEN')}
+                    className={`py-1 px-0.5 rounded-md text-center font-bold transition-all cursor-pointer truncate ${
+                      sidebarConditionFilter === 'GREEN'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                    }`}
+                    title="Optimal (Hijau)"
+                  >
+                    🟢 {greenStatusCount}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarConditionFilter('YELLOW')}
+                    className={`py-1 px-0.5 rounded-md text-center font-bold transition-all cursor-pointer truncate ${
+                      sidebarConditionFilter === 'YELLOW'
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
+                    }`}
+                    title="Pendampingan (Kuning)"
+                  >
+                    🟡 {yellowStatusCount}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarConditionFilter('RED')}
+                    className={`py-1 px-0.5 rounded-md text-center font-bold transition-all cursor-pointer truncate ${
+                      sidebarConditionFilter === 'RED'
+                        ? 'bg-rose-600 text-white shadow-2xs'
+                        : 'bg-rose-50 border border-rose-200 text-rose-800 hover:bg-rose-100'
+                    }`}
+                    title="Kritis (Merah)"
+                  >
+                    🔴 {redStatusCount}
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabel Ringkas Kondisi Implementasi Sekolah Binaan */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                  <span>Tabel Sekolah</span>
+                  <span>Penanda</span>
+                </div>
+                <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 rounded-xl border border-slate-200/80 bg-white shadow-2xs">
+                  {sidebarFilteredSchools.length === 0 ? (
+                    <div className="p-3 text-center text-[11px] text-slate-400">
+                      Tidak ada sekolah pada kategori ini.
+                    </div>
+                  ) : (
+                    sidebarFilteredSchools.map((s) => (
+                      <div
+                        key={s.id}
+                        onClick={() => setSelectedSchool(s)}
+                        className="p-2 hover:bg-slate-50 transition-colors flex items-center justify-between gap-2 cursor-pointer group"
+                        title="Klik untuk melihat catatan supervisi & detail sekolah"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-bold text-slate-800 truncate group-hover:text-[#0753A5]">
+                            {s.name}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[9px] text-slate-400 mt-0.5">
+                            <span>{s.jenjang || 'Satuan'}</span>
+                            <span>•</span>
+                            <span className="font-semibold text-slate-600">
+                              {s.completeness}% jurnal
+                            </span>
+                          </div>
+                        </div>
+
+                        {s.condition.color === 'GREEN' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Hijau
+                          </span>
+                        )}
+                        {s.condition.color === 'YELLOW' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Kuning
+                          </span>
+                        )}
+                        {s.condition.color === 'RED' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                            Merah
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Action Button: Buka Tabel Matriks Lengkap */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('REGIONAL_OVERVIEW');
+                  setAggregateViewMode('TABLE');
+                }}
+                className="w-full py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Table className="w-3 h-3 text-slate-500" />
+                <span>Lihat Tabel Matriks Lengkap</span>
+              </button>
             </div>
           </div>
+        </aside>
 
-          {/* Dedicated Section: Info Update Persentase Murid Mengisi Jurnal dalam Rentang Hari Terisi */}
-          <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 border border-blue-200/80 rounded-2xl p-5 shadow-xs">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-blue-200/60">
-              <div className="flex items-start sm:items-center gap-3">
-                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs shrink-0">
-                  <Calendar className="w-5 h-5" />
+        {/* Area Konten Utama Dashboard Pengawas (Di Samping Kanan Sidebar) */}
+        <main className="flex-1 min-w-0 w-full space-y-6">
+
+      {activeTab === 'REGIONAL_OVERVIEW' && (
+        <div className="space-y-6">
+          {/* Bar Tombol Info Ringkasan Satuan Pendidikan Binaan */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#0753A5] flex items-center justify-center font-bold shadow-2xs shrink-0">
+                <Compass className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                  Ringkasan Wilayah Satuan Pendidikan Binaan
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Monitoring implementasi & evaluasi mutu pembiasaan 7KAIH
+                </p>
+              </div>
+            </div>
+
+            {/* Satu Tombol Info Tersendiri */}
+            <button
+              type="button"
+              onClick={() => setShowRegionalStatsModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-50 hover:bg-blue-100 text-[#0753A5] border border-blue-200 text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer group"
+              title="Buka info jumlah satuan pendidikan binaan, total siswa, kelengkapan, dan konsistensi"
+            >
+              <Info className="w-4 h-4 text-[#0753A5] shrink-0" />
+              <span>Info Statistik Satuan Pendidikan Binaan</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#0753A5] border border-blue-200 font-bold shadow-2xs">
+                {totalSchoolsCount} Sekolah • {totalStudentsCount} Siswa
+              </span>
+            </button>
+          </div>
+
+          {/* ========================================================================== */}
+          {/* GRAFIK & TABEL KONDISI IMPLEMENTASI SEKOLAH BINAAN (PENANDA HIJAU, KUNING, MERAH) */}
+          {/* Murid Aktif, Kelengkapan Jurnal, Validasi Guru-Ortu, Ambang 7 Kebiasaan,   */}
+          {/* Keterlaksanaan Tindak Lanjut Sekolah, & Penanda Hijau/Kuning/Merah        */}
+          {/* ========================================================================== */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-700 to-sky-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                  <BarChart3 className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-black text-slate-900 tracking-tight">
-                      Info Update Persentase Murid Mengisi Jurnal dalam Rentang Hari Terisi Data
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">
+                      Grafik & Tabel Kondisi Implementasi Sekolah Binaan
                     </h3>
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-600 text-white shadow-xs">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      Data Terupdate
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      Penanda Hijau, Kuning, Merah
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Disinkronkan otomatis sesuai isian jurnal harian terkini seluruh satuan pendidikan binaan (bebas data default).
+                  <p className="text-xs text-slate-500 mt-1">
+                    Evaluasi komprehensif kondisi implementasi program 7KAIH sekolah binaan mencakup keaktifan murid, kelengkapan jurnal, validasi, dan keterlaksanaan tindak lanjut.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* View Switcher: Tabel Matriks vs Kartu Detail & Ekspor CSV */}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
-                  onClick={syncAllData}
-                  disabled={isSyncing}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-200 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-60"
-                  title="Sinkronkan ulang seluruh data jurnal terkini"
+                  type="button"
+                  onClick={handleExportRegionalCsv}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  title="Ekspor Seluruh Indikator Agregat Satuan Pendidikan ke File CSV"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isSyncing ? 'Sinkronisasi...' : 'Sinkronkan Data'}</span>
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Ekspor CSV</span>
+                </button>
+
+                <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl text-xs font-bold border border-slate-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setAggregateViewMode('TABLE')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      aggregateViewMode === 'TABLE'
+                        ? 'bg-white text-[#0753A5] shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                    <span>Tabel Matriks</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAggregateViewMode('CARDS')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                      aggregateViewMode === 'CARDS'
+                        ? 'bg-white text-[#0753A5] shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Kartu Detail</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Graphic: Grafik Proporsi Kondisi Implementasi Sekolah Binaan */}
+            <div className="p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-indigo-600" />
+                  <span className="font-bold text-slate-900">
+                    Grafik Distribusi Kondisi Implementasi Sekolah Binaan
+                  </span>
+                </div>
+                <span className="text-slate-500 text-[11px] font-semibold">
+                  Total {totalFosterCount} Satuan Pendidikan Binaan
+                </span>
+              </div>
+              <div className="h-4 w-full bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
+                {greenStatusCount > 0 && (
+                  <div
+                    style={{ width: `${greenPct}%` }}
+                    className="bg-emerald-500 h-full transition-all duration-500 hover:brightness-110 flex items-center justify-center text-[10px] text-white font-bold"
+                    title={`Optimal (Hijau): ${greenStatusCount} sekolah (${greenPct}%)`}
+                  >
+                    {greenPct > 12 ? `${greenPct}%` : ''}
+                  </div>
+                )}
+                {yellowStatusCount > 0 && (
+                  <div
+                    style={{ width: `${yellowPct}%` }}
+                    className="bg-amber-500 h-full transition-all duration-500 hover:brightness-110 flex items-center justify-center text-[10px] text-white font-bold"
+                    title={`Pendampingan (Kuning): ${yellowStatusCount} sekolah (${yellowPct}%)`}
+                  >
+                    {yellowPct > 12 ? `${yellowPct}%` : ''}
+                  </div>
+                )}
+                {redStatusCount > 0 && (
+                  <div
+                    style={{ width: `${redPct}%` }}
+                    className="bg-rose-500 h-full transition-all duration-500 hover:brightness-110 flex items-center justify-center text-[10px] text-white font-bold"
+                    title={`Kritis (Merah): ${redStatusCount} sekolah (${redPct}%)`}
+                  >
+                    {redPct > 12 ? `${redPct}%` : ''}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] pt-1 border-t border-slate-200/60">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5 text-emerald-800 font-semibold">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Optimal (Hijau): <strong>{greenStatusCount}</strong> sekolah ({greenPct}%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-amber-800 font-semibold">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                    <span>Pendampingan (Kuning): <strong>{yellowStatusCount}</strong> sekolah ({yellowPct}%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-rose-800 font-semibold">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                    <span>Kritis (Merah): <strong>{redStatusCount}</strong> sekolah ({redPct}%)</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowConditionLegend((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-all cursor-pointer"
+                  title="Tampilkan atau sembunyikan keterangan kriteria penanda hijau, kuning, merah"
+                >
+                  <Info className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{showConditionLegend ? 'Sembunyikan Keterangan Penanda' : 'Lihat Keterangan Penanda'}</span>
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
-              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
-                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Rentang Hari Terisi Data Jurnal
+            {/* Banner Penanda Kondisi Implementasi Program di Sekolah (Disembunyikan secara default) */}
+            {showConditionLegend && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs transition-all">
+                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                      <strong className="text-emerald-950 font-black text-xs uppercase tracking-wider">
+                        Penanda Hijau (Optimal)
+                      </strong>
+                    </div>
+                    <span className="text-xs font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                      {greenStatusCount} Sekolah
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-900/90 leading-relaxed">
+                    Kelengkapan jurnal ≥75%, validasi guru & orang tua ≥70%, persentase murid mencapai ambang 7 kebiasaan ≥70%, serta RTL berjalan baik.
+                  </p>
                 </div>
-                <div className="text-base font-black text-slate-900 mt-1 truncate" title={supervisorJournalRangeStats.rangeLabel}>
-                  {supervisorJournalRangeStats.rangeLabel}
+
+                <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-amber-500 shrink-0"></span>
+                      <strong className="text-amber-950 font-black text-xs uppercase tracking-wider">
+                        Penanda Kuning (Pendampingan)
+                      </strong>
+                    </div>
+                    <span className="text-xs font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                      {yellowStatusCount} Sekolah
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                    Program telah berjalan (kelengkapan 45%–74%), memerlukan penguatan pendampingan pengawas pada validasi rutin atau konsistensi pembiasaan siswa.
+                  </p>
                 </div>
-                <p className="text-xs font-semibold text-blue-600 mt-1">
-                  {supervisorJournalRangeStats.hasData
-                    ? `${supervisorJournalRangeStats.totalActiveDaysCount} Hari Aktif Berdata`
-                    : 'Belum ada data jurnal terisi'}
-                </p>
+
+                <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200/80 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-rose-500 shrink-0"></span>
+                      <strong className="text-rose-950 font-black text-xs uppercase tracking-wider">
+                        Penanda Merah (Kritis)
+                      </strong>
+                    </div>
+                    <span className="text-xs font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
+                      {redStatusCount} Sekolah
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-rose-900/90 leading-relaxed">
+                    Tingkat partisipasi atau kelengkapan &lt;45%, minim validasi, atau belum ada entri aktif. Membutuhkan intervensi dan supervisi klinis pengawas pembina.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Filter Pills berdasarkan Kondisi Implementasi */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+                  <Filter className="w-3.5 h-3.5" />
+                  Filter Penanda:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAggregateConditionFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    aggregateConditionFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Semua ({fosterSchools.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAggregateConditionFilter('GREEN')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    aggregateConditionFilter === 'GREEN'
+                      ? 'bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-300'
+                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span>Optimal ({greenStatusCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAggregateConditionFilter('YELLOW')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    aggregateConditionFilter === 'YELLOW'
+                      ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-300'
+                      : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  <span>Pendampingan ({yellowStatusCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAggregateConditionFilter('RED')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    aggregateConditionFilter === 'RED'
+                      ? 'bg-rose-700 text-white shadow-xs ring-2 ring-rose-300'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  <span>Kritis ({redStatusCount})</span>
+                </button>
               </div>
 
-              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
-                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Partisipasi Murid (Rentang Terisi)
-                </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-black text-blue-700">
-                    {supervisorJournalRangeStats.uniqueStudentsPercentage}%
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500">
-                    ({supervisorJournalRangeStats.uniqueStudentsFilledCount} / {supervisorJournalRangeStats.totalRegisteredStudents} murid)
-                  </span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
-                    style={{ width: `${supervisorJournalRangeStats.uniqueStudentsPercentage}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
-                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Rerata Partisipasi Harian
-                </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-black text-indigo-700">
-                    {supervisorJournalRangeStats.avgDailyFilledCount}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500">
-                    murid / hari ({supervisorJournalRangeStats.avgDailyFilledPercentage}%)
-                  </span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-                  <div
-                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
-                    style={{ width: `${supervisorJournalRangeStats.avgDailyFilledPercentage}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-xs p-4 rounded-xl border border-blue-100 shadow-2xs">
-                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Partisipasi Hari Ini
-                </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-black text-emerald-600">
-                    {supervisorJournalRangeStats.todayFilledCount}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500">
-                    murid ({supervisorJournalRangeStats.todayFilledPercentage}%)
-                  </span>
-                </div>
-                <p className="text-[11px] font-medium text-slate-500 mt-1">
-                  {supervisorJournalRangeStats.todayIsFilled
-                    ? 'Sudah ada murid mengisi hari ini'
-                    : 'Belum ada isian hari ini'}
-                </p>
+              <div className="text-xs text-slate-500 font-medium">
+                Menampilkan <strong>{aggregateSchools.length}</strong> dari {fosterSchools.length} satuan pendidikan
               </div>
             </div>
-          </div>
 
-          {/* Search and filter controls */}
+            {/* Konten Indikator Agregat: Tabel Matriks atau Kartu Detail */}
+            {aggregateSchools.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
+                <AlertCircle className="w-8 h-8 text-slate-400 mx-auto" />
+                <h4 className="text-sm font-bold text-slate-800">
+                  Tidak Ada Satuan Pendidikan pada Kategori Ini
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Silakan pilih filter kondisi penanda lain atau reset ke &quot;Semua&quot;.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAggregateConditionFilter('ALL')}
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs cursor-pointer"
+                >
+                  Reset Filter Penanda
+                </button>
+              </div>
+            ) : aggregateViewMode === 'TABLE' ? (
+              /* ======================================================== */
+              /* TAMPILAN 1: TABEL MATRIKS INDIKATOR AGREGAT LENGKAP     */
+              /* ======================================================== */
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-2xs">
+                <table className="w-full text-left text-xs divide-y divide-slate-200">
+                  <thead className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th className="py-3.5 px-3.5 w-10 text-center">No</th>
+                      <th className="py-3.5 px-4 min-w-[200px]">Satuan Pendidikan & Status</th>
+                      <th className="py-3.5 px-3 min-w-[130px] text-center">Penanda Kondisi</th>
+                      <th className="py-3.5 px-3 min-w-[130px] text-center">Murid Aktif</th>
+                      <th className="py-3.5 px-3 min-w-[120px] text-center">Kelengkapan Jurnal</th>
+                      <th className="py-3.5 px-3 min-w-[140px] text-center">Validasi Guru & Ortu</th>
+                      <th className="py-3.5 px-3 min-w-[220px] text-center">Ambang 7 Kebiasaan (≥75%)</th>
+                      <th className="py-3.5 px-3 min-w-[130px] text-center">Keterlaksanaan RTL</th>
+                      <th className="py-3.5 px-3.5 text-center w-28">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-100">
+                    {aggregateSchools.map((s, idx) => (
+                      <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-3 text-center font-bold text-slate-400">
+                          {idx + 1}
+                        </td>
+
+                        {/* Nama Sekolah & Identitas */}
+                        <td className="py-3.5 px-4">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSchoolModal(s)}
+                            className="text-left font-black text-slate-900 hover:text-[#0753A5] transition-colors cursor-pointer block leading-snug"
+                          >
+                            {s.name}
+                          </button>
+                          <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono">{s.npsn}</span>
+                            <span>•</span>
+                            <span>{s.jenjang}</span>
+                            <span>•</span>
+                            <span>Akreditasi {s.akreditasi}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            KS: {s.headmaster}
+                          </div>
+                        </td>
+
+                        {/* Penanda Hijau, Kuning, atau Merah Kondisi Implementasi */}
+                        <td className="py-3.5 px-3 text-center">
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border shadow-2xs ${s.condition.badgeBg}`}
+                              title={s.condition.summary}
+                            >
+                              <span
+                                className={`w-2.5 h-2.5 rounded-full ${s.condition.dot} ${
+                                  s.condition.color === 'GREEN' ? 'animate-pulse' : ''
+                                }`}
+                              ></span>
+                              <span>{s.condition.label}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-500 max-w-[120px] truncate block" title={s.condition.summary}>
+                              {s.condition.color === 'GREEN'
+                                ? 'Optimal Memenuhi Ambang'
+                                : s.condition.color === 'YELLOW'
+                                ? 'Perlu Pendampingan'
+                                : 'Intervensi Pengawas'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Murid Aktif */}
+                        <td className="py-3.5 px-3 text-center">
+                          <div className="space-y-1">
+                            <div className="font-black text-slate-900 text-xs">
+                              {s.activeStudents} / {s.students}
+                            </div>
+                            <div className="text-[10px] font-semibold text-slate-500">
+                              ({s.activeStudentsPercent}% Aktif)
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden max-w-[100px] mx-auto">
+                              <div
+                                className={`h-1.5 rounded-full transition-all duration-500 ${
+                                  s.activeStudentsPercent >= 80
+                                    ? 'bg-emerald-600'
+                                    : s.activeStudentsPercent >= 50
+                                    ? 'bg-amber-500'
+                                    : 'bg-rose-500'
+                                }`}
+                                style={{ width: `${s.activeStudentsPercent}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Kelengkapan Jurnal */}
+                        <td className="py-3.5 px-3 text-center">
+                          <div className="space-y-1">
+                            <div className={`font-black text-sm ${s.completeness >= 75 ? 'text-[#0753A5]' : s.completeness >= 45 ? 'text-amber-700' : 'text-rose-600'}`}>
+                              {s.completeness}%
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-medium">
+                              {s.totalJournals} Jurnal
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden max-w-[90px] mx-auto">
+                              <div
+                                className={`h-1.5 rounded-full ${
+                                  s.completeness >= 75
+                                    ? 'bg-blue-600'
+                                    : s.completeness >= 45
+                                    ? 'bg-amber-500'
+                                    : 'bg-rose-500'
+                                }`}
+                                style={{ width: `${s.completeness}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Tingkat Validasi Guru & Orang Tua */}
+                        <td className="py-3.5 px-3">
+                          <div className="space-y-1 text-[11px] max-w-[130px] mx-auto">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-slate-500 text-[10px]">Guru:</span>
+                              <span className="font-bold text-slate-800">{s.teacherValidationRate}%</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-slate-500 text-[10px]">Orang Tua:</span>
+                              <span className="font-bold text-slate-800">{s.parentValidationRate}%</span>
+                            </div>
+                            <div className="pt-0.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-black text-indigo-700">
+                              <span>Rerata:</span>
+                              <span>{s.avgValidationRate}%</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Persentase Murid Mencapai Ambang Pembiasaan pada Setiap Kebiasaan */}
+                        <td className="py-3.5 px-3">
+                          <div className="space-y-1.5 max-w-[230px] mx-auto">
+                            <div className="grid grid-cols-4 gap-1 text-[10px] font-semibold text-center">
+                              <span
+                                className={`p-1 rounded-md border ${
+                                  s.habitThresholdRates.wakeEarly >= 75
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
+                                    : s.habitThresholdRates.wakeEarly >= 50
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                                title="Bangun Pagi (Persentase murid capai ambang ≥75%)"
+                              >
+                                🌅 {s.habitThresholdRates.wakeEarly}%
+                              </span>
+                              <span
+                                className={`p-1 rounded-md border ${
+                                  s.habitThresholdRates.worship >= 75
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
+                                    : s.habitThresholdRates.worship >= 50
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                                title="Beribadah (Persentase murid capai ambang ≥75%)"
+                              >
+                                🤲 {s.habitThresholdRates.worship}%
+                              </span>
+                              <span
+                                className={`p-1 rounded-md border ${
+                                  s.habitThresholdRates.exercise >= 75
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
+                                    : s.habitThresholdRates.exercise >= 50
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                                title="Berolahraga (Persentase murid capai ambang ≥75%)"
+                              >
+                                🏃 {s.habitThresholdRates.exercise}%
+                              </span>
+                              <span
+                                className={`p-1 rounded-md border ${
+                                  s.habitThresholdRates.healthyEat >= 75
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
+                                    : s.habitThresholdRates.healthyEat >= 50
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                                title="Makan Sehat (Persentase murid capai ambang ≥75%)"
+                              >
+                                🥗 {s.habitThresholdRates.healthyEat}%
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1 text-[10px] font-semibold text-center">
+                              <span
+                                className={`p-1 rounded-md border ${
+                                  s.habitThresholdRates.learning >= 75
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
+                                    : s.habitThresholdRates.learning >= 50
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                                title="Gemar Belajar / Membaca (Persentase murid capai ambang ≥75%)"
+                              >
+                                📖 {s.habitThresholdRates.learning}%
+                              </span>
+                              <span
+                                className={`p-1 rounded-md border ${
+                                  s.habitThresholdRates.social >= 75
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
+                                    : s.habitThresholdRates.social >= 50
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                                title="Bermasyarakat / Gotong Royong (Persentase murid capai ambang ≥75%)"
+                              >
+                                🤝 {s.habitThresholdRates.social}%
+                              </span>
+                              <span
+                                className={`p-1 rounded-md border ${
+                                  s.habitThresholdRates.sleepEarly >= 75
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold'
+                                    : s.habitThresholdRates.sleepEarly >= 50
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                                title="Tidur Cepat (Persentase murid capai ambang ≥75%)"
+                              >
+                                🌙 {s.habitThresholdRates.sleepEarly}%
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-center text-slate-500 font-bold flex items-center justify-between px-1">
+                              <span>Rerata Ambang:</span>
+                              <span className={`font-black ${s.avgHabitThresholdPct >= 70 ? 'text-emerald-700' : 'text-slate-700'}`}>
+                                {s.avgHabitThresholdPct}%
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Keterlaksanaan Tindak Lanjut Sekolah */}
+                        <td className="py-3.5 px-3 text-center">
+                          <div className="space-y-1">
+                            <div className="font-black text-slate-900 text-xs">
+                              {s.followUpExecutionRate}%
+                            </div>
+                            <div className="text-[10px] font-semibold text-slate-500">
+                              {s.completedFollowUps} / {s.totalFollowUps} RTL Selesai
+                            </div>
+                            <span
+                              className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                s.totalFollowUps === 0
+                                  ? 'bg-slate-100 text-slate-500'
+                                  : s.completedFollowUps === s.totalFollowUps
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}
+                            >
+                              {s.totalFollowUps === 0
+                                ? 'Belum Ada RTL'
+                                : s.completedFollowUps === s.totalFollowUps
+                                ? 'Terlaksana Penuh'
+                                : `${s.inProgressFollowUps} Berjalan`}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Aksi Supervisi */}
+                        <td className="py-3.5 px-3.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSchoolModal(s)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0753A5] text-[11px] font-bold transition-all shadow-2xs cursor-pointer"
+                            title="Beri Catatan Supervisi Klinis Pengawas"
+                          >
+                            <span>Catatan</span>
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              /* ======================================================== */
+              /* TAMPILAN 2: KARTU INDIKATOR DETAIL TIAP SEKOLAH         */
+              /* ======================================================== */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {aggregateSchools.map((s) => (
+                  <div
+                    key={s.id}
+                    className="p-5 rounded-3xl border border-slate-200/90 bg-white shadow-xs space-y-4 hover:border-blue-300 transition-all"
+                  >
+                    {/* Header Kartu Sekolah & Penanda */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-lg">
+                          🏫
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-slate-900 leading-tight">
+                            {s.name}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            NPSN: <span className="font-mono font-semibold">{s.npsn}</span> • {s.schoolStatus} • Akreditasi {s.akreditasi}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Penanda Hijau / Kuning / Merah */}
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border shadow-2xs shrink-0 ${s.condition.badgeBg}`}
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full ${s.condition.dot} ${
+                            s.condition.color === 'GREEN' ? 'animate-pulse' : ''
+                          }`}
+                        ></span>
+                        <span>{s.condition.label}</span>
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 leading-relaxed">
+                      {s.condition.summary}
+                    </p>
+
+                    {/* 4 Quick Metrics Grid */}
+                    <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                      <div className="p-2.5 rounded-xl bg-blue-50/50 border border-blue-100">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Murid Aktif</span>
+                        <span className="font-black text-slate-900 text-sm">{s.activeStudents}</span>
+                        <span className="text-[10px] text-slate-400 block">/ {s.students} ({s.activeStudentsPercent}%)</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-indigo-50/50 border border-indigo-100">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Kelengkapan</span>
+                        <span className="font-black text-indigo-700 text-sm">{s.completeness}%</span>
+                        <span className="text-[10px] text-slate-400 block">{s.totalJournals} Jurnal</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-100">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Validasi Ortu/Guru</span>
+                        <span className="font-black text-emerald-800 text-sm">{s.avgValidationRate}%</span>
+                        <span className="text-[10px] text-slate-400 block">G: {s.teacherValidationRate}% • O: {s.parentValidationRate}%</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-100">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Tindak Lanjut</span>
+                        <span className="font-black text-purple-800 text-sm">{s.followUpExecutionRate}%</span>
+                        <span className="text-[10px] text-slate-400 block">{s.completedFollowUps}/{s.totalFollowUps} Selesai</span>
+                      </div>
+                    </div>
+
+                    {/* 7 Kebiasaan Breakdown Bar (% Murid Capai Ambang >=75%) */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-slate-700">Persentase Murid Capai Ambang (≥75%):</span>
+                        <span className="font-black text-slate-900">Rerata {s.avgHabitThresholdPct}%</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-slate-600">
+                            <span>🌅 Bangun Pagi</span>
+                            <span className="font-bold">{s.habitThresholdRates.wakeEarly}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-amber-500 h-1.5 rounded-full"
+                              style={{ width: `${s.habitThresholdRates.wakeEarly}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-slate-600">
+                            <span>🤲 Beribadah</span>
+                            <span className="font-bold">{s.habitThresholdRates.worship}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-rose-500 h-1.5 rounded-full"
+                              style={{ width: `${s.habitThresholdRates.worship}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-slate-600">
+                            <span>🏃 Berolahraga</span>
+                            <span className="font-bold">{s.habitThresholdRates.exercise}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-emerald-600 h-1.5 rounded-full"
+                              style={{ width: `${s.habitThresholdRates.exercise}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-slate-600">
+                            <span>🥗 Makan Sehat</span>
+                            <span className="font-bold">{s.habitThresholdRates.healthyEat}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-lime-600 h-1.5 rounded-full"
+                              style={{ width: `${s.habitThresholdRates.healthyEat}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-slate-600">
+                            <span>📖 Gemar Belajar</span>
+                            <span className="font-bold">{s.habitThresholdRates.learning}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-blue-600 h-1.5 rounded-full"
+                              style={{ width: `${s.habitThresholdRates.learning}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-slate-600">
+                            <span>🤝 Bermasyarakat</span>
+                            <span className="font-bold">{s.habitThresholdRates.social}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-indigo-600 h-1.5 rounded-full"
+                              style={{ width: `${s.habitThresholdRates.social}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1 sm:col-span-2">
+                          <div className="flex justify-between text-[10px] text-slate-600">
+                            <span>🌙 Istirahat Cepat / Tepat Waktu</span>
+                            <span className="font-bold">{s.habitThresholdRates.sleepEarly}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-purple-600 h-1.5 rounded-full"
+                              style={{ width: `${s.habitThresholdRates.sleepEarly}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer Catatan & Aksi */}
+                    <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-100">
+                      <span className="text-[11px] text-slate-500">
+                        KS: <strong>{s.headmaster}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSchoolModal(s)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0753A5] font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Beri Catatan Supervisi</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80">
             <div className="flex items-center gap-2 flex-1 min-w-[240px]">
               <Search className="w-4 h-4 text-slate-400" />
@@ -1973,12 +3080,153 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
           )}
         </div>
       )}
+        </main>
+      </div>
 
       {/* Floating Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 border border-slate-800 animate-in fade-in slide-in-from-bottom-3 duration-200">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Modal Info Ringkasan Satuan Pendidikan Binaan (Satu Tombol Info Tersendiri) */}
+      {showRegionalStatsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Header Modal */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 p-6 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center text-white font-bold">
+                  <Info className="w-5 h-5 text-sky-300" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black tracking-tight">
+                    Info Statistik Satuan Pendidikan Binaan
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Ringkasan data agregat wilayah binaan Pengawas Pembina
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRegionalStatsModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer transition-colors"
+                title="Tutup info"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body Modal: 4 Info Utama + RTL */}
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* 1. Jumlah Satuan Pendidikan Binaan */}
+                <div className="bg-slate-50/90 p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <School className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider block">
+                      Jumlah Satuan Pendidikan Binaan
+                    </span>
+                  </div>
+                  <div className="text-2xl font-black text-slate-900">{totalSchoolsCount} Sekolah</div>
+                  <p className="text-xs text-slate-500">
+                    {totalSchoolsCount === 0
+                      ? 'Belum ada data satuan pendidikan'
+                      : `${goodStatusCount} Terpantau Baik • ${unupdatedStatusCount > 0 ? `${unupdatedStatusCount} Belum Ada Data` : `${warningStatusCount} Perlu Penguatan`}`}
+                  </p>
+                </div>
+
+                {/* 2. Total Siswa Binaan */}
+                <div className="bg-slate-50/90 p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <Users className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider block">
+                      Total Siswa Binaan
+                    </span>
+                  </div>
+                  <div className="text-2xl font-black text-slate-900">{totalStudentsCount} Siswa</div>
+                  <p className="text-xs text-slate-500">
+                    {totalStudentsCount === 0 && totalTeachersCount === 0
+                      ? 'Belum ada data siswa'
+                      : `${totalTeachersCount} Tenaga Pendidik Terdata`}
+                  </p>
+                </div>
+
+                {/* 3. Rata-rata Kelengkapan */}
+                <div className="bg-slate-50/90 p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider block">
+                      Rata-rata Kelengkapan
+                    </span>
+                  </div>
+                  <div className="text-2xl font-black text-[#0753A5]">{avgCompleteness}%</div>
+                  <p className={`text-xs font-semibold ${avgCompleteness >= 80 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                    {avgCompleteness >= 80
+                      ? 'Target tercapai (>80%)'
+                      : avgCompleteness > 0
+                      ? 'Perlu ditingkatkan'
+                      : 'Belum ada data jurnal terisi'}
+                  </p>
+                </div>
+
+                {/* 4. Rata-rata Konsistensi */}
+                <div className="bg-slate-50/90 p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider block">
+                      Rata-rata Konsistensi
+                    </span>
+                  </div>
+                  <div className="text-2xl font-black text-slate-900">{avgConsistency}%</div>
+                  <p className="text-xs text-slate-500">
+                    {avgConsistency >= 80
+                      ? 'Kategori pembiasaan baik'
+                      : avgConsistency > 0
+                      ? 'Perlu pendampingan berkala'
+                      : 'Belum ada data jurnal terisi'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 5. RTL Wilayah Aktif */}
+              <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                    RTL Wilayah Aktif
+                  </span>
+                  <div className="text-xl font-black text-indigo-950 mt-0.5">{totalActiveRtl} RTL Terdaftar</div>
+                  <p className="text-xs text-indigo-800/80 mt-0.5">
+                    {totalActiveRtl > 0 ? 'Dalam pemantauan supervisi pengawas' : 'Belum ada rencana tindak lanjut'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRegionalStatsModal(false);
+                    setActiveTab('RTL');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  Buka Tab RTL
+                </button>
+              </div>
+            </div>
+
+            {/* Footer Modal */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowRegionalStatsModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

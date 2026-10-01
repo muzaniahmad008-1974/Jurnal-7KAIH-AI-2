@@ -100,6 +100,8 @@ import {
   downloadRombelTemplateCsv,
   isSameClass,
   isSameSchool,
+  normalizeClassName,
+  synchronizeSchoolRombelsAndStudents,
 } from '../lib/studentData';
 import { DataImportModal } from './DataImportModal';
 import { SuperAdminProfile } from './SuperAdminProfile';
@@ -110,6 +112,8 @@ import {
   syncOnSuperAdminLogin,
   deleteUserFromSupabase,
   deleteUsersFromSupabase,
+  fetchSuperAdminMasterDataFromSupabase,
+  applySuperAdminMasterDataToStorage,
 } from '../lib/supabaseService';
 
 interface SuperAdminViewProps {
@@ -205,6 +209,35 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
     };
     syncAllMaster();
 
+    // Ambil data mutakhir dari Supabase saat Super Admin membuka dashboard
+    fetchSuperAdminMasterDataFromSupabase()
+      .then((remoteMaster) => {
+        if (remoteMaster) {
+          applySuperAdminMasterDataToStorage(remoteMaster);
+          syncAllMaster();
+        }
+      })
+      .catch(() => {});
+
+    // Multi-tab BroadcastChannel synchronization
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('si7kaih_sync_channel');
+        bc.onmessage = (event) => {
+          if (
+            event.data?.type === 'ROMBELS_UPDATED' ||
+            event.data?.type === 'STUDENTS_UPDATED' ||
+            event.data?.type === 'SCHOOLS_UPDATED' ||
+            event.data?.type === 'USERS_UPDATED' ||
+            event.data?.type === 'MASTER_DATA_UPDATED'
+          ) {
+            syncAllMaster();
+          }
+        };
+      } catch (_e) {}
+    }
+
     window.addEventListener('storage', syncAllMaster);
     window.addEventListener('si7kaih_users_updated', syncAllMaster);
     window.addEventListener('si7kaih_schools_updated', syncAllMaster);
@@ -214,6 +247,11 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
     window.addEventListener('focus', syncAllMaster);
 
     return () => {
+      if (bc) {
+        try {
+          bc.close();
+        } catch (_e) {}
+      }
       window.removeEventListener('storage', syncAllMaster);
       window.removeEventListener('si7kaih_users_updated', syncAllMaster);
       window.removeEventListener('si7kaih_schools_updated', syncAllMaster);
@@ -269,6 +307,22 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   const [editingHabit, setEditingHabit] = useState<HabitMaster | null>(null);
   const [habitFormTarget, setHabitFormTarget] = useState('');
   const [habitFormDesc, setHabitFormDesc] = useState('');
+
+  // Modal: Add / Edit Rombel (Master Rombongan Belajar)
+  const [isRombelModalOpen, setIsRombelModalOpen] = useState(false);
+  const [editingRombel, setEditingRombel] = useState<Rombel | null>(null);
+  const [rombelFormName, setRombelFormName] = useState('');
+  const [rombelFormCode, setRombelFormCode] = useState('');
+  const [rombelFormGrade, setRombelFormGrade] = useState<number>(7);
+  const [rombelFormPhase, setRombelFormPhase] = useState('Fase D');
+  const [rombelFormTeacher, setRombelFormTeacher] = useState('');
+  const [rombelFormTeacherNip, setRombelFormTeacherNip] = useState('-');
+  const [rombelFormCapacity, setRombelFormCapacity] = useState<number>(32);
+  const [rombelFormYear, setRombelFormYear] = useState('2026/2027 Ganjil');
+  const [rombelFormStatus, setRombelFormStatus] = useState<'AKTIF' | 'NON_AKTIF'>('AKTIF');
+  const [rombelFormSchoolName, setRombelFormSchoolName] = useState('UPTD SMPN 1 Jorong');
+  const [rombelFormSchoolId, setRombelFormSchoolId] = useState('sch-smpn1-jorong');
+  const [isSyncingRombels, setIsSyncingRombels] = useState(false);
 
   // Audit Logs State
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -431,6 +485,184 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       lastUpdatedBy: currentPersona?.name || 'Super Administrator',
       actionType: 'UPDATE_ROMBELS',
     }).catch((e) => console.warn('Supabase rombels sync notice:', e));
+  };
+
+  // Sinkronisasi Master Rombongan Belajar Superadmin dengan seluruh data update pada Admin Sekolah
+  const handleSyncRombelsWithSchoolAdmin = async () => {
+    setIsSyncingRombels(true);
+    try {
+      // 0. Ambil pembaruan terkini dari Supabase Cloud jika tersedia
+      try {
+        const remoteMaster = await fetchSuperAdminMasterDataFromSupabase();
+        if (remoteMaster) {
+          applySuperAdminMasterDataToStorage(remoteMaster);
+        }
+      } catch (_e) {}
+
+      // 1. Ambil data rombel, siswa, dan sekolah terkini
+      const allS = getStoredStudents();
+      const allR = getStoredRombels();
+      const allSch = getStoredSchools();
+
+      let currentRombelPool = [...allR];
+      let currentStudentPool = [...allS];
+      let totalChanged = 0;
+      let totalAdded = 0;
+
+      // Sinkronkan setiap satuan pendidikan dengan data rombel dan siswanya
+      for (const school of allSch) {
+        const { updatedStudents, updatedRombels, changedCount, addedRombelsCount } =
+          synchronizeSchoolRombelsAndStudents({
+            schoolId: school.id,
+            schoolName: school.name,
+            currentStudents: currentStudentPool,
+            currentRombels: currentRombelPool,
+          });
+        totalChanged += changedCount;
+        totalAdded += addedRombelsCount;
+        currentRombelPool = updatedRombels;
+        currentStudentPool = updatedStudents;
+      }
+
+      // Pastikan wali kelas di setiap rombel cocok dengan akun Guru/Wali Kelas terkait
+      const currentUsers = getStoredUsers();
+      currentRombelPool = currentRombelPool.map((r) => {
+        const teacherUser = currentUsers.find(
+          (u) => u.role === 'TEACHER' && isSameClass(u.className, r.name)
+        );
+        if (teacherUser && (!r.teacher || r.teacher === 'Guru Wali Kelas' || r.teacher === 'Wali Kelas')) {
+          return {
+            ...r,
+            teacher: teacherUser.name,
+            teacherNip: teacherUser.identifierValue || r.teacherNip || '-',
+          };
+        }
+        return r;
+      });
+
+      // Simpan pembaruan ke storage dan state
+      saveStoredStudents(currentStudentPool);
+      saveStoredRombels(currentRombelPool);
+      setStudents(currentStudentPool);
+      setRombels(currentRombelPool);
+
+      // Sinkronkan ke Supabase cloud
+      await saveSuperAdminMasterDataToSupabase({
+        rombels: currentRombelPool,
+        students: currentStudentPool,
+        lastUpdatedBy: `${currentPersona?.name || 'Super Administrator'} (Singkron Master Rombel Admin Sekolah)`,
+        actionType: 'SYNC_ROMBELS_WITH_SCHOOL_ADMIN',
+      });
+
+      showToast(
+        `Singkronisasi Sukses! Data Master Rombongan Belajar Superadmin telah tersinkronkan 100% dengan data update Admin Sekolah (${currentRombelPool.length} rombel diverifikasi, ${currentStudentPool.length} peserta didik terhubung).`
+      );
+    } catch (err: any) {
+      showToast('Gagal sinkronisasi rombel: ' + (err?.message || 'Terjadi kesalahan sistem'));
+    } finally {
+      setIsSyncingRombels(false);
+    }
+  };
+
+  const handleOpenAddRombel = () => {
+    setEditingRombel(null);
+    setRombelFormName('');
+    setRombelFormCode('');
+    setRombelFormGrade(7);
+    setRombelFormPhase('Fase D');
+    setRombelFormTeacher('');
+    setRombelFormTeacherNip('-');
+    setRombelFormCapacity(32);
+    setRombelFormYear('2026/2027 Ganjil');
+    setRombelFormStatus('AKTIF');
+    const defaultSch = schools[0] || { id: 'sch-smpn1-jorong', name: 'UPTD SMPN 1 Jorong' };
+    setRombelFormSchoolId(defaultSch.id);
+    setRombelFormSchoolName(defaultSch.name);
+    setIsRombelModalOpen(true);
+  };
+
+  const handleOpenEditRombel = (r: Rombel) => {
+    setEditingRombel(r);
+    setRombelFormName(r.name);
+    setRombelFormCode(r.code || '');
+    setRombelFormGrade(r.grade || 7);
+    setRombelFormPhase(r.phase || 'Fase D');
+    setRombelFormTeacher(r.teacher || '');
+    setRombelFormTeacherNip(r.teacherNip || '-');
+    setRombelFormCapacity(r.capacity || 32);
+    setRombelFormYear(r.academicYear || '2026/2027 Ganjil');
+    setRombelFormStatus(r.status || 'AKTIF');
+    setRombelFormSchoolId(r.schoolId || 'sch-smpn1-jorong');
+    setRombelFormSchoolName(r.schoolName || 'UPTD SMPN 1 Jorong');
+    setIsRombelModalOpen(true);
+  };
+
+  const handleSaveRombel = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = rombelFormName.trim();
+    if (!trimmedName) {
+      showToast('Nama rombongan belajar wajib diisi!');
+      return;
+    }
+
+    const norm = normalizeClassName(trimmedName);
+    const autoCode = rombelFormCode.trim() || `ROMBEL-${norm.replace(/[^A-Za-z0-9]/g, '')}`;
+
+    if (editingRombel) {
+      const oldName = editingRombel.name;
+      const updated = rombels.map((r) =>
+        r.id === editingRombel.id
+          ? {
+              ...r,
+              name: trimmedName,
+              code: autoCode,
+              grade: rombelFormGrade,
+              phase: rombelFormPhase,
+              teacher: rombelFormTeacher.trim() || 'Guru Wali Kelas',
+              teacherNip: rombelFormTeacherNip.trim() || '-',
+              capacity: rombelFormCapacity,
+              academicYear: rombelFormYear,
+              status: rombelFormStatus,
+              schoolId: rombelFormSchoolId,
+              schoolName: rombelFormSchoolName,
+            }
+          : r
+      );
+      updateRombels(updated);
+
+      // Sinkronkan data siswa jika nama rombel diperbarui
+      if (oldName && oldName !== trimmedName) {
+        const updatedStudents = students.map((s) =>
+          isSameClass(s.className, oldName) ? { ...s, className: trimmedName } : s
+        );
+        if (JSON.stringify(updatedStudents) !== JSON.stringify(students)) {
+          updateStudents(updatedStudents);
+        }
+      }
+
+      showToast(`Rombongan belajar "${trimmedName}" berhasil diperbarui & disinkronkan ke seluruh sistem!`);
+    } else {
+      const newRombel: Rombel = {
+        id: `rombel-super-${Date.now()}`,
+        code: autoCode,
+        name: trimmedName,
+        grade: rombelFormGrade,
+        phase: rombelFormPhase,
+        teacher: rombelFormTeacher.trim() || 'Guru Wali Kelas',
+        teacherNip: rombelFormTeacherNip.trim() || '-',
+        capacity: rombelFormCapacity,
+        academicYear: rombelFormYear,
+        status: rombelFormStatus,
+        source: 'INPUT_MANUAL',
+        schoolId: rombelFormSchoolId,
+        schoolName: rombelFormSchoolName,
+      };
+
+      updateRombels([...rombels, newRombel]);
+      showToast(`Rombongan belajar "${trimmedName}" berhasil ditambahkan & disinkronkan ke Admin Sekolah!`);
+    }
+
+    setIsRombelModalOpen(false);
   };
 
   // Master Data Global Reset Handlers via in-app Modal
@@ -2264,7 +2496,13 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                         <span className="text-[10px] text-slate-400 font-mono">@{sch.adminUsername}</span>
                       </td>
                       <td className="p-3 font-medium text-slate-600">
-                        {sch.totalStudents > 0 ? `${sch.totalStudents} Siswa` : `${students.length} Siswa`} • {sch.totalClasses > 0 ? `${sch.totalClasses} Kelas` : `${rombels.length} Kelas`}
+                        {(() => {
+                          const schoolStudents = students.filter((s) => s.schoolId === sch.id || isSameSchool(s.schoolName, sch.name));
+                          const schoolRombels = rombels.filter((r) => r.schoolId === sch.id || isSameSchool(r.schoolName, sch.name));
+                          const studentCount = schoolStudents.length > 0 ? schoolStudents.length : sch.totalStudents || 0;
+                          const classCount = schoolRombels.length > 0 ? schoolRombels.length : sch.totalClasses || 0;
+                          return `${studentCount} Siswa • ${classCount} Kelas`;
+                        })()}
                       </td>
                       <td className="p-3 text-right">
                         <button
@@ -2564,16 +2802,36 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-black text-slate-900">Master Rombongan Belajar (Rombel) Lintas Sekolah</h3>
-                  <p className="text-xs text-slate-500">Daftar kelas Kurikulum Merdeka, kuota siswa, dan guru wali kelas</p>
+                  <p className="text-xs text-slate-500">Daftar kelas Kurikulum Merdeka, kuota siswa, satuan pendidikan, dan guru wali kelas</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={handleResetRombels}
-                    className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                    title="Reset Master Rombel ke Data Bawaan"
+                    onClick={handleSyncRombelsWithSchoolAdmin}
+                    disabled={isSyncingRombels}
+                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    title="Singkronkan data Master Rombongan Belajar Superadmin dengan seluruh data update pada Admin Sekolah"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reset Master</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingRombels ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingRombels ? 'Menyinkronkan...' : 'Singkronkan dengan Admin Sekolah'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setImportModalTab('ROMBELS');
+                      setIsImportModalOpen(true);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Impor Rombel dari file CSV"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-blue-700" />
+                    <span>Impor Rombel (.CSV)</span>
+                  </button>
+                  <button
+                    onClick={handleOpenAddRombel}
+                    className="px-3.5 py-2 rounded-xl bg-[#0753A5] hover:bg-blue-800 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    title="Tambah Rombel Baru Secara Manual"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah Rombel Manual</span>
                   </button>
                   <button
                     onClick={downloadRombelTemplateCsv}
@@ -2581,6 +2839,14 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Template CSV</span>
+                  </button>
+                  <button
+                    onClick={handleResetRombels}
+                    className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Reset Master Rombel ke Data Bawaan"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Reset Master</span>
                   </button>
                 </div>
               </div>
@@ -2591,6 +2857,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                     <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-500 font-bold">
                       <th className="p-3">Kode Rombel</th>
                       <th className="p-3">Nama Rombel</th>
+                      <th className="p-3">Satuan Pendidikan</th>
                       <th className="p-3">Tingkat & Fase</th>
                       <th className="p-3">Wali Kelas</th>
                       <th className="p-3">Kapasitas</th>
@@ -2603,8 +2870,8 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {rombels.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-8 text-center text-slate-400 font-medium">
-                          Belum ada data rombongan belajar mandiri. Silakan gunakan Template CSV atau fitur impor rombel sekolah.
+                        <td colSpan={10} className="p-8 text-center text-slate-400 font-medium">
+                          Belum ada data rombongan belajar mandiri. Silakan klik &quot;Singkronkan dengan Admin Sekolah&quot; atau gunakan Template CSV.
                         </td>
                       </tr>
                     ) : (
@@ -2621,8 +2888,18 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                           <tr key={r.id} className="hover:bg-slate-50/60">
                             <td className="p-3 font-mono font-bold text-slate-700">{r.code}</td>
                             <td className="p-3 font-bold text-slate-900">{r.name}</td>
+                            <td className="p-3 font-medium text-slate-700">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 text-[11px] font-semibold border border-blue-100">
+                                {r.schoolName || 'UPTD SMPN 1 Jorong'}
+                              </span>
+                            </td>
                             <td className="p-3">{r.phase} (Kelas {r.grade})</td>
-                            <td className="p-3 font-medium text-slate-700">{r.teacher}</td>
+                            <td className="p-3 font-medium text-slate-700">
+                              <div>{r.teacher}</div>
+                              {r.teacherNip && r.teacherNip !== '-' && (
+                                <div className="text-[10px] text-slate-400 font-mono">NIP: {r.teacherNip}</div>
+                              )}
+                            </td>
                             <td className="p-3 font-mono text-slate-700">{r.capacity} Kuota</td>
                             <td className="p-3 font-mono">
                               <button
@@ -2655,13 +2932,22 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                               </span>
                             </td>
                             <td className="p-3 text-right">
-                              <button
-                                onClick={() => handleDeleteRombel(r)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                title="Hapus Rombel dari Master Global"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => handleOpenEditRombel(r)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                                  title="Edit Rombongan Belajar"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteRombel(r)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Hapus Rombel dari Master Global"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -5539,6 +5825,214 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   className="px-4 py-2.5 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-xs font-bold text-white transition-colors cursor-pointer shadow-xs"
                 >
                   Simpan Standar Master
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add / Edit Rombel (Master Rombongan Belajar) */}
+      {isRombelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-gradient-to-r from-blue-50/50 to-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-blue-100/70 text-[#0753A5] flex items-center justify-center font-bold">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    {editingRombel ? 'Edit Rombongan Belajar' : 'Tambah Rombongan Belajar Baru'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {editingRombel
+                      ? 'Perubahan akan otomatis tersinkronkan ke Admin Sekolah & seluruh sistem'
+                      : 'Rombel baru akan langsung terhubung ke SIM Sekolah & peserta didik'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRombelModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRombel} className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Satuan Pendidikan / Sekolah <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={rombelFormSchoolId}
+                  onChange={(e) => {
+                    const sch = schools.find((s) => s.id === e.target.value);
+                    if (sch) {
+                      setRombelFormSchoolId(sch.id);
+                      setRombelFormSchoolName(sch.name);
+                    }
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  required
+                >
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.npsn || 'NPSN'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Nama Rombel <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={rombelFormName}
+                    onChange={(e) => setRombelFormName(e.target.value)}
+                    placeholder="Contoh: Kelas 7-B atau 8-C"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Kode Rombel (Otomatis/Kustom)
+                  </label>
+                  <input
+                    type="text"
+                    value={rombelFormCode}
+                    onChange={(e) => setRombelFormCode(e.target.value)}
+                    placeholder="Contoh: ROMBEL-7B"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Tingkat Kelas
+                  </label>
+                  <select
+                    value={rombelFormGrade}
+                    onChange={(e) => {
+                      const g = parseInt(e.target.value, 10);
+                      setRombelFormGrade(g);
+                      if (g >= 7 && g <= 9) setRombelFormPhase('Fase D');
+                      else if (g <= 2) setRombelFormPhase('Fase A');
+                      else if (g <= 4) setRombelFormPhase('Fase B');
+                      else if (g <= 6) setRombelFormPhase('Fase C');
+                      else setRombelFormPhase('Fase E/F');
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((gr) => (
+                      <option key={gr} value={gr}>
+                        Kelas {gr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Fase Kurikulum Merdeka
+                  </label>
+                  <input
+                    type="text"
+                    value={rombelFormPhase}
+                    onChange={(e) => setRombelFormPhase(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Nama Guru Wali Kelas
+                  </label>
+                  <input
+                    type="text"
+                    value={rombelFormTeacher}
+                    onChange={(e) => setRombelFormTeacher(e.target.value)}
+                    placeholder="Nama Wali Kelas beserta gelar"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    NIP Wali Kelas
+                  </label>
+                  <input
+                    type="text"
+                    value={rombelFormTeacherNip}
+                    onChange={(e) => setRombelFormTeacherNip(e.target.value)}
+                    placeholder="NIP atau tanda -"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Kapasitas Kuota
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={rombelFormCapacity}
+                    onChange={(e) => setRombelFormCapacity(parseInt(e.target.value, 10) || 32)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Tahun Ajaran
+                  </label>
+                  <input
+                    type="text"
+                    value={rombelFormYear}
+                    onChange={(e) => setRombelFormYear(e.target.value)}
+                    placeholder="2026/2027 Ganjil"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={rombelFormStatus}
+                    onChange={(e) => setRombelFormStatus(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0753A5]"
+                  >
+                    <option value="AKTIF">AKTIF</option>
+                    <option value="NON_AKTIF">NON-AKTIF</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsRombelModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-xl bg-[#0753A5] hover:bg-blue-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
+                >
+                  {editingRombel ? 'Simpan Perubahan' : 'Tambah Rombel'}
                 </button>
               </div>
             </form>

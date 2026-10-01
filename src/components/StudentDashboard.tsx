@@ -61,6 +61,7 @@ import {
 } from '../lib/dateUtils';
 import { ParentSignatureModal } from './ParentSignatureModal';
 import { HabitTrendsChart } from './HabitTrendsChart';
+import { Habit7DayProgressBar } from './Habit7DayProgressBar';
 
 interface StudentDashboardProps {
   todayJournal: DailyJournal;
@@ -1663,6 +1664,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           )}
         </div>
       </div>
+
+      {/* 7-Day Progress Bar & Habit Consistency Visualization */}
+      <Habit7DayProgressBar
+        journals={studentJournals}
+        todayJournal={todayJournal}
+        onOpenJournal={onOpenJournal}
+        onSelectDate={onSelectDate}
+        studentName={studentName}
+      />
 
       {/* 30-Day Habit Trends Visualization using Recharts */}
       <HabitTrendsChart

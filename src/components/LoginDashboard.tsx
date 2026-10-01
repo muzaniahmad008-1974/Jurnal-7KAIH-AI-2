@@ -199,18 +199,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       .then((masterData) => {
         if (masterData) {
           applySuperAdminMasterDataToStorage(masterData);
-          if (masterData.schools && Array.isArray(masterData.schools) && masterData.schools.length > 0) {
-            setSchools((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.schools) ? prev : masterData.schools!));
-          }
-          if (masterData.rombels && Array.isArray(masterData.rombels)) {
-            setRombels((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.rombels) ? prev : masterData.rombels!));
-          }
-          if (masterData.students && Array.isArray(masterData.students)) {
-            setStudents((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.students) ? prev : masterData.students!));
-          }
-          if (masterData.users && Array.isArray(masterData.users) && masterData.users.length > 0) {
-            setUsers((prev) => (JSON.stringify(prev) === JSON.stringify(masterData.users) ? prev : masterData.users!));
-          }
+          syncLocalDataOnly();
         }
       })
       .catch(() => {});
@@ -537,25 +526,17 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
 
   const currentRoleInfo = roleScopeConfig[selectedRoleScope];
 
-  // Daftar lengkap murid untuk pilihan dropdown (hanya murid yang diinput/diimpor oleh Admin Sekolah atau didaftarkan di sistem)
+  // Daftar lengkap murid untuk pilihan dropdown (tersinkronisasi presisi dengan master data siswa yang diupdate Admin Sekolah)
   const allAvailableStudents = useMemo<Student[]>(() => {
     const map = new Map<string, Student>();
-    const defaultSchool = schools[0]?.name || '';
+    const defaultSchool = schools[0]?.name || 'UPTD SMPN 1 Jorong';
 
-    // 1. Data murid tersimpan di master data yang diunggah/diinput oleh Admin Sekolah
+    // 1. Data murid tersimpan di master data yang diunggah/diinput/diupdate oleh Admin Sekolah (Authoritative)
     students.forEach((s) => {
       const key = (s.nisn || s.username || s.id || s.name).trim().toLowerCase();
       if (key) {
-        // Cari apakah ada akun pengguna murid yang memiliki info nama sekolah
-        const matchingUser = users.find(
-          (u) =>
-            u.role === 'STUDENT' &&
-            ((u.identifierValue && u.identifierValue.toLowerCase() === (s.nisn || '').toLowerCase()) ||
-              (u.username && u.username.toLowerCase() === (s.username || s.nisn || '').toLowerCase()) ||
-              u.id === s.id)
-        );
-        const matchingSchool = schools.find((sch) => sch.id === s.schoolId || sch.name === s.schoolName);
-        const rawSchool = (s.schoolName || matchingSchool?.name || matchingUser?.schoolName || defaultSchool).trim();
+        const matchingSchool = schools.find((sch) => sch.id === s.schoolId || isSameSchool(sch.name, s.schoolName));
+        const rawSchool = (s.schoolName || matchingSchool?.name || defaultSchool).trim();
         map.set(key, {
           ...s,
           schoolName: rawSchool,
@@ -563,34 +544,9 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
       }
     });
 
-    // 2. Akun pengguna dengan peran STUDENT
-    users
-      .filter((u) => u.role === 'STUDENT')
-      .forEach((u) => {
-        const key = (u.identifierValue || u.username || u.id || u.name).trim().toLowerCase();
-        if (key && !map.has(key)) {
-          const matchingSchool = schools.find((sch) => sch.id === u.schoolId || sch.name === u.schoolName);
-          const rawSchool = (u.schoolName || matchingSchool?.name || defaultSchool).trim();
-          map.set(key, {
-            id: u.id,
-            nisn: u.identifierValue || u.username,
-            name: u.name,
-            gender: u.avatar === '👧🏻' ? 'P' : 'L',
-            className: u.className || '',
-            parentName: (u as any).parentName || '-',
-            status: 'AKTIF',
-            source: 'INPUT_MANUAL',
-            createdAt: u.createdDate || '2026-07-01',
-            username: u.username,
-            schoolName: rawSchool,
-          });
-        }
-      });
-
-    // Catatan: FALLBACK_SAMPLE_STUDENTS tidak dimuat agar bila data belum diupdate oleh Admin Sekolah atau Super Admin, jumlah data murni 0
     const list = Array.from(map.values());
     return list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
-  }, [students, users, schools]);
+  }, [students, schools]);
 
   // Daftar sekolah / satuan pendidikan unik yang tersedia untuk filter dropdown (Hanya dari data master yang telah diupdate oleh Super Admin)
   const availableSchoolsForLogin = useMemo<string[]>(() => {
@@ -615,7 +571,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
     if (effectiveSelectedSchool === 'ALL') {
       return allAvailableStudents;
     }
-    return allAvailableStudents.filter((s) => s.schoolName === effectiveSelectedSchool);
+    return allAvailableStudents.filter((s) => isSameSchool(s.schoolName, effectiveSelectedSchool));
   }, [allAvailableStudents, effectiveSelectedSchool, availableSchoolsForLogin]);
 
   // Daftar kelas / rombel unik yang tersedia untuk filter dropdown (tersinkron presisi dengan rombel & siswa yang diupdate oleh Admin Sekolah)
@@ -1555,7 +1511,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                     }`}
                   >
                     <span className="text-sm">🎓</span>
-                    <span className="whitespace-nowrap">Murid</span>
+                    <span className="whitespace-nowrap">Murid ({allAvailableStudents.length})</span>
                   </button>
 
                   {/* Tab 2: Orang Tua (Lengkap tanpa terpotong) */}
@@ -1844,13 +1800,13 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                             ) : (
                               <>
                                 <option value="ALL">
-                                  Semua Satuan Pendidikan ({availableSchoolsForLogin.length} Sekolah, {allAvailableStudents.length} Siswa)
+                                  Semua Satuan Pendidikan ({availableSchoolsForLogin.length} Sekolah, {allAvailableStudents.length} Murid)
                                 </option>
                                 {availableSchoolsForLogin.map((sch) => {
-                                  const count = allAvailableStudents.filter((s) => s.schoolName === sch).length;
+                                  const count = allAvailableStudents.filter((s) => isSameSchool(s.schoolName, sch)).length;
                                   return (
                                     <option key={sch} value={sch}>
-                                      {sch} ({count} Siswa)
+                                      {sch} ({count} Murid)
                                     </option>
                                   );
                                 })}
@@ -1901,14 +1857,14 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                               <>
                                 <option value="ALL">
                                   {effectiveSelectedSchool === 'ALL'
-                                    ? `Semua Kelas (${availableClassesForLogin.length} Kelas, ${studentsInSelectedSchool.length} Siswa)`
-                                    : `Semua Kelas di ${effectiveSelectedSchool} (${availableClassesForLogin.length} Kelas, ${studentsInSelectedSchool.length} Siswa)`}
+                                    ? `Semua Kelas (${availableClassesForLogin.length} Kelas, ${studentsInSelectedSchool.length} Murid)`
+                                    : `Semua Kelas di ${effectiveSelectedSchool} (${availableClassesForLogin.length} Kelas, ${studentsInSelectedSchool.length} Murid)`}
                                 </option>
                                 {availableClassesForLogin.map((cls) => {
                                   const count = studentsInSelectedSchool.filter((s) => isSameClass(s.className, cls)).length;
                                   return (
                                     <option key={cls} value={cls}>
-                                      {cls} ({count} Siswa)
+                                      {cls} ({count} Murid)
                                     </option>
                                   );
                                 })}
@@ -1942,7 +1898,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                                 : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                             }`}
                           >
-                            {filteredStudentsForDropdown.length} Siswa
+                            {filteredStudentsForDropdown.length} Murid
                           </span>
                         </div>
                         <div className="relative">
@@ -1960,7 +1916,7 @@ export const LoginDashboard: React.FC<LoginDashboardProps> = ({ onLoginSuccess }
                             <option value="">
                               {filteredStudentsForDropdown.length === 0
                                 ? '-- Belum ada data siswa (0 Murid) --'
-                                : `-- ${selectedRoleScope === 'STUDENT' ? 'Klik untuk memilih nama Anda' : 'Klik untuk memilih nama ananda'} (${filteredStudentsForDropdown.length} Tersedia) --`}
+                                : `-- ${selectedRoleScope === 'STUDENT' ? 'Klik untuk memilih nama Anda' : 'Klik untuk memilih nama ananda'} (${filteredStudentsForDropdown.length} Murid Tersedia) --`}
                             </option>
                             {filteredStudentsForDropdown.map((s) => (
                               <option key={s.id || s.nisn} value={s.nisn}>
