@@ -112,6 +112,7 @@ interface TeacherDashboardProps {
     note?: string,
     validationMeta?: any
   ) => void;
+  onEditStudentJournal?: (student: StudentClassRow, dateStr?: string) => void;
 }
 
 interface StudentClassRow {
@@ -216,6 +217,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   activeNavTab,
   currentPersona,
   onValidateJournal,
+  onEditStudentJournal,
 }) => {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'STUDENTS' | 'MONITORING' | 'PROGRAMS' | 'RTL' | 'AI_INSIGHT'>('OVERVIEW');
   const [searchTerm, setSearchTerm] = useState('');
@@ -302,11 +304,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             )
           );
           setSyncedJournals((prev) => {
-            const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
-            const merged = [...cleaned];
+            const prevMap = new Map<string, DailyJournal>();
+            prev.forEach((pj) => {
+              prevMap.set(pj.id, pj);
+              const pDate = pj.journalDate || (pj as any).date;
+              if (pj.studentId && pDate) {
+                prevMap.set(`${pj.studentId}_${pDate}`, pj);
+              }
+            });
+
+            const resolvedRemote = cleaned.map((rj) => {
+              const rDate = rj.journalDate || (rj as any).date;
+              const local = prevMap.get(rj.id) || (rj.studentId && rDate ? prevMap.get(`${rj.studentId}_${rDate}`) : undefined);
+              if (local) {
+                const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+                const remoteTime = rj.updatedAt ? new Date(rj.updatedAt).getTime() : 0;
+                if (localTime >= remoteTime || (local.completedCount || 0) > (rj.completedCount || 0)) {
+                  return local;
+                }
+              }
+              return rj;
+            });
+
+            const remoteIds = new Set(resolvedRemote.map((j) => j.id));
+            const merged = [...resolvedRemote];
             prev.forEach((pj) => {
               if (
-                !remoteMap.has(pj.id) &&
+                !remoteIds.has(pj.id) &&
                 !isDeprecatedOrDummyJournal(pj) &&
                 !isJournalTombstoned(pj.studentId, pj.journalDate || (pj as any).date, pj.studentNisn, pj.studentName, pj.id)
               ) {
@@ -529,11 +553,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           )
         );
         setSyncedJournals((prev) => {
-          const remoteMap = new Map(cleaned.map((j) => [j.id, j]));
-          const merged = [...cleaned];
+          const prevMap = new Map<string, DailyJournal>();
+          prev.forEach((pj) => {
+            prevMap.set(pj.id, pj);
+            const pDate = pj.journalDate || (pj as any).date;
+            if (pj.studentId && pDate) {
+              prevMap.set(`${pj.studentId}_${pDate}`, pj);
+            }
+          });
+
+          const resolvedRemote = cleaned.map((rj) => {
+            const rDate = rj.journalDate || (rj as any).date;
+            const local = prevMap.get(rj.id) || (rj.studentId && rDate ? prevMap.get(`${rj.studentId}_${rDate}`) : undefined);
+            if (local) {
+              const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+              const remoteTime = rj.updatedAt ? new Date(rj.updatedAt).getTime() : 0;
+              if (localTime >= remoteTime || (local.completedCount || 0) > (rj.completedCount || 0)) {
+                return local;
+              }
+            }
+            return rj;
+          });
+
+          const remoteIds = new Set(resolvedRemote.map((j) => j.id));
+          const merged = [...resolvedRemote];
           prev.forEach((pj) => {
             if (
-              !remoteMap.has(pj.id) &&
+              !remoteIds.has(pj.id) &&
               !isDeprecatedOrDummyJournal(pj) &&
               !isJournalTombstoned(pj.studentId, pj.journalDate || (pj as any).date, pj.studentNisn, pj.studentName, pj.id)
             ) {
@@ -856,11 +902,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
   }, [rawClassStudents, syncedJournals, activeRombel]);
 
-  // Tanggal aktif monitoring pengisian jurnal siswa (Default: tanggal hari ini atau update terkini)
+  // Tanggal aktif monitoring pengisian jurnal siswa (Default: 2026-10-02 atau update terkini)
   const todayDateStr = useMemo(() => getLocalDateString(), []);
-  const [selectedJournalDate, setSelectedJournalDate] = useState<string>(() => todayDateStr || '2026-09-28');
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string>(() => '2026-10-02');
 
-  // Daftar tanggal pengisian jurnal yang tersedia secara kronologis (termasuk update terkini 28 Sep 2026)
+  // Daftar tanggal pengisian jurnal yang tersedia secara kronologis (termasuk 02 Oktober 2026)
   const availableJournalDates = useMemo(() => {
     const set = new Set<string>();
     classJournals.forEach((j) => {
@@ -869,13 +915,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         set.add(d.trim());
       }
     });
-    // Pastikan tanggal aktif (20 s.d. 28 September) tersedia untuk rombel aktif (7-B, 8-C, 9-C)
-    ['2026-09-20', '2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28'].forEach((d) => set.add(d));
+    // Pastikan tanggal aktif (20 September s.d. 02 Oktober 2026) selalu tersedia untuk rombel aktif
+    [
+      '2026-09-20', '2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24',
+      '2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29',
+      '2026-09-30', '2026-10-01', '2026-10-02',
+    ].forEach((d) => set.add(d));
     if (todayDateStr) {
       set.add(todayDateStr);
     }
     const sorted = Array.from(set).sort();
-    return sorted.length > 0 ? sorted : [todayDateStr || '2026-09-28'];
+    return sorted.length > 0 ? sorted : ['2026-10-02'];
   }, [classJournals, activeRombel, todayDateStr]);
 
   // Otomatis arahkan ke tanggal submit terbaru jika tanggal saat ini tidak valid
@@ -2924,7 +2974,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               if (y && m && d) {
                 const dt = new Date(y, m - 1, d);
                 dayName = dt.toLocaleDateString('id-ID', { weekday: 'short' });
-                dateNum = `${d} Sep`;
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                dateNum = `${d} ${monthNames[m - 1] || 'Okt'}`;
               }
             } catch (_e) {}
 
@@ -4248,14 +4299,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => openStudentDossier(s)}
-                          className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-[#0753A5] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
-                          title="Buka rekap portofolio & pembiasaan siswa"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>Detail</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => openStudentDossier(s)}
+                            className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-[#0753A5] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                            title="Buka rekap portofolio & pembiasaan siswa"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Detail</span>
+                          </button>
+                          {onEditStudentJournal && (
+                            <button
+                              type="button"
+                              onClick={() => onEditStudentJournal(s, selectedJournalDate !== 'ALL' ? selectedJournalDate : '2026-10-02')}
+                              className="px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#0753A5] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                              title={`Input atau Perbarui Jurnal ${s.name} tanggal ${selectedJournalDate !== 'ALL' ? selectedJournalDate : '2026-10-02'}`}
+                            >
+                              <FileText className="w-3 h-3" />
+                              <span>{s.hasJournalOnSelectedDate ? 'Update' : 'Isi Jurnal'}</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-right">
                         {s.validatedByTeacher ? (

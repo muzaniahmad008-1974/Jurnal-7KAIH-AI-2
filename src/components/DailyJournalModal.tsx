@@ -44,6 +44,14 @@ interface DailyJournalModalProps {
   onSave: (updatedJournal: DailyJournal) => void;
   onReset?: (date: string) => void;
   currentPersona?: UserPersona;
+  targetStudent?: {
+    id: string;
+    name: string;
+    nisn?: string;
+    className?: string;
+    schoolId?: string;
+    schoolName?: string;
+  } | null;
 }
 
 export const DailyJournalModal: React.FC<DailyJournalModalProps> = ({
@@ -54,6 +62,7 @@ export const DailyJournalModal: React.FC<DailyJournalModalProps> = ({
   onSave,
   onReset,
   currentPersona,
+  targetStudent,
 }) => {
   // State for all 7 habits - defaults clean and empty
   const [wakeEarly, setWakeEarly] = useState<WakeEarlyData>({
@@ -218,18 +227,26 @@ export const DailyJournalModal: React.FC<DailyJournalModalProps> = ({
 
   const handleSubmit = (isDraft = false) => {
     const isStudentRole = currentPersona?.role === 'STUDENT';
-    const studentId = isStudentRole
+    const studentId = targetStudent?.id
+      ? targetStudent.id
+      : isStudentRole
       ? currentPersona.id || 'usr-student-01'
       : initialJournal?.studentId || currentPersona?.id || 'usr-student-01';
-    const schoolId = currentPersona?.schoolId || initialJournal?.schoolId || 's1000000-0000-0000-0000-000000000001';
-    const schoolName = currentPersona?.schoolName || initialJournal?.schoolName || 'Satuan Pendidikan';
-    const className = isStudentRole && currentPersona.className
+    const schoolId = targetStudent?.schoolId || currentPersona?.schoolId || initialJournal?.schoolId || 's1000000-0000-0000-0000-000000000001';
+    const schoolName = targetStudent?.schoolName || currentPersona?.schoolName || initialJournal?.schoolName || 'Satuan Pendidikan';
+    const className = targetStudent?.className
+      ? targetStudent.className
+      : isStudentRole && currentPersona.className
       ? currentPersona.className
       : initialJournal?.className || currentPersona?.className || '';
-    const studentName = isStudentRole && currentPersona.name
+    const studentName = targetStudent?.name
+      ? targetStudent.name
+      : isStudentRole && currentPersona.name
       ? currentPersona.name
       : initialJournal?.studentName || currentPersona?.name || 'Siswa';
-    const studentNisn = isStudentRole && currentPersona.identifierValue
+    const studentNisn = targetStudent?.nisn
+      ? targetStudent.nisn
+      : isStudentRole && currentPersona.identifierValue
       ? currentPersona.identifierValue
       : initialJournal?.studentNisn || currentPersona?.identifierValue || '';
     const journalId = (initialJournal?.id && (!isStudentRole || initialJournal.studentId === studentId))

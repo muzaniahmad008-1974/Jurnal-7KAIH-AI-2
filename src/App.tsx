@@ -186,7 +186,7 @@ export default function App() {
   // Sinkronkan data jurnal murni sesuai data riil yang diinput oleh siswa
   const [journals, setJournals] = useState<DailyJournal[]>(() => {
     try {
-      const resetKey = 'si7kaih_reset_7b_sep22_sep27_v12';
+      const resetKey = 'si7kaih_reset_7b_oct02_v2';
       const studentResetKey = 'si7kaih_students_clean_v7_nodummy';
 
       // Bersihkan cache siswa lama untuk menghapus 32 data dummy legacy 8-C
@@ -227,20 +227,51 @@ export default function App() {
             const filtered = parsed
               .filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))
               .filter((j: DailyJournal) => !is7BTargetDate(j));
+            
+            // Pastikan entri 2 Oktober dari RESTORED_JOURNALS_REAL tidak hilang jika belum ada
+            const existingKeys = new Set(
+              filtered.map((j: DailyJournal) => `${j.studentId}_${j.journalDate || (j as any).date}`)
+            );
+            RESTORED_JOURNALS_REAL.forEach((rj) => {
+              const rDate = rj.journalDate || (rj as any).date;
+              if (rDate === '2026-10-02' && !existingKeys.has(`${rj.studentId}_${rDate}`)) {
+                filtered.push(rj);
+              }
+            });
             return filtered;
           }
         } catch (_e) {}
       }
 
       // Reset cache: bersihkan seluruh isian jurnal 7-B tanggal 22 s.d. 27 September
+      // Namun pertahankan dan pastikan seluruh isian tanggal 2 Oktober siswa kelas 7-B aman tersimpan
       let cleanList = RESTORED_JOURNALS_REAL;
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            cleanList = parsed
+            const map = new Map<string, DailyJournal>();
+            parsed
               .filter((j: DailyJournal) => !isDeprecatedOrDummyJournal(j))
-              .filter((j: DailyJournal) => !is7BTargetDate(j));
+              .filter((j: DailyJournal) => !is7BTargetDate(j))
+              .forEach((pj: DailyJournal) => {
+                map.set(pj.id, pj);
+                const d = pj.journalDate || (pj as any).date;
+                if (pj.studentId && d) {
+                  map.set(`${pj.studentId}_${d}`, pj);
+                }
+              });
+
+            // Masukkan RESTORED_JOURNALS_REAL (termasuk 2 Oktober) jika belum ada di map
+            RESTORED_JOURNALS_REAL.forEach((rj) => {
+              const d = rj.journalDate || (rj as any).date;
+              const key = `${rj.studentId}_${d}`;
+              if (!map.has(rj.id) && !map.has(key)) {
+                map.set(rj.id, rj);
+              }
+            });
+
+            cleanList = Array.from(map.values());
           }
         } catch (_e) {}
       }
@@ -256,6 +287,10 @@ export default function App() {
             recordDeletedJournalTombstone(st.id, d, st.nisn, st.name, `journal-${d}-${st.id}`);
           });
         });
+        // Pastikan tombstones untuk 2 Oktober DIBERSIHKAN secara tuntas
+        s7BStudents.forEach((st) => {
+          clearJournalTombstone(st.id, '2026-10-02', st.nisn, st.name, `journal-2026-10-02-${st.id}`);
+        });
       } catch (_e) {}
 
       // Bersihkan tombstone legacy wildcard any_* yang menyebabkan konflik antar-siswa
@@ -265,7 +300,7 @@ export default function App() {
           const tsObj = JSON.parse(rawTs);
           let tsChanged = false;
           Object.keys(tsObj).forEach((k) => {
-            if (k.startsWith('any_')) {
+            if (k.startsWith('any_') || k.includes('2026-10-02')) {
               delete tsObj[k];
               tsChanged = true;
             }
@@ -275,7 +310,7 @@ export default function App() {
           }
         } catch (_e) {}
       }
-      return RESTORED_JOURNALS_REAL;
+      return cleanList;
     } catch (_e) {
       return RESTORED_JOURNALS_REAL;
     }
@@ -488,7 +523,15 @@ export default function App() {
 
   // Modals state
   const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
-  const [selectedJournalDate, setSelectedJournalDate] = useState<string>(() => getLocalDateString());
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string>(() => '2026-10-02');
+  const [modalTargetStudent, setModalTargetStudent] = useState<{
+    id: string;
+    name: string;
+    nisn?: string;
+    className?: string;
+    schoolId?: string;
+    schoolName?: string;
+  } | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [selectedReportStudent, setSelectedReportStudent] = useState<any | null>(null);
 
@@ -548,24 +591,53 @@ export default function App() {
                 schoolId: 'sch-smpn1-jorong',
               };
             });
-            // Gabungkan entri remote dengan entri lokal yang valid (termasuk isian 28 September siswa 7-B)
+            // Gabungkan entri remote dengan entri lokal yang valid (termasuk isian 28 September dan 2 Oktober siswa 7-B)
             // KECUALI entri yang sudah dikosongkan/ditombstone oleh siswa
             setJournals((prev) => {
-              const remoteIds = new Set(cleanJournals.map((j) => j.id));
-              const missingLocal = prev.filter(
-                (pj) =>
-                  !remoteIds.has(pj.id) &&
-                  !isDeprecatedOrDummyJournal(pj) &&
-                  !isJournalTombstoned(pj.studentId, pj.journalDate || (pj as any).date, pj.studentNisn, pj.studentName, pj.id)
-              );
-              const existingIds = new Set([...cleanJournals.map((j) => j.id), ...missingLocal.map((j) => j.id)]);
-              const missingReal = RESTORED_JOURNALS_REAL.filter(
-                (rj) =>
-                  !existingIds.has(rj.id) &&
-                  !isDeprecatedOrDummyJournal(rj) &&
-                  !isJournalTombstoned(rj.studentId, rj.journalDate || (rj as any).date, rj.studentNisn, rj.studentName, rj.id)
-              );
-              const mergedJournals = [...cleanJournals, ...missingLocal, ...missingReal];
+              const prevMap = new Map<string, DailyJournal>();
+              prev.forEach((pj) => {
+                if (!isDeprecatedOrDummyJournal(pj) && !isJournalTombstoned(pj.studentId, pj.journalDate || (pj as any).date, pj.studentNisn, pj.studentName, pj.id)) {
+                  prevMap.set(pj.id, pj);
+                  const pDate = pj.journalDate || (pj as any).date;
+                  if (pj.studentId && pDate) {
+                    prevMap.set(`${pj.studentId}_${pDate}`, pj);
+                  }
+                }
+              });
+
+              // Smart merge: prioritaskan local update jika lebih baru dari remote
+              const resolvedRemote = cleanJournals.map((rj) => {
+                const rDate = rj.journalDate || (rj as any).date;
+                const local = prevMap.get(rj.id) || (rj.studentId && rDate ? prevMap.get(`${rj.studentId}_${rDate}`) : undefined);
+                if (local) {
+                  const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+                  const remoteTime = rj.updatedAt ? new Date(rj.updatedAt).getTime() : 0;
+                  if (localTime >= remoteTime || (local.completedCount || 0) > (rj.completedCount || 0)) {
+                    return local;
+                  }
+                }
+                return rj;
+              });
+
+              const resolvedMap = new Map<string, DailyJournal>();
+              resolvedRemote.forEach((rj) => resolvedMap.set(rj.id, rj));
+              prev.forEach((pj) => {
+                if (!resolvedMap.has(pj.id) && !isDeprecatedOrDummyJournal(pj) && !isJournalTombstoned(pj.studentId, pj.journalDate || (pj as any).date, pj.studentNisn, pj.studentName, pj.id)) {
+                  resolvedMap.set(pj.id, pj);
+                }
+              });
+              RESTORED_JOURNALS_REAL.forEach((rj) => {
+                const rDate = rj.journalDate || (rj as any).date;
+                const hasMatch = Array.from(resolvedMap.values()).some((ej) => {
+                  const eDate = ej.journalDate || (ej as any).date;
+                  return ej.id === rj.id || (ej.studentId === rj.studentId && eDate === rDate);
+                });
+                if (!hasMatch && !isDeprecatedOrDummyJournal(rj) && !isJournalTombstoned(rj.studentId, rDate, rj.studentNisn, rj.studentName, rj.id)) {
+                  resolvedMap.set(rj.id, rj);
+                }
+              });
+
+              const mergedJournals = Array.from(resolvedMap.values());
               try {
                 localStorage.setItem('si7kaih_journals_prod', JSON.stringify(mergedJournals));
               } catch (_e) {}
@@ -1470,8 +1542,9 @@ export default function App() {
     isInactivityWarningOpen,
   ]);
 
-  const openJournalForDate = (dateStr: string) => {
+  const openJournalForDate = (dateStr: string, targetStudent?: any) => {
     setSelectedJournalDate(dateStr);
+    setModalTargetStudent(targetStudent || null);
     setIsJournalModalOpen(true);
   };
 
@@ -1640,6 +1713,9 @@ export default function App() {
           activeNavTab={activeTab}
           currentPersona={currentPersona}
           onValidateJournal={handleValidateJournal}
+          onEditStudentJournal={(student, dateStr) => {
+            openJournalForDate(dateStr || selectedJournalDate || '2026-10-02', student);
+          }}
         />
       );
     }
@@ -1723,6 +1799,19 @@ export default function App() {
       if (isDeprecatedOrDummyJournal(j)) return false;
       if (isJournalTombstoned(j.studentId, jDate, j.studentNisn, j.studentName, j.id)) return false;
 
+      if (modalTargetStudent) {
+        const targetId = (modalTargetStudent.id || '').trim().toLowerCase();
+        const targetNisn = (modalTargetStudent.nisn || '').trim();
+        const targetName = (modalTargetStudent.name || '').trim().toLowerCase();
+        const jId = (j.studentId || '').trim().toLowerCase();
+        const jNisn = (j.studentNisn || '').trim();
+        const jName = (j.studentName || '').trim().toLowerCase();
+        if (targetId && jId && jId === targetId) return true;
+        if (targetNisn && (jNisn === targetNisn || jId === targetNisn)) return true;
+        if (targetName && jName && jName === targetName) return true;
+        return false;
+      }
+
       if (currentPersona.role === 'STUDENT') {
         return isJournalMatchingCurrentPersona(j);
       }
@@ -1744,7 +1833,7 @@ export default function App() {
       }
       return true;
     });
-  }, [journals, selectedJournalDate, activeStudentIdForModal, currentPersona]);
+  }, [journals, selectedJournalDate, activeStudentIdForModal, currentPersona, modalTargetStudent]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
@@ -1835,12 +1924,16 @@ export default function App() {
       {isJournalModalOpen && (
         <DailyJournalModal
           isOpen={isJournalModalOpen}
-          onClose={() => setIsJournalModalOpen(false)}
+          onClose={() => {
+            setIsJournalModalOpen(false);
+            setModalTargetStudent(null);
+          }}
           journalDate={selectedJournalDate}
           initialJournal={selectedJournalForModal}
           onSave={handleSaveJournal}
           onReset={handleResetSingleDateJournal}
           currentPersona={currentPersona}
+          targetStudent={modalTargetStudent}
         />
       )}
 

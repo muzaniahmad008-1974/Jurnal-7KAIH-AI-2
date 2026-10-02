@@ -9,6 +9,7 @@ import { Rombel, Student } from './studentData';
 import { UserPersona } from './constants';
 import { DailyJournal } from '../../packages/types/src/index';
 import { RESTORED_JOURNALS_7B_SEP_27 } from './jorongJournalsSep27';
+import { RESTORED_JOURNALS_7B_OCT_02 } from './jorongJournalsOct02';
 
 export const RESTORED_SCHOOL: SchoolMaster = {
   "id": "sch-smpn1-jorong",
@@ -30932,6 +30933,7 @@ const TARGET_RESET_7B_DATES = new Set([
 export const RESTORED_JOURNALS_REAL: DailyJournal[] = [
   ...RESTORED_JOURNALS_BASE,
   ...RESTORED_JOURNALS_7B_SEP_27,
+  ...RESTORED_JOURNALS_7B_OCT_02,
 ].filter((j) => {
   const sClass = (j as any).studentClass;
   const is7B =

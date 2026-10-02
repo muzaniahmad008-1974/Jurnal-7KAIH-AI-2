@@ -629,13 +629,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     return studentJournals.filter((j) => (j.completedCount || 0) >= 5).length;
   }, [studentJournals]);
 
-  // Linimasa Pembiasaan Sepekan Terakhir (6 hari lalu s.d. hari ini) - Data riil terkini
+  // Linimasa Pembiasaan Sepekan Terakhir (6 hari lalu s.d. 2 Oktober / hari ini) - Data riil terkini
   const recentDays = useMemo(() => {
     const list = [];
     const baseDate = new Date();
+    const oct2Date = new Date('2026-10-02T12:00:00');
+    const targetRef = baseDate.getTime() > oct2Date.getTime() ? baseDate : oct2Date;
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(baseDate);
-      d.setDate(baseDate.getDate() - i);
+      const d = new Date(targetRef);
+      d.setDate(targetRef.getDate() - i);
       const str = getLocalDateString(d);
 
       let match = studentJournals.find(

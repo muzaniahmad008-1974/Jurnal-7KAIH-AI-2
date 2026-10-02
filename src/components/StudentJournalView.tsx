@@ -463,13 +463,15 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
     showToast(`Isian jurnal tanggal ${selectedDate} berhasil dikosongkan/direset.`);
   };
 
-  // Generate 7-day strip (6 days before up to today) - real-time synchronized with active student journals
+  // Generate 7-day strip (6 days before up to 2 Oktober / today) - real-time synchronized with active student journals
   const recentDays = useMemo(() => {
     const list = [];
     const baseDate = new Date();
+    const oct2Date = new Date('2026-10-02T12:00:00');
+    const targetRef = baseDate.getTime() > oct2Date.getTime() ? baseDate : oct2Date;
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(baseDate);
-      d.setDate(baseDate.getDate() - i);
+      const d = new Date(targetRef);
+      d.setDate(targetRef.getDate() - i);
       const str = getLocalDateString(d);
       
       // Cari jurnal riil milik siswa ini pada tanggal tersebut
@@ -534,8 +536,18 @@ export const StudentJournalView: React.FC<StudentJournalViewProps> = ({
               onChange={(e) => setSelectedDate(e.target.value)}
               className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 focus:outline-blue-500 bg-slate-50 cursor-pointer"
             />
-            {selectedDate !== todayStr && (
+            {selectedDate !== '2026-10-02' && (
               <button
+                type="button"
+                onClick={() => setSelectedDate('2026-10-02')}
+                className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold transition-colors cursor-pointer border border-emerald-200"
+              >
+                2 Okt 2026
+              </button>
+            )}
+            {selectedDate !== todayStr && todayStr !== '2026-10-02' && (
+              <button
+                type="button"
                 onClick={() => setSelectedDate(todayStr)}
                 className="px-3 py-1.5 rounded-xl bg-blue-50 text-[#0753A5] hover:bg-blue-100 text-xs font-bold transition-colors cursor-pointer"
               >
